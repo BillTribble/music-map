@@ -1,0 +1,38 @@
+<!DOCTYPE html>
+<html lang="en" data-theme="dark">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Bill-Music Evolution Explorer (2013–2026)</title>
+  <link rel="stylesheet" href="styles.css" />
+</head>
+<body>
+  <div class="app-shell">
+    <header class="topbar">
+      <div class="title-block">
+        <h1>Bill-Music Evolution Explorer</h1>
+        <p class="title-sub">2013–2026 across 229 Ableton projects · 1,543 deduplicated MIDI clips · 448 pitched audio parts</p>
+      </div>
+      <div class="header-controls">
+        <div class="segmented" role="group" aria-label="Timeline granularity">
+          <button id="btn-eras" type="button" class="btn active">12 Eras</button>
+          <button id="btn-phases" type="button" class="btn">4 Phases</button>
+        </div>
+        <button id="btn-theme" type="button" class="btn btn-outline">Light theme</button>
+      </div>
+    </header>
+
+    <nav class="tab-groups" aria-label="Visualization tabs">
+      <div id="tab-row-harmony" class="tab-row"></div>
+      <div id="tab-row-evolution" class="tab-row"></div>
+    </nav>
+
+    <main id="stage-card" class="card"></main>
+
+    <section id="inspector" class="inspector" aria-label="Selected era details"></section>
+  </div>
+
+  <script src="data.js"></script>
+  <script src="app.js"></script>
+</body>
+</html>
