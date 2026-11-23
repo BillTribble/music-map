@@ -5,6 +5,7 @@
   const NOTE_NAMES = ["C", "C#", "D", "D#", "E", "F", "F#", "G", "G#", "A", "A#", "B"];
 
   const TABS = [
+    { id: "timeline-player", group: "harmony", label: "Timeline Animator", tag: "▶ Play" },
     { id: "chord-quality", group: "harmony", label: "Chord & Dyad Spectrum" },
     { id: "root-motion", group: "harmony", label: "Root Motion & Wheel" },
     { id: "modal-heatmap", group: "harmony", label: "12-Degree Modal Heatmap" },
@@ -81,7 +82,7 @@
   const state = {
     theme: "dark",
     granularity: "eras", // default to 12 Eras per user request
-    tab: "chord-quality",
+    tab: "timeline-player",
     pinnedEraIdx: 11, // Sketches 2026
     pinnedPhaseIdx: 3, // Phase 4 Recent
     hoverIdx: null,
@@ -95,6 +96,16 @@
     playingDeg: null,
     compareAIdx: 1, // nihon_forever / phase2
     compareBIdx: 11, // sketches_2026 / phase4
+    animPlaying: false,
+    animPos: 0,
+    animSpeed: 1,
+    animLoop: true,
+    animSort: "chrono",
+    animGhost: "prev",
+    audioEnabled: true,
+    audioVolume: 0.85,
+    barsPerEra: 4, // 2 | 4 | 8 | 0 (Hold)
+    trackChoiceByEra: {},
   };
 
   function parseInitialHash() {
@@ -846,98 +857,968 @@
       <div class="evidence-grid">${evidenceCards}</div>`;
   }
 
+  function sumHarmonyPct(it, keys) {
+    const fh = it.fine_harmony;
+    if (!fh || !fh.n_chords) return 0;
+    return keys.reduce((acc, k) => acc + (fh.pcts[k] || 0), 0);
+  }
+
+  function chordRichnessShare(it) {
+    return sumHarmonyPct(it, ["min7", "maj7", "dom7", "extended_9_11"]);
+  }
+
+  const RADAR_AXES = [
+    { label: "4+ Chords", norm: (it) => Math.min(100, (chordRichnessShare(it) / 30) * 100) },
+    { label: "Triads/Sus", norm: (it) => Math.min(100, (sumHarmonyPct(it, ["maj_triad", "min_triad", "sus2_4"]) / 45) * 100) },
+    { label: "Open 4th/5th", norm: (it) => Math.min(100, (sumHarmonyPct(it, ["dyad_4th", "dyad_5th"]) / 65) * 100) },
+    { label: "Dark Modes", norm: (it) => Math.min(100, ((it.dark_modal_pct || 0) / 70) * 100) },
+    { label: "Harm Minor", norm: (it) => Math.min(100, ((it.harm_min_pct || 0) / 35) * 100) },
+    { label: "Stepwise", norm: (it) => Math.min(100, (((it.lead_step_pct ?? it.audio_step_pct) || 0) / 40) * 100) },
+    { label: "Root 4th/5th", norm: (it) => Math.min(100, ((it.root_motion.fourth_fifth_5_7 || 0) / 45) * 100) },
+    { label: "Micro Offset", norm: (it) => Math.min(100, ((it.microtonal.tuning_offset_p50 || 0) / 25) * 100) },
+  ];
+
+  function extractCompareProfile(it) {
+    const cnts = (it.key_roots && it.key_roots.counts) || Array(12).fill(0);
+    const sumCnt = Math.max(1, cnts.reduce((x, y) => x + y, 0));
+    const cofNorm = cnts.map((c) => c / sumCnt);
+    return {
+      radarNorm: RADAR_AXES.map((ax) => ax.norm(it)),
+      sd12: (it.scale_degrees && it.scale_degrees.combined_12) || Array(12).fill(0),
+      cofNorm,
+      cofRaw: cnts,
+      ext4Share: chordRichnessShare(it),
+      darkPct: it.dark_modal_pct ?? 0,
+      root45Pct: (it.root_motion && it.root_motion.fourth_fifth_5_7) ?? 0,
+      bpmMed: it.bpm_p50 ?? 120,
+      offsetCents: (it.microtonal && it.microtonal.tuning_offset_p50) ?? 0,
+    };
+  }
+
+  function lerpNum(a, b, t) {
+    const fa = Number.isFinite(a);
+    const fb = Number.isFinite(b);
+    if (fa && fb) return a + (b - a) * t;
+    if (fa) return a;
+    if (fb) return b;
+    return 0;
+  }
+
+  function getSortedTimelineItems() {
+    const base = [...currentItems()];
+    if (state.animSort === "richness") {
+      base.sort((a, b) => chordRichnessShare(a) - chordRichnessShare(b));
+    } else if (state.animSort === "dark") {
+      base.sort((a, b) => (a.dark_modal_pct || 0) - (b.dark_modal_pct || 0));
+    } else if (state.animSort === "microtonal") {
+      base.sort((a, b) => ((a.microtonal && a.microtonal.tuning_offset_p50) || 0) - ((b.microtonal && b.microtonal.tuning_offset_p50) || 0));
+    } else if (state.animSort === "tempo") {
+      base.sort((a, b) => (a.bpm_p50 || 0) - (b.bpm_p50 || 0));
+    }
+    return base;
+  }
+
+  function interpolateEraAt(orderedItems, rawPos) {
+    const maxPos = Math.max(0, orderedItems.length - 1);
+    const pos = Math.max(0, Math.min(maxPos, Number.isFinite(rawPos) ? rawPos : 0));
+    const i0 = Math.floor(pos);
+    const i1 = Math.min(maxPos, i0 + 1);
+    const tRaw = pos - i0;
+    const t = tRaw * tRaw * (3 - 2 * tRaw);
+    const it0 = orderedItems[i0];
+    const it1 = orderedItems[i1];
+    const p0 = extractCompareProfile(it0);
+    const p1 = extractCompareProfile(it1);
+    const nearest = orderedItems[Math.round(pos)];
+    return {
+      pos,
+      i0,
+      i1,
+      tRaw,
+      t,
+      a: it0,
+      b: it1,
+      nearest,
+      radarNorm: p0.radarNorm.map((v, k) => lerpNum(v, p1.radarNorm[k], t)),
+      sd12: p0.sd12.map((v, k) => lerpNum(v, p1.sd12[k], t)),
+      cofNorm: p0.cofNorm.map((v, k) => lerpNum(v, p1.cofNorm[k], t)),
+      ext4Share: lerpNum(p0.ext4Share, p1.ext4Share, t),
+      darkPct: lerpNum(p0.darkPct, p1.darkPct, t),
+      root45Pct: lerpNum(p0.root45Pct, p1.root45Pct, t),
+      bpmMed: lerpNum(p0.bpmMed, p1.bpmMed, t),
+      offsetCents: lerpNum(p0.offsetCents, p1.offsetCents, t),
+    };
+  }
+
+  function buildRadarAndDegreesSvg(radarA, radarB, sdA, sdB, shortA, shortB, showGhost) {
+    // Left half: 8-Axis Harmonic Radar
+    const rCx = 178, rCy = 154, rMax = 76;
+    let svg = `<text x="${rCx}" y="15" text-anchor="middle" font-size="12" font-weight="600" fill="var(--fg-muted)">8-Axis Harmonic Radar</text>`;
+    [0.33, 0.66, 1].forEach((r) => {
+      const pts = RADAR_AXES.map((_, i) => {
+        const ang = (i / RADAR_AXES.length) * Math.PI * 2 - Math.PI / 2;
+        return `${(rCx + r * rMax * Math.cos(ang)).toFixed(1)},${(rCy + r * rMax * Math.sin(ang)).toFixed(1)}`;
+      }).join(" ");
+      svg += `<polygon points="${pts}" fill="none" stroke="var(--border-subtle)" stroke-width="1" />`;
+    });
+    RADAR_AXES.forEach((ax, i) => {
+      const ang = (i / RADAR_AXES.length) * Math.PI * 2 - Math.PI / 2;
+      const x2 = rCx + rMax * Math.cos(ang), y2 = rCy + rMax * Math.sin(ang);
+      const lx = rCx + (rMax + 20) * Math.cos(ang), ly = rCy + (rMax + 18) * Math.sin(ang);
+      svg += `<line x1="${rCx}" y1="${rCy}" x2="${x2.toFixed(1)}" y2="${y2.toFixed(1)}" stroke="var(--border-subtle)" stroke-width="1" />`;
+      const anchor = Math.abs(Math.cos(ang)) < 0.25 ? "middle" : Math.cos(ang) > 0 ? "start" : "end";
+      svg += `<text x="${lx.toFixed(1)}" y="${(ly + 4).toFixed(1)}" text-anchor="${anchor}" font-size="12" fill="var(--fg-muted)">${esc(ax.label)}</text>`;
+    });
+    const layers = showGhost ? [{ vec: radarA, col: "var(--c1)" }, { vec: radarB, col: "var(--c4)" }] : [{ vec: radarB, col: "var(--c4)" }];
+    layers.forEach((s) => {
+      const pts = s.vec.map((v, i) => {
+        const ang = (i / RADAR_AXES.length) * Math.PI * 2 - Math.PI / 2;
+        const rad = (Math.max(4, Math.min(100, v || 0)) / 100) * rMax;
+        return `${(rCx + rad * Math.cos(ang)).toFixed(1)},${(rCy + rad * Math.sin(ang)).toFixed(1)}`;
+      }).join(" ");
+      svg += `<polygon points="${pts}" fill="${s.col}" fill-opacity="0.22" stroke="${s.col}" stroke-width="2.2" />`;
+    });
+
+    // Subtle divider between Radar (left) and Color Scale Degrees (right)
+    svg += `<line x1="360" y1="10" x2="360" y2="274" stroke="var(--border-subtle)" stroke-width="1" />`;
+
+    // Right half: 10 Color Scale Degrees (% of pitched notes)
+    const colorIdxs = [1, 2, 3, 4, 5, 6, 8, 9, 10, 11];
+    if (!showGhost) {
+      const maxDeg = Math.max(0.08, ...colorIdxs.map((i) => sdB[i] || 0));
+      svg += `<text x="418" y="15" text-anchor="start" font-size="12" fill="var(--c4)" font-weight="600">${esc(shortB)} · Scale Degrees</text>`;
+      colorIdxs.forEach((degIdx, row) => {
+        const y = 28 + row * 25;
+        const vb = sdB[degIdx] || 0;
+        const wb = (vb / maxDeg) * 232;
+        svg += `<text x="408" y="${y + 11}" text-anchor="end" font-size="12" font-weight="700" fill="var(--fg)">${esc(DEGREE_INFO[degIdx].deg)}</text>`;
+        svg += `<rect x="418" y="${y}" width="${Math.max(2, wb).toFixed(1)}" height="14" rx="2" fill="var(--c4)" fill-opacity="0.88" />`;
+        svg += `<text x="${(424 + wb).toFixed(1)}" y="${y + 11}" text-anchor="start" font-size="12" fill="var(--fg-muted)">${(vb * 100).toFixed(1)}%</text>`;
+      });
+      return svg;
+    }
+
+    const midX = 544, maxBarW = 94;
+    const maxDeg = Math.max(0.08, ...colorIdxs.map((i) => Math.max(sdA[i] || 0, sdB[i] || 0)));
+    svg += `<line x1="${midX}" y1="22" x2="${midX}" y2="274" stroke="var(--border)" stroke-width="1" />`;
+    svg += `<text x="${midX - 10}" y="15" text-anchor="end" font-size="12" fill="var(--c1)" font-weight="600">${esc(shortA)}</text>`;
+    svg += `<text x="${midX + 10}" y="15" text-anchor="start" font-size="12" fill="var(--c4)" font-weight="600">${esc(shortB)}</text>`;
+    colorIdxs.forEach((degIdx, row) => {
+      const y = 28 + row * 25;
+      const va = sdA[degIdx] || 0, vb = sdB[degIdx] || 0;
+      const wa = (va / maxDeg) * maxBarW;
+      const wb = (vb / maxDeg) * maxBarW;
+      svg += `<rect x="${(midX - 24 - wa).toFixed(1)}" y="${y}" width="${Math.max(1, wa).toFixed(1)}" height="14" rx="2" fill="var(--c1)" fill-opacity="0.85" />`;
+      svg += `<text x="${(midX - 28 - wa).toFixed(1)}" y="${y + 11}" text-anchor="end" font-size="12" fill="var(--fg-muted)">${(va * 100).toFixed(1)}%</text>`;
+      svg += `<text x="${midX}" y="${y + 11}" text-anchor="middle" font-size="12" font-weight="700" fill="var(--fg)">${esc(DEGREE_INFO[degIdx].deg)}</text>`;
+      svg += `<rect x="${midX + 24}" y="${y}" width="${Math.max(1, wb).toFixed(1)}" height="14" rx="2" fill="var(--c4)" fill-opacity="0.85" />`;
+      svg += `<text x="${(midX + 28 + wb).toFixed(1)}" y="${y + 11}" text-anchor="start" font-size="12" fill="var(--fg-muted)">${(vb * 100).toFixed(1)}%</text>`;
+    });
+    return svg;
+  }
+
+  function buildCofSvg(cofNormA, cofNormB, showGhost) {
+    const cCx = 165, cCy = 148, cRad = 90;
+    const cofOrder = DATA.meta.cof_order;
+    let svg = `<circle cx="${cCx}" cy="${cCy}" r="${cRad}" fill="none" stroke="var(--border)" stroke-width="1" />`;
+    cofOrder.forEach((rootName, i) => {
+      const ang = (i / 12) * Math.PI * 2 - Math.PI / 2;
+      const x = cCx + cRad * Math.cos(ang), y = cCy + cRad * Math.sin(ang);
+      const lx = cCx + (cRad + 28) * Math.cos(ang), ly = cCy + (cRad + 28) * Math.sin(ang);
+      const ra = 4 + (cofNormA[i] || 0) * 52;
+      const rb = 4 + (cofNormB[i] || 0) * 52;
+      if (showGhost && (cofNormA[i] || 0) > 0.004) {
+        svg += `<circle cx="${(x - 3).toFixed(1)}" cy="${y.toFixed(1)}" r="${Math.min(22, ra).toFixed(1)}" fill="var(--c1)" fill-opacity="0.46" stroke="var(--c1)" stroke-width="1.2" />`;
+      }
+      if ((cofNormB[i] || 0) > 0.004) {
+        const cxPt = showGhost ? x + 3 : x;
+        svg += `<circle cx="${cxPt.toFixed(1)}" cy="${y.toFixed(1)}" r="${Math.min(22, rb).toFixed(1)}" fill="var(--c4)" fill-opacity="0.52" stroke="var(--c4)" stroke-width="1.3" />`;
+      }
+      svg += `<text x="${lx.toFixed(1)}" y="${(ly + 4).toFixed(1)}" text-anchor="middle" font-size="12" font-weight="600" fill="var(--fg)">${esc(rootName)}</text>`;
+    });
+    svg += `<text x="${cCx}" y="${cCy + 4}" text-anchor="middle" font-size="12" fill="var(--fg-muted)">Key Roots</text>`;
+    return svg;
+  }
+
+  let animRafId = null;
+  let glideRafId = null;
+  let animLastTs = 0;
+  let lastTimelineSnap = null;
+
+  const deck = {
+    ctx: null,
+    masterGain: null,
+    bufferCache: new Map(), // file -> Promise<AudioBuffer|null>
+    decodedCache: new Map(), // file -> AudioBuffer
+    active: null, // { src, gain, track, stopIdx, eraId, barOriginCtxTime, slotStartCtxTime, beatDurSec, barDurSec, scheduled }
+    pending: null, // { src, gain, track, stopIdx, eraId, switchCtxTime, beatDurSec, barDurSec, scheduled, isManual }
+    loadingFile: null,
+    isScrubbing: false,
+    wasPlayingBeforeScrub: false,
+    scrubHoldTimer: null,
+    scrubWheelTimer: null,
+    lastScrubStopIdx: -1,
+    generation: 0,
+    lastTrackUiKey: "",
+    lastBeatUiKey: "",
+    lastQueueUiKey: "",
+  };
+
+  function getTrackSlotIdx(eraItem) {
+    const list = (eraItem && eraItem.tracks) || [];
+    if (!list.length) return 0;
+    const raw = state.trackChoiceByEra[eraItem.id] || 0;
+    return Math.max(0, Math.min(list.length - 1, raw));
+  }
+
+  function getSelectedTrack(eraItem) {
+    const list = (eraItem && eraItem.tracks) || [];
+    if (!list.length) return null;
+    return list[getTrackSlotIdx(eraItem)];
+  }
+
+  function ensureAudioCtx() {
+    if (!deck.ctx && typeof window !== "undefined") {
+      const AC = window.AudioContext || window.webkitAudioContext;
+      if (AC) {
+        deck.ctx = new AC();
+        deck.masterGain = deck.ctx.createGain();
+        deck.masterGain.gain.value = state.audioEnabled ? state.audioVolume : 0;
+        deck.masterGain.connect(deck.ctx.destination);
+      }
+    }
+    if (deck.ctx && deck.ctx.state === "suspended" && typeof deck.ctx.resume === "function") {
+      deck.ctx.resume().catch(() => {});
+    }
+    return deck.ctx;
+  }
+
+  function syncMasterGain() {
+    if (!deck.masterGain || !deck.ctx) return;
+    const v = state.audioEnabled ? Math.max(0, Math.min(1, state.audioVolume)) : 0;
+    if (typeof deck.masterGain.gain.setTargetAtTime === "function") {
+      deck.masterGain.gain.setTargetAtTime(v, deck.ctx.currentTime, 0.02);
+    } else {
+      deck.masterGain.gain.value = v;
+    }
+  }
+
+  function loadTrackBuffer(track) {
+    if (!track || !track.file) return Promise.resolve(null);
+    if (deck.decodedCache.has(track.file)) return Promise.resolve(deck.decodedCache.get(track.file));
+    if (deck.bufferCache.has(track.file)) return deck.bufferCache.get(track.file);
+
+    const ctx = ensureAudioCtx();
+    if (!ctx || typeof fetch !== "function") return Promise.resolve(null);
+
+    deck.loadingFile = track.file;
+    const p = fetch(track.file)
+      .then((res) => {
+        if (!res.ok) throw new Error(`HTTP ${res.status}`);
+        return res.arrayBuffer();
+      })
+      .then((ab) => ctx.decodeAudioData(ab))
+      .then((buf) => {
+        if (deck.loadingFile === track.file) deck.loadingFile = null;
+        if (buf) deck.decodedCache.set(track.file, buf);
+        return buf || null;
+      })
+      .catch(() => {
+        if (deck.loadingFile === track.file) deck.loadingFile = null;
+        deck.bufferCache.delete(track.file);
+        return null;
+      });
+    deck.bufferCache.set(track.file, p);
+    return p;
+  }
+
+  function prefetchAround(sortedItems, centerIdx) {
+    if (!sortedItems || !sortedItems.length) return;
+    for (let off = 0; off <= 2; off++) {
+      const idx = (centerIdx + off) % sortedItems.length;
+      const tr = getSelectedTrack(sortedItems[idx]);
+      if (tr) loadTrackBuffer(tr);
+    }
+  }
+
+  function safeStopNode(voice, when) {
+    if (!voice || !voice.src) return;
+    try {
+      voice.src.stop(when || 0);
+    } catch (_) {}
+  }
+
+  function stopAllAudio() {
+    deck.generation++;
+    if (deck.scrubHoldTimer) { clearTimeout(deck.scrubHoldTimer); deck.scrubHoldTimer = null; }
+    if (deck.scrubWheelTimer) { clearTimeout(deck.scrubWheelTimer); deck.scrubWheelTimer = null; }
+    safeStopNode(deck.active, 0);
+    safeStopNode(deck.pending, 0);
+    deck.active = null;
+    deck.pending = null;
+    deck.loadingFile = null;
+    deck.lastTrackUiKey = "";
+    deck.lastBeatUiKey = "";
+    deck.lastQueueUiKey = "";
+  }
+
+  function getNextBarBoundary(ctxNow) {
+    if (!deck.active) return ctxNow + 0.02;
+    const barDur = Math.max(0.25, deck.active.barDurSec || 2.0);
+    const elapsedBars = Math.floor(Math.max(0, ctxNow - deck.active.barOriginCtxTime) / barDur);
+    let nextBar = deck.active.barOriginCtxTime + (elapsedBars + 1) * barDur;
+    if (nextBar - ctxNow < 0.035) {
+      nextBar += barDur;
+    }
+    return nextBar;
+  }
+
+  function commitScheduledAudioVoice(sortedItems, targetIdx, targetTrack, buf, switchCtxTime, isManualQueue) {
+    const ctx = deck.ctx;
+    if (!ctx || !buf || !state.audioEnabled) return false;
+
+    const eraItem = sortedItems[targetIdx];
+    const beatDurSec = targetTrack.beat_sec || (60 / (targetTrack.bpm || 120));
+    const barDurSec = targetTrack.bar_sec || (beatDurSec * 4);
+    const bufDur = buf.duration || targetTrack.duration_sec || 180;
+    const cue = Math.min(Math.max(0, targetTrack.cue_sec || 0), Math.max(0, bufDur - 2));
+
+    const src = ctx.createBufferSource();
+    src.buffer = buf;
+    src.loop = true;
+    const wholeBars = Math.floor((bufDur - cue + 0.04) / barDurSec);
+    if (wholeBars >= 2) {
+      src.loopStart = cue;
+      src.loopEnd = Math.min(bufDur, cue + wholeBars * barDurSec);
+    } else if (bufDur > cue + 1.5) {
+      src.loopStart = cue;
+      src.loopEnd = Math.max(cue + 1.0, bufDur - 0.02);
+    }
+
+    const gain = ctx.createGain();
+    const targetGain = targetTrack.gain_trim || 1.0;
+    const tPre = Math.max(ctx.currentTime, switchCtxTime - 0.004);
+    if (typeof gain.gain.setValueAtTime === "function" && typeof gain.gain.linearRampToValueAtTime === "function") {
+      gain.gain.setValueAtTime(0.0001, tPre);
+      gain.gain.setValueAtTime(0.0001, switchCtxTime);
+      gain.gain.linearRampToValueAtTime(targetGain, switchCtxTime + 0.03);
+    } else {
+      gain.gain.value = targetGain;
+    }
+
+    src.connect(gain);
+    gain.connect(deck.masterGain || ctx.destination);
+    src.start(switchCtxTime, cue);
+
+    if (deck.active && deck.active.gain) {
+      const aGain = deck.active.gain.gain;
+      const curA = deck.active.track ? (deck.active.track.gain_trim || 1.0) : 1.0;
+      if (typeof aGain.setValueAtTime === "function" && typeof aGain.linearRampToValueAtTime === "function") {
+        aGain.setValueAtTime(curA, Math.max(ctx.currentTime, switchCtxTime - 0.004));
+        aGain.linearRampToValueAtTime(0.0001, switchCtxTime + 0.03);
+      }
+      safeStopNode(deck.active, switchCtxTime + 0.045);
+    }
+
+    deck.pending = {
+      stopIdx: targetIdx,
+      eraId: eraItem.id,
+      eraLabel: eraItem.shortLabel || eraItem.label,
+      track: targetTrack,
+      src,
+      gain,
+      switchCtxTime,
+      beatDurSec,
+      barDurSec,
+      scheduled: true,
+      isManual: Boolean(isManualQueue),
+    };
+    return true;
+  }
+
+  function scheduleAudioSwitch(sortedItems, targetIdx, switchCtxTime, isManualQueue) {
+    const eraItem = sortedItems[targetIdx];
+    const targetTrack = getSelectedTrack(eraItem);
+    if (!eraItem || !targetTrack) return;
+
+    const ctx = ensureAudioCtx();
+    if (!ctx || !state.audioEnabled) return;
+
+    // Cancel any previously armed unpromoted pending voice cleanly
+    if (deck.pending && deck.pending.src) {
+      safeStopNode(deck.pending, 0);
+    }
+    const beatDurSec = targetTrack.beat_sec || (60 / (targetTrack.bpm || 120));
+    const barDurSec = targetTrack.bar_sec || (beatDurSec * 4);
+    const gen = deck.generation;
+
+    const cachedBuf = deck.decodedCache.get(targetTrack.file);
+    if (cachedBuf) {
+      commitScheduledAudioVoice(sortedItems, targetIdx, targetTrack, cachedBuf, switchCtxTime, isManualQueue);
+      updateTimelineFrame();
+      return;
+    }
+
+    deck.pending = {
+      stopIdx: targetIdx,
+      eraId: eraItem.id,
+      eraLabel: eraItem.shortLabel || eraItem.label,
+      track: targetTrack,
+      src: null,
+      gain: null,
+      switchCtxTime,
+      beatDurSec,
+      barDurSec,
+      scheduled: false,
+      isManual: Boolean(isManualQueue),
+    };
+    updateTimelineFrame();
+
+    loadTrackBuffer(targetTrack).then((buf) => {
+      if (!buf || deck.generation !== gen) return;
+      if (!deck.pending || deck.pending.track.file !== targetTrack.file || deck.pending.eraId !== eraItem.id) return;
+      if (!state.animPlaying && !isManualQueue) return;
+      const realSwitch = deck.active
+        ? Math.max(switchCtxTime, getNextBarBoundary(ctx.currentTime))
+        : (ctx.currentTime + 0.02);
+      commitScheduledAudioVoice(sortedItems, targetIdx, targetTrack, buf, realSwitch, isManualQueue);
+      updateTimelineFrame();
+    });
+  }
+
+  function promotePendingIfDue(ctxNow) {
+    if (!deck.pending || !deck.pending.scheduled) return false;
+    if (ctxNow < deck.pending.switchCtxTime) return false;
+
+    const p = deck.pending;
+    deck.pending = null;
+    deck.active = {
+      stopIdx: p.stopIdx,
+      eraId: p.eraId,
+      track: p.track,
+      src: p.src,
+      gain: p.gain,
+      barOriginCtxTime: p.switchCtxTime,
+      slotStartCtxTime: p.switchCtxTime,
+      beatDurSec: p.beatDurSec,
+      barDurSec: p.barDurSec,
+      scheduled: true,
+    };
+    const sorted = getSortedTimelineItems();
+    prefetchAround(sorted, p.stopIdx);
+    if (!deck.isScrubbing && p.isManual) {
+      state.animPos = p.stopIdx;
+    }
+    return true;
+  }
+
+  function queueEraOnNextBar(targetIdx, forceImmediate = false) {
+    const sorted = getSortedTimelineItems();
+    if (!sorted.length) return;
+    const clampedIdx = Math.max(0, Math.min(sorted.length - 1, targetIdx));
+    const ctx = ensureAudioCtx();
+    prefetchAround(sorted, clampedIdx);
+
+    if (!state.audioEnabled || !ctx) {
+      return;
+    }
+    const eraItem = sorted[clampedIdx];
+    const targetTrack = getSelectedTrack(eraItem);
+    if (!targetTrack) return;
+
+    if (!forceImmediate && deck.active && deck.active.stopIdx === clampedIdx && deck.active.track.file === targetTrack.file && !deck.pending) {
+      return;
+    }
+    if (!forceImmediate && deck.pending && deck.pending.stopIdx === clampedIdx && deck.pending.track.file === targetTrack.file) {
+      return;
+    }
+    const switchTime = (forceImmediate || !deck.active) ? (ctx.currentTime + 0.02) : getNextBarBoundary(ctx.currentTime);
+    scheduleAudioSwitch(sorted, clampedIdx, switchTime, true);
+  }
+
+  function stopAnimPlayback() {
+    state.animPlaying = false;
+    if (animRafId !== null && typeof cancelAnimationFrame !== "undefined") {
+      cancelAnimationFrame(animRafId);
+    }
+    if (glideRafId !== null && typeof cancelAnimationFrame !== "undefined") {
+      cancelAnimationFrame(glideRafId);
+    }
+    animRafId = null;
+    glideRafId = null;
+    animLastTs = 0;
+    stopAllAudio();
+    const playBtn = typeof document !== "undefined" && document.getElementById("anim-play");
+    if (playBtn) {
+      playBtn.textContent = "▶ Play";
+      playBtn.className = "btn anim-play-btn";
+    }
+    updateAudioDeckUi();
+  }
+
+  function advanceTimelineClock(nowMs) {
+    if (state.tab !== "timeline-player") return;
+    const sorted = getSortedTimelineItems();
+    const maxPos = Math.max(0, sorted.length - 1);
+    const ctx = deck.ctx;
+    const nowCtx = ctx ? ctx.currentTime : 0;
+
+    if (ctx) {
+      promotePendingIfDue(nowCtx);
+    }
+
+    if (state.animPlaying && !deck.isScrubbing) {
+      const hasLiveAudio = Boolean(state.audioEnabled && ctx && deck.active && deck.active.scheduled);
+      if (hasLiveAudio) {
+        const barDur = Math.max(0.25, deck.active.barDurSec);
+        if (state.barsPerEra > 0) {
+          const slotDur = state.barsPerEra * barDur;
+          const slotEnd = deck.active.slotStartCtxTime + slotDur;
+          const elapsed = Math.max(0, nowCtx - deck.active.slotStartCtxTime);
+          const prog = Math.max(0, Math.min(1, elapsed / slotDur));
+          const curIdx = deck.active.stopIdx;
+          const manualBusy = Boolean((deck.pending && deck.pending.isManual) || glideRafId !== null);
+          if (!manualBusy) {
+            state.animPos = curIdx < maxPos ? (curIdx + prog) : maxPos;
+          }
+
+          const timeLeft = slotEnd - nowCtx;
+          const nextIdx = curIdx < maxPos ? curIdx + 1 : (state.animLoop ? 0 : -1);
+          if (nextIdx >= 0 && maxPos > 0) {
+            if (timeLeft <= 2.5) prefetchAround(sorted, nextIdx);
+            if (timeLeft <= 0.35 && !deck.pending) {
+              scheduleAudioSwitch(sorted, nextIdx, Math.max(nowCtx + 0.02, slotEnd), false);
+            }
+          } else if (nowCtx >= slotEnd && !manualBusy) {
+            state.animPos = maxPos;
+            updateTimelineFrame();
+            stopAnimPlayback();
+            return;
+          }
+        } else if (!((deck.pending && deck.pending.isManual) || glideRafId !== null)) {
+          state.animPos = deck.active.stopIdx;
+        }
+      } else {
+        // Fallback timing when muted, no WebAudio, or waiting for initial MP3 decode
+        if (!animLastTs) animLastTs = nowMs;
+        const dt = Math.min(0.1, Math.max(0, (nowMs - animLastTs) / 1000));
+        animLastTs = nowMs;
+        if (state.barsPerEra > 0) {
+          const curStop = Math.round(state.animPos);
+          const tr = getSelectedTrack(sorted[curStop]);
+          const barDur = tr ? tr.bar_sec : 2.0;
+          const speedMul = state.audioEnabled ? 1 : state.animSpeed;
+          const stepRate = (1 / (state.barsPerEra * barDur)) * speedMul;
+          let nextPos = state.animPos + dt * stepRate;
+          if (nextPos >= maxPos) {
+            if (state.animLoop && maxPos > 0) {
+              nextPos = 0;
+            } else {
+              state.animPos = maxPos;
+              updateTimelineFrame();
+              stopAnimPlayback();
+              return;
+            }
+          }
+          state.animPos = nextPos;
+        }
+      }
+    } else {
+      animLastTs = nowMs;
+    }
+
+    updateTimelineFrame();
+  }
+
+  function stepAnimLoop(ts) {
+    if (!state.animPlaying || state.tab !== "timeline-player") {
+      stopAnimPlayback();
+      return;
+    }
+    advanceTimelineClock(ts);
+    if (state.animPlaying && typeof requestAnimationFrame !== "undefined") {
+      animRafId = requestAnimationFrame(stepAnimLoop);
+    }
+  }
+
+  function startAnimPlayback() {
+    if (glideRafId !== null && typeof cancelAnimationFrame !== "undefined") {
+      cancelAnimationFrame(glideRafId);
+      glideRafId = null;
+    }
+    const sorted = getSortedTimelineItems();
+    const maxPos = Math.max(0, sorted.length - 1);
+    if (state.animPos >= maxPos - 0.02) {
+      state.animPos = 0;
+    }
+    const startIdx = Math.round(state.animPos);
+    state.animPos = startIdx;
+    state.animPlaying = true;
+    animLastTs = 0;
+
+    if (state.audioEnabled) {
+      ensureAudioCtx();
+      queueEraOnNextBar(startIdx, true);
+    }
+
+    updateTimelineFrame();
+    if (typeof requestAnimationFrame !== "undefined") {
+      if (animRafId !== null && typeof cancelAnimationFrame !== "undefined") cancelAnimationFrame(animRafId);
+      animRafId = requestAnimationFrame(stepAnimLoop);
+    }
+  }
+
+  function glideToStop(targetIdx) {
+    const sorted = getSortedTimelineItems();
+    const maxPos = Math.max(0, sorted.length - 1);
+    const goal = Math.max(0, Math.min(maxPos, targetIdx));
+
+    if (state.animPlaying || deck.active) {
+      queueEraOnNextBar(goal, false);
+    } else {
+      stopAnimPlayback();
+    }
+
+    if (typeof requestAnimationFrame === "undefined" || typeof performance === "undefined") {
+      state.animPos = goal;
+      updateTimelineFrame();
+      return;
+    }
+    if (glideRafId !== null && typeof cancelAnimationFrame !== "undefined") {
+      cancelAnimationFrame(glideRafId);
+    }
+    const startPos = state.animPos;
+    const t0 = performance.now();
+    const dur = 240;
+    function tick(now) {
+      if (state.tab !== "timeline-player") return;
+      const u = Math.min(1, (now - t0) / dur);
+      const eased = 1 - Math.pow(1 - u, 3);
+      state.animPos = startPos + (goal - startPos) * eased;
+      updateTimelineFrame();
+      if (u < 1) {
+        glideRafId = requestAnimationFrame(tick);
+      } else {
+        state.animPos = goal;
+        glideRafId = null;
+        updateTimelineFrame();
+      }
+    }
+    glideRafId = requestAnimationFrame(tick);
+  }
+
+  function beginScrub() {
+    if (deck.isScrubbing) return;
+    deck.isScrubbing = true;
+    deck.wasPlayingBeforeScrub = state.animPlaying;
+    deck.lastScrubStopIdx = Math.round(state.animPos);
+  }
+
+  function updateScrub(newPos) {
+    const sorted = getSortedTimelineItems();
+    const maxPos = Math.max(0, sorted.length - 1);
+    state.animPos = Math.max(0, Math.min(maxPos, Number.isFinite(newPos) ? newPos : 0));
+    const targetIdx = Math.round(state.animPos);
+    prefetchAround(sorted, targetIdx);
+    updateTimelineFrame();
+
+    if (deck.scrubHoldTimer) {
+      clearTimeout(deck.scrubHoldTimer);
+      deck.scrubHoldTimer = null;
+    }
+    if ((state.animPlaying || deck.active) && targetIdx !== deck.lastScrubStopIdx) {
+      deck.scrubHoldTimer = setTimeout(() => {
+        if (!deck.isScrubbing) return;
+        deck.lastScrubStopIdx = targetIdx;
+        queueEraOnNextBar(targetIdx, false);
+        updateTimelineFrame();
+      }, 220);
+    }
+  }
+
+  function endScrub() {
+    if (deck.scrubHoldTimer) {
+      clearTimeout(deck.scrubHoldTimer);
+      deck.scrubHoldTimer = null;
+    }
+    if (deck.scrubWheelTimer) {
+      clearTimeout(deck.scrubWheelTimer);
+      deck.scrubWheelTimer = null;
+    }
+    if (!deck.isScrubbing) return;
+    deck.isScrubbing = false;
+    const targetIdx = Math.round(state.animPos);
+    if (state.animPlaying || deck.active || deck.wasPlayingBeforeScrub) {
+      queueEraOnNextBar(targetIdx, false);
+    }
+    updateTimelineFrame();
+  }
+
+  function updateAudioDeckUi() {
+    if (typeof document === "undefined" || state.tab !== "timeline-player") return;
+    const sorted = getSortedTimelineItems();
+    const activeEraItem = deck.active
+      ? sorted[Math.max(0, Math.min(sorted.length - 1, deck.active.stopIdx))]
+      : sorted[Math.round(state.animPos)];
+    const shownTrack = (deck.active && deck.active.track) || getSelectedTrack(activeEraItem);
+    const slotIdx = activeEraItem ? getTrackSlotIdx(activeEraItem) : 0;
+    const tracksList = (activeEraItem && activeEraItem.tracks) || [];
+
+    const nowEl = document.getElementById("audio-now-info");
+    if (nowEl && shownTrack) {
+      const trackUiKey = `${activeEraItem.id}:${slotIdx}:${tracksList.length}:${state.animPlaying}:${Boolean(deck.active)}:${shownTrack.id}`;
+      if (trackUiKey !== deck.lastTrackUiKey) {
+        deck.lastTrackUiKey = trackUiKey;
+        const slotBtns = tracksList.map((tr, si) =>
+          `<button type="button" data-track-slot="${si}" data-track-era="${esc(activeEraItem.id)}" class="btn ${si === slotIdx ? "active" : ""}" title="${esc(tr.title)} (${tr.bpm} BPM)">Track ${si + 1}</button>`
+        ).join("");
+        const playingTag = deck.active ? "♪ Playing" : state.animPlaying ? "♪ Starting" : "♪ Track";
+        nowEl.innerHTML = `
+          <span class="badge">${esc(playingTag)}</span>
+          <span class="audio-title" title="${esc(shownTrack.title)}">${esc(shownTrack.title)}</span>
+          <span class="mono muted">${Math.round(shownTrack.bpm)} BPM</span>
+          <div class="segmented">${slotBtns}</div>`;
+      }
+    }
+
+    // 16-beat (4 bars x 4 beats) LED strip
+    const ledsEl = document.getElementById("audio-beat-leds");
+    if (ledsEl && shownTrack) {
+      const barDur = (deck.active && deck.active.barDurSec) || shownTrack.bar_sec || 2.0;
+      const beatDur = (deck.active && deck.active.beatDurSec) || (barDur / 4);
+      const displayBars = state.barsPerEra > 0 ? Math.min(8, state.barsPerEra) : 4;
+      let curBarIdx = 0;
+      let curBeatIdx = 0;
+      if (deck.active && deck.ctx) {
+        const elapsed = Math.max(0, deck.ctx.currentTime - deck.active.slotStartCtxTime);
+        const totalBeats = Math.floor(elapsed / beatDur);
+        const totalBarCycles = Math.floor(totalBeats / 4);
+        curBarIdx = totalBarCycles % displayBars;
+        curBeatIdx = totalBeats % 4;
+      } else if (state.animPlaying && state.barsPerEra > 0) {
+        const frac = state.animPos - Math.floor(state.animPos);
+        const totalBeats = Math.floor(frac * displayBars * 4) % (displayBars * 4);
+        curBarIdx = Math.floor(totalBeats / 4);
+        curBeatIdx = totalBeats % 4;
+      }
+      const isLit = Boolean(deck.active || state.animPlaying);
+      const curGlobalBeat = curBarIdx * 4 + curBeatIdx;
+      const beatKey = `${displayBars}:${isLit ? curGlobalBeat : -1}`;
+      if (beatKey !== deck.lastBeatUiKey) {
+        deck.lastBeatUiKey = beatKey;
+        const barsCount = Math.min(4, displayBars);
+        let groupsHtml = "";
+        for (let b = 0; b < barsCount; b++) {
+          let dots = "";
+          const activeDisplayBar = curBarIdx % barsCount;
+          for (let bt = 0; bt < 4; bt++) {
+            const gb = b * 4 + bt;
+            const activeGb = activeDisplayBar * 4 + curBeatIdx;
+            const cls = bt === 0 ? "beat-led downbeat" : "beat-led";
+            const stCls = !isLit ? "" : gb === activeGb ? " now" : gb < activeGb ? " past" : "";
+            dots += `<span class="${cls}${stCls}"></span>`;
+          }
+          groupsHtml += `<span class="bar-group">${dots}</span>`;
+        }
+        const barReadout = isLit
+          ? (state.barsPerEra === 0 ? `Bar ${(curBarIdx % 4) + 1} · Hold` : `Bar ${curBarIdx + 1}/${displayBars} · B${curBeatIdx + 1}`)
+          : `${state.barsPerEra === 0 ? "Hold" : `${state.barsPerEra}-Bar`} Sync`;
+        ledsEl.innerHTML = `<div class="beat-strip">${groupsHtml}<span class="mono muted" style="font-size:12px">${esc(barReadout)}</span></div>`;
+      }
+    }
+
+    // Queue / buffering status
+    const qEl = document.getElementById("audio-queue-status");
+    if (qEl) {
+      let qText = "";
+      let qKind = "";
+      if (deck.pending && deck.pending.isManual) {
+        const beatsLeft = deck.ctx && deck.active
+          ? Math.max(1, Math.ceil((deck.pending.switchCtxTime - deck.ctx.currentTime) / Math.max(0.15, deck.active.beatDurSec)))
+          : null;
+        qText = `⏭ Queued on Bar: ${deck.pending.eraLabel}${beatsLeft ? ` (${beatsLeft}b)` : ""}`;
+        qKind = "queue";
+      } else if (deck.loadingFile && state.audioEnabled) {
+        qText = "Buffering MP3…";
+        qKind = "load";
+      }
+      const qKey = `${qKind}:${qText}`;
+      if (qKey !== deck.lastQueueUiKey) {
+        deck.lastQueueUiKey = qKey;
+        qEl.innerHTML = qKind === "queue"
+          ? `<span class="queue-pill">${esc(qText)}</span>`
+          : qKind === "load"
+            ? `<span class="badge badge-muted">${esc(qText)}</span>`
+            : "";
+      }
+    }
+  }
+
+  function updateTimelineFrame() {
+    if (typeof document === "undefined" || state.tab !== "timeline-player") return;
+    const sorted = getSortedTimelineItems();
+    const maxPos = Math.max(0, sorted.length - 1);
+    state.animPos = Math.max(0, Math.min(maxPos, Number.isFinite(state.animPos) ? state.animPos : 0));
+
+    const snap = interpolateEraAt(sorted, state.animPos);
+    lastTimelineSnap = snap;
+    const hasGhost = state.animGhost !== "off";
+    const ghostPos = state.animGhost === "anchor" ? 0 : Math.max(0, state.animPos - 1);
+    const ghostSnap = hasGhost ? interpolateEraAt(sorted, ghostPos) : null;
+
+    const comboEl = document.getElementById("anim-svg-combo");
+    const cofEl = document.getElementById("anim-svg-cof");
+    if (comboEl) {
+      comboEl.innerHTML = buildRadarAndDegreesSvg(
+        hasGhost ? ghostSnap.radarNorm : snap.radarNorm,
+        snap.radarNorm,
+        hasGhost ? ghostSnap.sd12 : snap.sd12,
+        snap.sd12,
+        hasGhost ? ghostSnap.nearest.shortLabel : "",
+        snap.nearest.shortLabel,
+        hasGhost
+      );
+    }
+    if (cofEl) cofEl.innerHTML = buildCofSvg(hasGhost ? ghostSnap.cofNorm : snap.cofNorm, snap.cofNorm, hasGhost);
+
+    const bannerEl = document.getElementById("anim-status-banner");
+    if (bannerEl) {
+      const morphText = snap.tRaw < 0.03 || snap.a.id === snap.b.id
+        ? `<strong>${esc(snap.a.label)}</strong> <span class="muted">(${esc(snap.a.sublabel)})</span>`
+        : `<strong>${esc(snap.a.label)} → ${esc(snap.b.label)}</strong> <span class="badge">${Math.round(snap.tRaw * 100)}% blend</span>`;
+      const ghostInfo = hasGhost
+        ? `<span class="legend-item"><span class="swatch" style="background:var(--c1)"></span><span>${state.animGhost === "anchor" ? "Baseline" : "Trailing"} (${esc(ghostSnap.nearest.shortLabel)})</span></span><span class="legend-item"><span class="swatch" style="background:var(--c4)"></span><span>Active (${esc(snap.nearest.shortLabel)})</span></span>`
+        : `<span class="legend-item"><span class="swatch" style="background:var(--c4)"></span><span>Active Solo (${esc(snap.nearest.label)})</span></span>`;
+      bannerEl.innerHTML = `
+        <div style="display:flex;flex-wrap:wrap;align-items:center;gap:8px">${morphText}</div>
+        <div style="display:flex;flex-wrap:wrap;align-items:center;gap:12px;font-size:12px">${ghostInfo}<span class="muted">Drag or hold on any era to queue on the bar</span></div>`;
+    }
+
+    const sliderEl = document.getElementById("anim-slider");
+    if (sliderEl) sliderEl.value = state.animPos.toFixed(2);
+
+    const playBtn = document.getElementById("anim-play");
+    if (playBtn) {
+      playBtn.textContent = state.animPlaying ? "⏸ Pause" : "▶ Play";
+      playBtn.className = `btn anim-play-btn${state.animPlaying ? " playing" : ""}`;
+    }
+
+    const activeStopIdx = Math.round(state.animPos);
+    const stopsEl = document.getElementById("anim-stops");
+    if (stopsEl && stopsEl.querySelectorAll) {
+      stopsEl.querySelectorAll("[data-anim-stop]").forEach((btn) => {
+        const si = Number(btn.getAttribute("data-anim-stop"));
+        btn.className = `anim-stop${si === activeStopIdx ? " active" : ""}`;
+      });
+    }
+
+    updateAudioDeckUi();
+
+    const baseItems = currentItems();
+    const baseIdx = Math.max(0, baseItems.findIndex((x) => x.id === snap.nearest.id));
+    renderInspector(baseItems, baseIdx);
+  }
+
+  function renderTimelinePlayer() {
+    deck.lastTrackUiKey = "";
+    deck.lastBeatUiKey = "";
+    deck.lastQueueUiKey = "";
+
+    const sorted = getSortedTimelineItems();
+    const insight = "Press Play for 4-bar quantized era tracks synced to your harmonic timeline — or drag & hold on any era to switch right on the bar downbeat.";
+    const barBtns = [
+      { v: 2, lbl: "2 Bars" },
+      { v: 4, lbl: "4 Bars" },
+      { v: 8, lbl: "8 Bars" },
+      { v: 0, lbl: "Hold" },
+    ].map((b) =>
+      `<button type="button" data-sub="barsPerEra:${b.v}" class="btn ${Number(state.barsPerEra) === b.v ? "active" : ""}">${b.lbl}</button>`
+    ).join("");
+    const sortOpts = [
+      { id: "chrono", label: "Chronological (2013→2026)" },
+      { id: "richness", label: "Chord Richness (4+ %)" },
+      { id: "dark", label: "Dark Modal %" },
+      { id: "microtonal", label: "Microtonal Offset (¢)" },
+      { id: "tempo", label: "Tempo (BPM)" },
+    ].map((o) => `<option value="${o.id}" ${state.animSort === o.id ? "selected" : ""}>${esc(o.label)}</option>`).join("");
+    const ghostOpts = [
+      { id: "prev", label: "Trailing Era (t − 1)" },
+      { id: "anchor", label: "First Era Baseline" },
+      { id: "off", label: "Solo (No Ghost)" },
+    ].map((o) => `<option value="${o.id}" ${state.animGhost === o.id ? "selected" : ""}>${esc(o.label)}</option>`).join("");
+
+    const stopsHtml = sorted.map((it, i) =>
+      `<button type="button" data-anim-stop="${i}" class="anim-stop${i === Math.round(state.animPos) ? " active" : ""}" title="${esc(it.label)} (${esc(it.sublabel)})">${esc(state.granularity === "phases" ? it.label : it.shortLabel)}</button>`
+    ).join("");
+
+    return `
+      <div class="view-head">
+        <p class="view-insight">${esc(insight)}</p>
+      </div>
+      <div class="anim-transport">
+        <div class="anim-controls-left">
+          <div class="segmented">
+            <button id="anim-prev" type="button" class="btn" title="Previous stop">⏮</button>
+            <button id="anim-play" type="button" class="btn anim-play-btn${state.animPlaying ? " playing" : ""}">${state.animPlaying ? "⏸ Pause" : "▶ Play"}</button>
+            <button id="anim-next" type="button" class="btn" title="Next stop">⏭</button>
+          </div>
+          <div class="segmented" aria-label="Bars per era">${barBtns}</div>
+          <button id="anim-loop" type="button" data-sub="animLoop:${!state.animLoop}" class="btn btn-outline ${state.animLoop ? "active" : ""}">↻ Loop</button>
+        </div>
+        <div class="anim-controls-right">
+          <label class="muted" style="font-size:12px">Order:
+            <select id="anim-sort" class="era-select">${sortOpts}</select>
+          </label>
+          <label class="muted" style="font-size:12px">Ghost:
+            <select id="anim-ghost" class="era-select">${ghostOpts}</select>
+          </label>
+        </div>
+      </div>
+      <div id="anim-audio-deck" class="anim-audio-deck">
+        <div id="audio-now-info" class="audio-now"></div>
+        <div class="audio-center">
+          <div id="audio-beat-leds"></div>
+          <div id="audio-queue-status"></div>
+        </div>
+        <div class="audio-right">
+          <button id="btn-audio-mute" type="button" class="btn btn-outline ${state.audioEnabled ? "active" : ""}">${state.audioEnabled ? "🔊 Audio On" : "🔇 Muted"}</button>
+          <input id="vol-slider" class="vol-slider" type="range" min="0" max="1" step="0.02" value="${state.audioVolume}" aria-label="Master volume" />
+        </div>
+      </div>
+      <div id="anim-status-banner" class="anim-status-banner"></div>
+      <div class="anim-scrubber">
+        <input id="anim-slider" class="anim-slider" type="range" min="0" max="${Math.max(0, sorted.length - 1)}" step="0.01" value="${state.animPos.toFixed(2)}" aria-label="Scrub timeline position" />
+        <div id="anim-stops" class="anim-stops">${stopsHtml}</div>
+      </div>
+      <div id="anim-swipe-stage" class="anim-swipe-stage">
+        <div class="grid-harmony-compare">
+          <div class="subpanel">
+            <div class="subpanel-title"><span>8-Axis Harmonic Radar &amp; 10 Color Scale Degrees (% of Notes)</span></div>
+            <div class="svg-stage"><svg id="anim-svg-combo" viewBox="0 0 720 286" width="720" height="286"></svg></div>
+          </div>
+          <div class="subpanel">
+            <div class="subpanel-title"><span>Circle of Fifths Key Center Gravity</span></div>
+            <div class="svg-stage"><svg id="anim-svg-cof" viewBox="0 0 330 286" width="330" height="286"></svg></div>
+          </div>
+        </div>
+      </div>`;
+  }
+
   function renderEraCompare(items) {
     const insight = "Overlay any two eras side by side across harmonic radar dimensions, 12-degree modal color balance, and Circle-of-Fifths key root gravity.";
     const idxA = Math.max(0, Math.min(items.length - 1, state.compareAIdx));
     const idxB = Math.max(0, Math.min(items.length - 1, state.compareBIdx));
     const a = items[idxA];
     const b = items[idxB];
+    const profA = extractCompareProfile(a);
+    const profB = extractCompareProfile(b);
 
     const optsA = items.map((it, i) => `<option value="${i}" ${i === idxA ? "selected" : ""}>${esc(it.label)} (${esc(it.sublabel)})</option>`).join("");
     const optsB = items.map((it, i) => `<option value="${i}" ${i === idxB ? "selected" : ""}>${esc(it.label)} (${esc(it.sublabel)})</option>`).join("");
     const presets = COMPARE_PRESETS.map((p) => `<button type="button" data-compare-preset="${p.id}" class="btn btn-outline">${esc(p.label)}</button>`).join("");
 
-    // 1. 8-Axis Polar Harmonic Radar
-    const sumGrp = (it, keys) => {
-      const fh = it.fine_harmony;
-      if (!fh || !fh.n_chords) return 0;
-      return keys.reduce((acc, k) => acc + (fh.pcts[k] || 0), 0);
-    };
-    const axes = [
-      { label: "4+ Chords", val: (it) => Math.min(100, (sumGrp(it, ["extended_9_11", "min7", "maj7", "dom7"]) / 30) * 100), raw: (it) => `${sumGrp(it, ["extended_9_11", "min7", "maj7", "dom7"]).toFixed(1)}%` },
-      { label: "Triads/Sus", val: (it) => Math.min(100, (sumGrp(it, ["maj_triad", "min_triad", "sus2_4"]) / 45) * 100), raw: (it) => `${sumGrp(it, ["maj_triad", "min_triad", "sus2_4"]).toFixed(1)}%` },
-      { label: "Open 4th/5th", val: (it) => Math.min(100, (sumGrp(it, ["dyad_4th", "dyad_5th"]) / 65) * 100), raw: (it) => `${sumGrp(it, ["dyad_4th", "dyad_5th"]).toFixed(1)}%` },
-      { label: "Dark Modes", val: (it) => Math.min(100, ((it.dark_modal_pct || 0) / 70) * 100), raw: (it) => `${num(it.dark_modal_pct, "%")}` },
-      { label: "Harm Minor", val: (it) => Math.min(100, ((it.harm_min_pct || 0) / 35) * 100), raw: (it) => `${num(it.harm_min_pct, "%")}` },
-      { label: "Stepwise", val: (it) => Math.min(100, (((it.lead_step_pct ?? it.audio_step_pct) || 0) / 40) * 100), raw: (it) => `${num(it.lead_step_pct ?? it.audio_step_pct, "%")}` },
-      { label: "Root 4th/5th", val: (it) => Math.min(100, ((it.root_motion.fourth_fifth_5_7 || 0) / 45) * 100), raw: (it) => `${num(it.root_motion.fourth_fifth_5_7, "%")}` },
-      { label: "Micro Offset", val: (it) => Math.min(100, ((it.microtonal.tuning_offset_p50 || 0) / 25) * 100), raw: (it) => `${num(it.microtonal.tuning_offset_p50, "¢")}` },
-    ];
-    const rW = 340, rH = 290, rCx = 170, rCy = 148, rMax = 88;
-    let radarSvg = "";
-    [0.33, 0.66, 1].forEach((r) => {
-      const pts = axes.map((_, i) => {
-        const ang = (i / axes.length) * Math.PI * 2 - Math.PI / 2;
-        return `${(rCx + r * rMax * Math.cos(ang)).toFixed(1)},${(rCy + r * rMax * Math.sin(ang)).toFixed(1)}`;
-      }).join(" ");
-      radarSvg += `<polygon points="${pts}" fill="none" stroke="var(--border-subtle)" stroke-width="1" />`;
-    });
-    axes.forEach((ax, i) => {
-      const ang = (i / axes.length) * Math.PI * 2 - Math.PI / 2;
-      const x2 = rCx + rMax * Math.cos(ang), y2 = rCy + rMax * Math.sin(ang);
-      const lx = rCx + (rMax + 24) * Math.cos(ang), ly = rCy + (rMax + 18) * Math.sin(ang);
-      radarSvg += `<line x1="${rCx}" y1="${rCy}" x2="${x2.toFixed(1)}" y2="${y2.toFixed(1)}" stroke="var(--border-subtle)" stroke-width="1" />`;
-      const anchor = Math.abs(Math.cos(ang)) < 0.25 ? "middle" : Math.cos(ang) > 0 ? "start" : "end";
-      radarSvg += `<text x="${lx.toFixed(1)}" y="${(ly + 4).toFixed(1)}" text-anchor="${anchor}" font-size="12" fill="var(--fg-muted)">${esc(ax.label)}</text>`;
-    });
-    [{ it: a, col: "var(--c1)" }, { it: b, col: "var(--c4)" }].forEach((s) => {
-      const pts = axes.map((ax, i) => {
-        const ang = (i / axes.length) * Math.PI * 2 - Math.PI / 2;
-        const rad = (Math.max(4, ax.val(s.it)) / 100) * rMax;
-        return `${(rCx + rad * Math.cos(ang)).toFixed(1)},${(rCy + rad * Math.sin(ang)).toFixed(1)}`;
-      }).join(" ");
-      radarSvg += `<polygon points="${pts}" fill="${s.col}" fill-opacity="0.20" stroke="${s.col}" stroke-width="2.2" />`;
-    });
-
-    // 2. 12-Degree Butterfly Chart
-    const bW = 360, bH = 290, midX = 180, halfBarW = 128;
-    const sdA = a.scale_degrees.combined_12 || Array(12).fill(0);
-    const sdB = b.scale_degrees.combined_12 || Array(12).fill(0);
-    const colorIdxs = [1, 2, 3, 4, 5, 6, 8, 9, 10, 11]; // focus on non-1/5 harmonic degrees
-    const maxDeg = Math.max(0.08, ...colorIdxs.map((i) => Math.max(sdA[i] || 0, sdB[i] || 0)));
-    let buttSvg = `<line x1="${midX}" y1="18" x2="${midX}" y2="${bH - 12}" stroke="var(--border)" stroke-width="1" />`;
-    buttSvg += `<text x="${midX - 10}" y="14" text-anchor="end" font-size="12" fill="var(--c1)" font-weight="600">${esc(a.shortLabel)}</text>`;
-    buttSvg += `<text x="${midX + 10}" y="14" text-anchor="start" font-size="12" fill="var(--c4)" font-weight="600">${esc(b.shortLabel)}</text>`;
-    colorIdxs.forEach((degIdx, row) => {
-      const y = 28 + row * 25;
-      const va = sdA[degIdx] || 0, vb = sdB[degIdx] || 0;
-      const wa = (va / maxDeg) * (halfBarW - 28);
-      const wb = (vb / maxDeg) * (halfBarW - 28);
-      buttSvg += `<rect x="${(midX - 24 - wa).toFixed(1)}" y="${y}" width="${Math.max(1, wa).toFixed(1)}" height="14" rx="2" fill="var(--c1)" fill-opacity="0.85" />`;
-      buttSvg += `<text x="${(midX - 28 - wa).toFixed(1)}" y="${y + 11}" text-anchor="end" font-size="12" fill="var(--fg-muted)">${(va * 100).toFixed(1)}%</text>`;
-      buttSvg += `<text x="${midX}" y="${y + 11}" text-anchor="middle" font-size="12" font-weight="700" fill="var(--fg)">${esc(DEGREE_INFO[degIdx].deg)}</text>`;
-      buttSvg += `<rect x="${midX + 24}" y="${y}" width="${Math.max(1, wb).toFixed(1)}" height="14" rx="2" fill="var(--c4)" fill-opacity="0.85" />`;
-      buttSvg += `<text x="${(midX + 28 + wb).toFixed(1)}" y="${y + 11}" text-anchor="start" font-size="12" fill="var(--fg-muted)">${(vb * 100).toFixed(1)}%</text>`;
-    });
-
-    // 3. Circle-of-Fifths Key Root Gravity Map
-    const cW = 320, cH = 290, cCx = 160, cCy = 152, cRad = 96;
-    const cofOrder = DATA.meta.cof_order;
-    const cntA = a.key_roots.counts, cntB = b.key_roots.counts;
-    const sumA = Math.max(1, cntA.reduce((x, y) => x + y, 0));
-    const sumB = Math.max(1, cntB.reduce((x, y) => x + y, 0));
-    let cofSvg = `<circle cx="${cCx}" cy="${cCy}" r="${cRad}" fill="none" stroke="var(--border)" stroke-width="1" />`;
-    cofOrder.forEach((rootName, i) => {
-      const ang = (i / 12) * Math.PI * 2 - Math.PI / 2;
-      const x = cCx + cRad * Math.cos(ang), y = cCy + cRad * Math.sin(ang);
-      const lx = cCx + (cRad + 24) * Math.cos(ang), ly = cCy + (cRad + 24) * Math.sin(ang);
-      const ra = 4 + (cntA[i] / sumA) * 52;
-      const rb = 4 + (cntB[i] / sumB) * 52;
-      if (cntA[i] > 0) cofSvg += `<circle cx="${(x - 3).toFixed(1)}" cy="${y.toFixed(1)}" r="${Math.min(22, ra).toFixed(1)}" fill="var(--c1)" fill-opacity="0.48" stroke="var(--c1)" stroke-width="1.2"><title>${esc(a.label)} ${rootName}: ${cntA[i]}</title></circle>`;
-      if (cntB[i] > 0) cofSvg += `<circle cx="${(x + 3).toFixed(1)}" cy="${y.toFixed(1)}" r="${Math.min(22, rb).toFixed(1)}" fill="var(--c4)" fill-opacity="0.48" stroke="var(--c4)" stroke-width="1.2"><title>${esc(b.label)} ${rootName}: ${cntB[i]}</title></circle>`;
-      cofSvg += `<text x="${lx.toFixed(1)}" y="${(ly + 4).toFixed(1)}" text-anchor="middle" font-size="12" font-weight="600" fill="var(--fg)">${esc(rootName)}</text>`;
-    });
-    cofSvg += `<text x="${cCx}" y="${cCy + 4}" text-anchor="middle" font-size="12" fill="var(--fg-muted)">Key Roots</text>`;
+    const comboSvg = buildRadarAndDegreesSvg(profA.radarNorm, profB.radarNorm, profA.sd12, profB.sd12, a.shortLabel, b.shortLabel, true);
+    const cofSvg = buildCofSvg(profA.cofNorm, profB.cofNorm, true);
 
     return `
       <div class="view-head">
@@ -955,18 +1836,14 @@
         </div>
         <div class="sub-controls">${presets}</div>
       </div>
-      <div class="grid-3">
+      <div class="grid-harmony-compare">
         <div class="subpanel">
-          <div class="subpanel-title"><span>8-Axis Harmonic Radar</span></div>
-          <div class="svg-stage"><svg viewBox="0 0 ${rW} ${rH}" width="${rW}" height="${rH}">${radarSvg}</svg></div>
-        </div>
-        <div class="subpanel">
-          <div class="subpanel-title"><span>10 Color Scale Degrees (% of Pitched Notes)</span></div>
-          <div class="svg-stage"><svg viewBox="0 0 ${bW} ${bH}" width="${bW}" height="${bH}">${buttSvg}</svg></div>
+          <div class="subpanel-title"><span>8-Axis Harmonic Radar &amp; 10 Color Scale Degrees (% of Pitched Notes)</span></div>
+          <div class="svg-stage"><svg viewBox="0 0 720 286" width="720" height="286">${comboSvg}</svg></div>
         </div>
         <div class="subpanel">
           <div class="subpanel-title"><span>Circle of Fifths Key Center Gravity</span></div>
-          <div class="svg-stage"><svg viewBox="0 0 ${cW} ${cH}" width="${cW}" height="${cH}">${cofSvg}</svg></div>
+          <div class="svg-stage"><svg viewBox="0 0 330 286" width="330" height="286">${cofSvg}</svg></div>
         </div>
       </div>`;
   }
@@ -1188,13 +2065,25 @@
   function renderInspector(items, selIdx) {
     const d = items[selIdx];
     const isHover = state.hoverIdx !== null && state.hoverIdx !== getPinnedIdx();
-    const badge = isHover ? "Preview (click to pin)" : "Pinned";
+    const badge = state.tab === "timeline-player"
+      ? (state.animPlaying ? "Playing ▶" : "Timeline Scrub")
+      : (isHover ? "Preview (click to pin)" : "Pinned");
     const subTag = d.daw ? `${d.sublabel} · ${d.daw}` : `${d.sublabel}${d.phaseTag ? ` · ${d.phaseTag}` : ""}`;
 
     let cards = [];
     let foot = d.note || "";
 
-    if (state.tab === "chord-quality") {
+    if (state.tab === "timeline-player" && lastTimelineSnap) {
+      const sp = lastTimelineSnap;
+      const sortLabel = { chrono: "Chronological", richness: "Chord Richness", dark: "Dark Modal", microtonal: "Microtonal ¢", tempo: "Tempo BPM" }[state.animSort] || "Chronological";
+      cards = [
+        { k: "4+ Chord Share (Morph)", v: `${sp.ext4Share.toFixed(1)}%` },
+        { k: "Dark Modal % (Morph)", v: `${sp.darkPct.toFixed(1)}%` },
+        { k: "4th/5th Root Move", v: `${sp.root45Pct.toFixed(1)}%` },
+        { k: "BPM / Audio Offset", v: `${Math.round(sp.bpmMed)} BPM · ${sp.offsetCents.toFixed(1)}¢` },
+      ];
+      foot = foot || `Sort: ${sortLabel} · Top MIDI modes: ${(d.top_modes_midi || []).join(", ") || "n/a"} · Audio modes: ${(d.top_modes_audio || []).join(", ") || "n/a"}.`;
+    } else if (state.tab === "chord-quality") {
       const fh = d.fine_harmony;
       const sortedF = FINE_CHORD_META.map((m) => ({ label: m.label, pct: fh.pcts[m.key] })).filter((x) => x.pct !== null).sort((x, y) => y.pct - x.pct);
       const top2 = sortedF.slice(0, 2).map((x) => `${x.label} ${x.pct}%`).join(", ") || "n/a";
@@ -1340,6 +2229,7 @@
 
     let html = "";
     switch (state.tab) {
+      case "timeline-player": html = renderTimelinePlayer(); break;
       case "chord-quality": html = renderChordQuality(items, d, selIdx); break;
       case "root-motion": html = renderRootMotion(items, d, selIdx); break;
       case "modal-heatmap": html = renderModalHeatmap(items, d, selIdx); break;
@@ -1351,14 +2241,21 @@
       case "melody": html = renderMelody(items, d, selIdx); break;
       case "audio": html = renderAudioExp(items, d, selIdx); break;
       case "palette": html = renderPalette(items, d, selIdx); break;
-      default: html = renderChordQuality(items, d, selIdx);
+      default: html = renderTimelinePlayer();
     }
     document.getElementById("stage-card").innerHTML = html;
-    renderInspector(items, selIdx);
+    if (state.tab === "timeline-player") {
+      updateTimelineFrame();
+    } else {
+      renderInspector(items, selIdx);
+    }
   }
 
   function setTab(tabId) {
     if (!TABS.some((t) => t.id === tabId)) return;
+    if (state.tab === "timeline-player" && tabId !== "timeline-player") {
+      stopAnimPlayback();
+    }
     state.tab = tabId;
     if (tabId === "ji-gamelan" && !state.jiAutoDone && !state.userPinned) {
       state.jiAutoDone = true;
@@ -1378,17 +2275,21 @@
   function wireEvents() {
     document.getElementById("btn-eras").addEventListener("click", () => {
       if (state.granularity === "eras") return;
+      stopAnimPlayback();
       state.granularity = "eras";
       state.compareAIdx = 1;
       state.compareBIdx = 11;
+      state.animPos = 0;
       state.hoverIdx = null;
       render();
     });
     document.getElementById("btn-phases").addEventListener("click", () => {
       if (state.granularity === "phases") return;
+      stopAnimPlayback();
       state.granularity = "phases";
       state.compareAIdx = 0;
       state.compareBIdx = 3;
+      state.animPos = 0;
       state.hoverIdx = null;
       render();
     });
@@ -1405,10 +2306,67 @@
 
     const stage = document.getElementById("stage-card");
     stage.addEventListener("click", (ev) => {
+      if (ev.target.closest("#anim-play")) {
+        if (state.animPlaying) stopAnimPlayback();
+        else startAnimPlayback();
+        return;
+      }
+      if (ev.target.closest("#anim-prev")) {
+        const prevIdx = Math.max(0, Math.floor(state.animPos - 0.15));
+        glideToStop(prevIdx);
+        return;
+      }
+      if (ev.target.closest("#anim-next")) {
+        const maxPos = Math.max(0, getSortedTimelineItems().length - 1);
+        const nextIdx = Math.min(maxPos, Math.floor(state.animPos) + 1);
+        glideToStop(nextIdx);
+        return;
+      }
+      if (ev.target.closest("#btn-audio-mute")) {
+        state.audioEnabled = !state.audioEnabled;
+        ensureAudioCtx();
+        syncMasterGain();
+        const muteBtn = document.getElementById("btn-audio-mute");
+        if (muteBtn) {
+          muteBtn.textContent = state.audioEnabled ? "🔊 Audio On" : "🔇 Muted";
+          muteBtn.className = `btn btn-outline ${state.audioEnabled ? "active" : ""}`;
+        }
+        if (state.audioEnabled && state.animPlaying && !deck.active) {
+          queueEraOnNextBar(Math.round(state.animPos), true);
+        }
+        deck.lastTrackUiKey = "";
+        updateAudioDeckUi();
+        return;
+      }
+      const trackSlotBtn = ev.target.closest("[data-track-slot]");
+      if (trackSlotBtn) {
+        const slotIdx = Number(trackSlotBtn.getAttribute("data-track-slot"));
+        const eraId = trackSlotBtn.getAttribute("data-track-era");
+        if (eraId && Number.isFinite(slotIdx)) {
+          state.trackChoiceByEra[eraId] = slotIdx;
+          const sorted = getSortedTimelineItems();
+          const curIdx = sorted.findIndex((x) => x.id === eraId);
+          if (curIdx >= 0) prefetchAround(sorted, curIdx);
+          if (state.animPlaying || deck.active) {
+            if (curIdx >= 0) queueEraOnNextBar(curIdx, false);
+          }
+          deck.lastTrackUiKey = "";
+          updateAudioDeckUi();
+        }
+        return;
+      }
+      const stopBtn = ev.target.closest("[data-anim-stop]");
+      if (stopBtn) {
+        const idx = Number(stopBtn.getAttribute("data-anim-stop"));
+        if (Number.isFinite(idx)) glideToStop(idx);
+        return;
+      }
       const sub = ev.target.closest("[data-sub]");
       if (sub) {
         const [k, v] = sub.getAttribute("data-sub").split(":");
-        state[k] = v === "true" ? true : v === "false" ? false : v;
+        if (k === "animSpeed") state[k] = Number(v) || 1;
+        else if (k === "barsPerEra") state[k] = Number(v);
+        else state[k] = v === "true" ? true : v === "false" ? false : v;
         render();
         return;
       }
@@ -1458,15 +2416,83 @@
       }
     });
 
+    stage.addEventListener("input", (ev) => {
+      if (!ev.target) return;
+      if (ev.target.id === "anim-slider") {
+        if (!deck.isScrubbing) beginScrub();
+        updateScrub(Number(ev.target.value) || 0);
+      } else if (ev.target.id === "vol-slider") {
+        state.audioVolume = Math.max(0, Math.min(1, Number(ev.target.value) || 0));
+        if (state.audioVolume > 0 && !state.audioEnabled) state.audioEnabled = true;
+        syncMasterGain();
+        const muteBtn = document.getElementById("btn-audio-mute");
+        if (muteBtn) {
+          muteBtn.textContent = state.audioEnabled ? "🔊 Audio On" : "🔇 Muted";
+          muteBtn.className = `btn btn-outline ${state.audioEnabled ? "active" : ""}`;
+        }
+      }
+    });
+
     stage.addEventListener("change", (ev) => {
-      if (ev.target && ev.target.id === "sel-comp-a") {
+      if (!ev.target) return;
+      if (ev.target.id === "anim-slider") {
+        endScrub();
+      } else if (ev.target.id === "sel-comp-a") {
         state.compareAIdx = Number(ev.target.value) || 0;
         render();
-      } else if (ev.target && ev.target.id === "sel-comp-b") {
+      } else if (ev.target.id === "sel-comp-b") {
         state.compareBIdx = Number(ev.target.value) || 0;
+        render();
+      } else if (ev.target.id === "anim-sort") {
+        const wasPlaying = state.animPlaying;
+        stopAnimPlayback();
+        state.animSort = ev.target.value || "chrono";
+        state.animPos = 0;
+        render();
+        if (wasPlaying) startAnimPlayback();
+      } else if (ev.target.id === "anim-ghost") {
+        state.animGhost = ev.target.value || "prev";
         render();
       }
     });
+
+    // Swipe / drag scrub directly on charts + slider pointer + trackpad horizontal wheel
+    let dragActive = false;
+    let dragStartX = 0;
+    let dragStartPos = 0;
+    stage.addEventListener("pointerdown", (ev) => {
+      if (state.tab !== "timeline-player") return;
+      if (ev.target && ev.target.id === "anim-slider") {
+        ensureAudioCtx();
+        beginScrub();
+        return;
+      }
+      const swipeEl = ev.target && ev.target.closest && ev.target.closest("#anim-swipe-stage");
+      if (!swipeEl) return;
+      if (ev.target.closest && ev.target.closest("button, select, input")) return;
+      ensureAudioCtx();
+      beginScrub();
+      dragActive = true;
+      dragStartX = ev.clientX || 0;
+      dragStartPos = state.animPos;
+      if (swipeEl.classList) swipeEl.classList.add("dragging");
+    });
+
+    stage.addEventListener("wheel", (ev) => {
+      if (state.tab !== "timeline-player") return;
+      const swipeEl = ev.target && ev.target.closest && ev.target.closest("#anim-swipe-stage");
+      if (!swipeEl) return;
+      const dx = ev.deltaX || 0;
+      const dy = ev.deltaY || 0;
+      if (Math.abs(dx) > Math.abs(dy) && Math.abs(dx) > 2) {
+        if (ev.preventDefault) ev.preventDefault();
+        ensureAudioCtx();
+        if (!deck.isScrubbing) beginScrub();
+        updateScrub(state.animPos + dx * 0.0045);
+        if (deck.scrubWheelTimer) clearTimeout(deck.scrubWheelTimer);
+        deck.scrubWheelTimer = setTimeout(() => endScrub(), 220);
+      }
+    }, { passive: false });
 
     stage.addEventListener("mousemove", (ev) => {
       const hit = ev.target.closest("[data-era-idx]");
@@ -1485,7 +2511,46 @@
       }
     });
 
-    if (typeof window !== "undefined") {
+    if (typeof window !== "undefined" && window.addEventListener) {
+      window.addEventListener("pointermove", (ev) => {
+        if (!dragActive || state.tab !== "timeline-player") return;
+        const swipeEl = document.getElementById("anim-swipe-stage");
+        const w = Math.max(320, (swipeEl && swipeEl.clientWidth) || 720);
+        const maxPos = Math.max(0, getSortedTimelineItems().length - 1);
+        const dx = (ev.clientX || 0) - dragStartX;
+        updateScrub(dragStartPos - (dx / (w * 0.55)) * maxPos);
+      });
+      const endDrag = () => {
+        if (dragActive) {
+          dragActive = false;
+          const swipeEl = document.getElementById("anim-swipe-stage");
+          if (swipeEl && swipeEl.classList) swipeEl.classList.remove("dragging");
+        }
+        if (deck.isScrubbing) {
+          endScrub();
+        }
+      };
+      window.addEventListener("pointerup", endDrag);
+      window.addEventListener("pointercancel", endDrag);
+
+      window.addEventListener("keydown", (ev) => {
+        if (state.tab !== "timeline-player") return;
+        const activeTag = document.activeElement && document.activeElement.tagName;
+        if (activeTag === "SELECT") return;
+        if (ev.code === "Space") {
+          if (ev.preventDefault) ev.preventDefault();
+          if (state.animPlaying) stopAnimPlayback();
+          else startAnimPlayback();
+        } else if (ev.code === "ArrowLeft" && activeTag !== "INPUT") {
+          if (ev.preventDefault) ev.preventDefault();
+          glideToStop(Math.max(0, Math.round(state.animPos) - 1));
+        } else if (ev.code === "ArrowRight" && activeTag !== "INPUT") {
+          if (ev.preventDefault) ev.preventDefault();
+          const maxPos = Math.max(0, getSortedTimelineItems().length - 1);
+          glideToStop(Math.min(maxPos, Math.round(state.animPos) + 1));
+        }
+      });
+
       window.addEventListener("hashchange", () => {
         const h = (window.location.hash || "").replace(/^#/, "");
         if (TABS.some((t) => t.id === h) && h !== state.tab) setTab(h);
@@ -1507,6 +2572,26 @@
   render();
 
   if (typeof globalThis !== "undefined") {
-    globalThis.__APP_TEST__ = { state, setTab, render, TABS, COMPARE_PRESETS, currentItems };
+    globalThis.__APP_TEST__ = {
+      state,
+      deck,
+      setTab,
+      render,
+      TABS,
+      COMPARE_PRESETS,
+      currentItems,
+      getSortedTimelineItems,
+      getSelectedTrack,
+      updateTimelineFrame,
+      updateAudioDeckUi,
+      startAnimPlayback,
+      stopAnimPlayback,
+      glideToStop,
+      advanceTimelineClock,
+      beginScrub,
+      updateScrub,
+      endScrub,
+      queueEraOnNextBar,
+    };
   }
 })();

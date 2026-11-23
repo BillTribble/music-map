@@ -571,6 +571,10 @@ def main() -> None:
     audio = json.loads((ASSETS_DIR / "audio_style_distributions.json").read_text(encoding="utf-8"))
     phase_map = midi["metadata"]["phase_map"]
 
+    manifest_path = ROOT / "scripts" / "audio_manifest.json"
+    audio_manifest = json.loads(manifest_path.read_text(encoding="utf-8")) if manifest_path.exists() else {}
+    tracks_by_era = audio_manifest.get("tracks_by_era", {})
+
     projects_by_era: dict[str, list[dict]] = defaultdict(list)
     for jf in sorted((ASSETS_DIR / "extracted").rglob("*.json")):
         d = json.loads(jf.read_text(encoding="utf-8"))
@@ -580,6 +584,12 @@ def main() -> None:
     for pkey, plabel, pshort, pyears, pdaw in PHASE_META:
         eras_list = phase_map[pkey]
         p_projects = [proj for e in eras_list for proj in projects_by_era[e]]
+        p_tracks = []
+        for idx_e, e in enumerate(eras_list):
+            if tracks_by_era.get(e):
+                t0 = dict(tracks_by_era[e][0])
+                t0["slot"] = idx_e + 1
+                p_tracks.append(t0)
         phases_out.append(
             extract_item(
                 pkey,
@@ -590,7 +600,7 @@ def main() -> None:
                 audio["phases"].get(pkey),
                 p_projects,
                 eras_in_phase=eras_list,
-                extra={"daw": pdaw, "note": ""},
+                extra={"daw": pdaw, "note": "", "tracks": p_tracks},
             )
         )
 
@@ -606,7 +616,7 @@ def main() -> None:
                 audio["eras"].get(ekey),
                 projects_by_era[ekey],
                 eras_in_phase=None,
-                extra={"phase": ephase, "phaseTag": ptag, "note": enote},
+                extra={"phase": ephase, "phaseTag": ptag, "note": enote, "tracks": tracks_by_era.get(ekey, [])},
             )
         )
 
