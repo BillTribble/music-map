@@ -42,7 +42,7 @@ TRACK_SPECS = [
     ("remixes_commissions", 2, "Arc 110 (Remix)", 110.0, "^ remixes and commissions/Jake - Arc 110/arc 110 remix 04 2025-02-28 1848.flac"),
     ("sketches_2024_25", 1, "Granular Perc (Gamelanish)", 120.0, "^ music sketches 2024/granular perc fun/granular perc fun gamelanish.mp3"),
     ("sketches_2024_25", 2, "Shepard Tone 02", 131.0, "^ music sketches 2025/shepard tone 01 Project/shepard tone 02.flac"),
-    ("ecstatic_wave", 1, "Filipe Wave", 120.0, "06 - Ecstatic Wave Album/Filipe wave 01 Project/Filipe wave 01 - MASTER -10 LUFS.mp3"),
+    ("ecstatic_wave", 1, "Flowing Wave", 88.64, "06 - Ecstatic Wave Album/^ export/Flowing wave 27.flac", 1369.0),
     ("ecstatic_wave", 2, "Mega Dark Bass", 122.0, "06 - Ecstatic Wave Album/Mega dark bass/Matchered/Bill Tribble - Mega dark bass 06 matchered.flac"),
     ("sketches_2026", 1, "Arcadian Sunrise 05", 110.0, "^ music sketches 2026/Arcadian sunrise/Arcadian sunrise 05 2026-03-22 0741_(Matched)hora dorado.flac"),
     ("sketches_2026", 2, "Breath-Domi 05", 129.0, "^ music sketches 2026/breath-domi/breath-domi 05 2026-05-31 1147.flac"),
@@ -69,8 +69,44 @@ def resolve_corpus_path(corpus_root: Path, rel_str: str) -> Path:
     return cur
 
 
-def analyze_source_groove(ffmpeg_bin: str, src_path: Path, bpm: float) -> dict:
-    """Decode full source master to 8kHz mono PCM, find beat phase, Beat-1 groove cue, and RMS gain trim."""
+def _gain_metrics(samples: np.ndarray) -> tuple[float, float]:
+    sr = 8000.0
+    hop = 40
+    n_frames = len(samples) // hop
+    if n_frames < 10:
+        return -14.5, 1.0
+    frames = samples[: n_frames * hop].reshape(n_frames, hop)
+    rms = np.sqrt(np.mean(frames * frames, axis=1))
+    peak_rms = float(np.max(rms)) if len(rms) else 0.1
+    active = rms[rms > peak_rms * 0.12]
+    med_rms = float(np.median(active)) if len(active) else float(np.median(rms))
+    rms_db = 20.0 * math.log10(max(1e-6, med_rms))
+    gain_trim = max(0.55, min(1.35, math.pow(10.0, (-14.5 - rms_db) / 20.0)))
+    return round(rms_db, 2), round(gain_trim, 3)
+
+
+def analyze_source_groove(ffmpeg_bin: str, src_path: Path, bpm: float, fixed_cue: float | None = None) -> dict:
+    """Decode source master to 8kHz mono PCM, find beat phase, Beat-1 groove cue, and RMS gain trim."""
+    beat_sec = 60.0 / bpm
+    bar_sec = 4.0 * beat_sec
+    if fixed_cue is not None:
+        win_start = max(0.0, fixed_cue - 4.0)
+        r = subprocess.run(
+            [ffmpeg_bin, "-v", "error", "-ss", f"{win_start:.4f}", "-t", "60", "-i", str(src_path), "-vn", "-ac", "1", "-ar", "8000", "-f", "f32le", "-"],
+            capture_output=True,
+            check=True,
+        )
+        samples = np.frombuffer(r.stdout, dtype=np.float32)
+        rms_db, gain_trim = _gain_metrics(samples)
+        return {
+            "full_duration_sec": float(fixed_cue) + 120.0,
+            "beat_sec": round(beat_sec, 5),
+            "bar_sec": round(bar_sec, 5),
+            "source_cue_sec": float(fixed_cue),
+            "rms_db": rms_db,
+            "gain_trim": gain_trim,
+        }
+
     r = subprocess.run(
         [ffmpeg_bin, "-v", "error", "-i", str(src_path), "-vn", "-ac", "1", "-ar", "8000", "-f", "f32le", "-"],
         capture_output=True,
@@ -83,8 +119,6 @@ def analyze_source_groove(ffmpeg_bin: str, src_path: Path, bpm: float) -> dict:
     hop = 40  # 5 ms envelope -> 200 Hz
     env_sr = sr / hop
     n_frames = len(samples) // hop
-    beat_sec = 60.0 / bpm
-    bar_sec = 4.0 * beat_sec
     if n_frames < 400:
         return {
             "full_duration_sec": dur_sec,
@@ -163,20 +197,14 @@ def analyze_source_groove(ffmpeg_bin: str, src_path: Path, bpm: float) -> dict:
             best_cue_score = sc
             best_cue = float(c_sec)
 
-    # Track RMS level (ignoring silent tails) -> gentle playback gain trim around -14.5 dBFS
-    peak_rms = float(np.max(rms)) if len(rms) else 0.1
-    active = rms[rms > peak_rms * 0.12]
-    med_rms = float(np.median(active)) if len(active) else float(np.median(rms))
-    rms_db = 20.0 * math.log10(max(1e-6, med_rms))
-    gain_trim = max(0.55, min(1.35, math.pow(10.0, (-14.5 - rms_db) / 20.0)))
-
+    rms_db, gain_trim = _gain_metrics(samples)
     return {
         "full_duration_sec": dur_sec,
         "beat_sec": round(beat_sec, 5),
         "bar_sec": round(bar_sec, 5),
         "source_cue_sec": best_cue,
-        "rms_db": round(rms_db, 2),
-        "gain_trim": round(gain_trim, 3),
+        "rms_db": rms_db,
+        "gain_trim": gain_trim,
     }
 
 
@@ -184,6 +212,7 @@ def main() -> None:
     parser = argparse.ArgumentParser()
     parser.add_argument("--corpus-root", required=True, help="Root directory containing era project audio exports")
     parser.add_argument("--quality", type=int, default=5, help="LAME VBR quality (-q:a), default 5 (~130 kbps)")
+    parser.add_argument("--track-id", default=None, help="Re-encode only a single track ID (e.g. ecstatic_wave_1)")
     args = parser.parse_args()
 
     corpus_root = Path(args.corpus_root).expanduser()
@@ -195,12 +224,21 @@ def main() -> None:
         raise SystemExit("ffmpeg not found")
 
     AUDIO_DIR.mkdir(parents=True, exist_ok=True)
-    tracks_by_era: dict[str, list[dict]] = {}
-    total_bytes = 0
+    if args.track_id and MANIFEST_PATH.exists():
+        existing = json.loads(MANIFEST_PATH.read_text(encoding="utf-8"))
+        tracks_by_era: dict[str, list[dict]] = existing.get("tracks_by_era", {})
+    else:
+        tracks_by_era = {}
 
-    for era, slot, title, bpm, rel in TRACK_SPECS:
+    for spec in TRACK_SPECS:
+        era, slot, title, bpm, rel, *rest = spec
+        fixed_cue = float(rest[0]) if rest else None
+        tid = f"{era}_{slot}"
+        if args.track_id and tid != args.track_id:
+            continue
+
         src = resolve_corpus_path(corpus_root, rel)
-        groove = analyze_source_groove(ffmpeg_bin, src, bpm)
+        groove = analyze_source_groove(ffmpeg_bin, src, bpm, fixed_cue=fixed_cue)
         bar_sec = groove["bar_sec"]
         beat_sec = groove["beat_sec"]
         full_dur_sec = groove["full_duration_sec"]
@@ -219,7 +257,7 @@ def main() -> None:
                 source_cue_sec = max(0.0, min(source_cue_sec, max(0.0, full_dur_sec - clip_dur_sec - 0.05)))
 
         fade_out_st = max(0.05, clip_dur_sec - 0.025)
-        out_name = f"{era}_{slot}.mp3"
+        out_name = f"{tid}.mp3"
         dst = AUDIO_DIR / out_name
         cmd = [
             ffmpeg_bin, "-y", "-v", "error",
@@ -234,10 +272,9 @@ def main() -> None:
         ]
         subprocess.run(cmd, check=True)
         sz = dst.stat().st_size
-        total_bytes += sz
 
         entry = {
-            "id": f"{era}_{slot}",
+            "id": tid,
             "slot": slot,
             "title": title,
             "bpm": bpm,
@@ -252,12 +289,16 @@ def main() -> None:
             "rms_db": groove["rms_db"],
             "gain_trim": groove["gain_trim"],
         }
-        tracks_by_era.setdefault(era, []).append(entry)
+        era_entries = [e for e in tracks_by_era.get(era, []) if e.get("slot") != slot]
+        era_entries.append(entry)
+        era_entries.sort(key=lambda e: e["slot"])
+        tracks_by_era[era] = era_entries
         print(
             f"[OK] {out_name:28s} | {sz/1024:6.1f} KB | {clip_bars:2d}b ({clip_dur_sec:5.1f}s) "
             f"| {bpm:6.2f} BPM | src_cue={source_cue_sec:6.2f}s | gain={groove['gain_trim']:.2f}"
         )
 
+    total_bytes = sum(e["bytes"] for lst in tracks_by_era.values() for e in lst)
     manifest = {
         "n_tracks": sum(len(v) for v in tracks_by_era.values()),
         "total_bytes": total_bytes,

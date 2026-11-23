@@ -1,7 +1,7 @@
 {
   "n_tracks": 24,
-  "total_bytes": 11480580,
-  "total_mb": 10.95,
+  "total_bytes": 11305859,
+  "total_mb": 10.78,
   "tracks_by_era": {
     "archive_2013_18": [
       {
@@ -347,18 +347,18 @@
       {
         "id": "ecstatic_wave_1",
         "slot": 1,
-        "title": "Filipe Wave",
-        "bpm": 120.0,
+        "title": "Flowing Wave",
+        "bpm": 88.64,
         "file": "audio/ecstatic_wave_1.mp3",
-        "bytes": 532380,
-        "duration_sec": 32.0,
-        "clip_bars": 16,
-        "beat_sec": 0.5,
-        "bar_sec": 2.0,
+        "bytes": 357659,
+        "duration_sec": 21.661,
+        "clip_bars": 8,
+        "beat_sec": 0.6769,
+        "bar_sec": 2.70758,
         "beat_phase_sec": 0.0,
         "cue_sec": 0.0,
-        "rms_db": -14.48,
-        "gain_trim": 0.997
+        "rms_db": -15.14,
+        "gain_trim": 1.077
       },
       {
         "id": "ecstatic_wave_2",
