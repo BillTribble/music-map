@@ -4,7 +4,7 @@
 
   const COMPARE_PRESETS = [
     { id: "arch_ecstatic", label: "Present Electro → Ecstatic Wave", eraA: "present_electro", eraB: "ecstatic_wave", phA: "phase0_archive", phB: "phase4_recent" },
-    { id: "bands_sk26", label: "Early Bands → Sketches 2026", eraA: "bands_archive", eraB: "sketches_2026", phA: "phase0_archive", phB: "phase4_recent" },
+    { id: "bands_sk26", label: "Archive 2006–14 → Sketches 2026", eraA: "bands_archive", eraB: "sketches_2026", phA: "phase0_archive", phB: "phase4_recent" },
     { id: "garage_ecstatic", label: "Le Garage → Ecstatic Wave", eraA: "le_garage", eraB: "ecstatic_wave", phA: "phase2_mid", phB: "phase4_recent" },
     { id: "spirit_lucid", label: "Spirit Guides → Lucid Crystal", eraA: "spirit_guides", eraB: "lucid_crystal", phA: "phase3_ambient", phB: "phase3_ambient" },
   ];
@@ -198,7 +198,7 @@
     const cards = items.map((it, i) => {
       const insts = (it.top_inst || []).map((x) => `<span class="gear-pill">${C.esc(x)}</span>`).join("");
       const fxs = (it.top_fx || []).map((x) => `<span class="gear-pill">${C.esc(x)}</span>`).join("");
-      const fallback = it.archive_only ? `<span class="gear-pill">Pre-2013 Audio / Band Archive</span>` : "";
+      const fallback = it.archive_only ? `<span class="gear-pill">Pre-2013 Audio Archive</span>` : "";
       const modes = (it.top_modes_midi && it.top_modes_midi.length ? it.top_modes_midi : it.top_modes_audio || []).slice(0, 2).join(" / ") || "n/a";
       return `
         <button type="button" data-era-idx="${i}" class="palette-card ${i === selIdx ? "is-active" : ""}">

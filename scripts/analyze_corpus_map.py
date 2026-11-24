@@ -147,18 +147,165 @@ def can_run_mik_gui() -> bool:
         return False
 
 
+def compute_drum_complexity(perc_share: float, perc_onset_rate: float, gap_cv: float, gap_ent: float, high_low_ratio: float, breakbeat_score: float = 0.0) -> float:
+    """Single canonical formula for 0..100 Drum Complexity, gating out beatless ambient washes."""
+    s_perc = clamp(perc_share / 0.36 * 100.0)
+    s_rate = clamp(perc_onset_rate / 7.5 * 100.0)
+    s_sync = clamp((gap_cv / 1.15 * 50.0) + (clamp(gap_ent * 100.0, 0.0, 100.0) * 0.50))
+    s_hl = clamp(high_low_ratio * 100.0)
+    presence = clamp(perc_share / 0.11, 0.0, 1.0) ** 0.80
+    if perc_onset_rate < 2.2 and perc_share < 0.07:
+        presence *= clamp(perc_onset_rate / 2.2, 0.0, 1.0)
+    base_dc = 0.32 * s_perc + presence * (0.28 * s_rate + 0.24 * s_sync + 0.16 * s_hl)
+    brk_lift = presence * (0.14 * max(0.0, breakbeat_score - 35.0))
+    return round(clamp(base_dc + brk_lift), 1)
+
+
+def compute_groove_metrics(P: np.ndarray, P_p: np.ndarray, freqs: np.ndarray, fps: float, bpm_est: float, perc_share: float, gap_ent: float) -> dict:
+    """Fold bar-aligned 16-step kick/snare/hat profiles to separate 4/4 pulses from breakbeats."""
+    if perc_share < 0.055 or P.shape[1] < 32:
+        return {
+            "four_on_floor": 0.0,
+            "breakbeat_score": 0.0,
+            "chop_var": 0.0,
+            "groove_style": "ambient",
+        }
+
+    def band_flux(lo_hz: float, hi_hz: float, use_total_mix: bool = False) -> np.ndarray:
+        m = (freqs >= lo_hz) & (freqs <= hi_hz)
+        src = (0.55 * P_p[m] + 0.45 * P[m]) if use_total_mix else P_p[m]
+        env = np.sqrt(src.sum(axis=0) + 1e-12)
+        fl = np.maximum(0.0, np.diff(np.log1p(14.0 * env), prepend=0.0))
+        return fl
+
+    fl_k = band_flux(35.0, 155.0, use_total_mix=True)
+    fl_sn = band_flux(170.0, 2400.0, use_total_mix=False)
+    fl_hh = band_flux(2400.0, 9000.0, use_total_mix=False)
+
+    # Focus on the most percussive ~45s contiguous section to avoid quiet intro dilution & drift
+    seg_len = min(len(fl_k), max(64, int(round(45.0 * fps))))
+    tot_p = np.sqrt(P_p[(freqs >= 140.0) & (freqs <= 9000.0)].sum(axis=0) + 1e-12)
+    if len(tot_p) > seg_len:
+        cs = np.cumsum(np.insert(tot_p, 0, 0.0))
+        best_s = int(np.argmax(cs[seg_len:] - cs[:-seg_len]))
+    else:
+        best_s = 0
+    best_e = best_s + seg_len
+
+    bar_sec = 240.0 / max(55.0, min(200.0, float(bpm_est)))
+    bar_frames = max(16.0, bar_sec * fps)
+    block_frames = max(int(round(4.0 * bar_frames)), 32)
+    n_blocks = max(1, (best_e - best_s) // block_frames)
+
+    K_acc = np.zeros(16, dtype=np.float64)
+    SN_acc = np.zeros(16, dtype=np.float64)
+    HH_acc = np.zeros(16, dtype=np.float64)
+    block_sigs = []
+
+    for bi in range(n_blocks):
+        a = best_s + bi * block_frames
+        b = min(best_e, a + block_frames)
+        t_rel = (np.arange(a, b) - a) / fps
+        step_idx = np.floor((t_rel / bar_sec) * 16.0).astype(int) % 16
+        Kb = np.bincount(step_idx, weights=fl_k[a:b], minlength=16).astype(np.float64)
+        SNb = np.bincount(step_idx, weights=fl_sn[a:b], minlength=16).astype(np.float64)
+        HHb = np.bincount(step_idx, weights=fl_hh[a:b], minlength=16).astype(np.float64)
+        cnts = np.maximum(1.0, np.bincount(step_idx, minlength=16).astype(np.float64))
+        Kb /= cnts
+        SNb /= cnts
+        HHb /= cnts
+        block_sigs.append(Kb / (Kb.sum() + 1e-9))
+
+        # Circularly align each 4-bar block's phase so slight tempo drift across long tracks never smears hits
+        if bi == 0:
+            K_ref = Kb
+            shift = 0
+        else:
+            scores = [float(np.dot(np.roll(Kb, -sh), K_ref)) for sh in range(16)]
+            shift = int(np.argmax(scores))
+        K_acc += np.roll(Kb, -shift)
+        SN_acc += np.roll(SNb, -shift)
+        HH_acc += np.roll(HHb, -shift)
+
+    # Subtract flat noise floor so sharp step transients stand out cleanly
+    def sharpen(v: np.ndarray) -> np.ndarray:
+        v0 = np.maximum(0.0, v - float(np.percentile(v, 20)))
+        return v0 / (v0.sum() + 1e-9)
+
+    Kp = sharpen(K_acc)
+    SNp = sharpen(SN_acc)
+    HHp = sharpen(HH_acc)
+
+    # Rotate onto dominant quarter-note kick phase (0..3 -> beats 0, 4, 8, 12)
+    best_q_phase = int(np.argmax([float(Kp[[p, p + 4, p + 8, p + 12]].sum()) for p in range(4)]))
+    Kr = np.roll(Kp, -best_q_phase)
+    SNr = np.roll(SNp, -best_q_phase)
+
+    q_vals = np.sort(Kr[[0, 4, 8, 12]])
+    q_total_share = float(q_vals.sum())
+    q_min2_ratio = float((q_vals[0] + q_vals[1]) / (q_vals[2] + q_vals[3] + 1e-9))
+    sync_kicks = float(Kr[[2, 3, 6, 7, 10, 11, 14, 15]].sum())
+
+    # Backbeat snare without co-occurring heavy kick vs ghost snare complexity
+    sn_active = int(np.sum(SNr > (0.35 * float(np.max(SNr)) + 1e-9)))
+    ghost_richness = clamp((sn_active - 2) / 6.0, 0.0, 1.0)
+    hat_16_density = clamp(float(np.sum(HHp > 0.25 * float(np.max(HHp)) + 1e-9)) / 12.0, 0.0, 1.0)
+
+    if len(block_sigs) >= 2:
+        diffs = [1.0 - float(np.dot(block_sigs[i], block_sigs[i + 1]) / (np.linalg.norm(block_sigs[i]) * np.linalg.norm(block_sigs[i + 1]) + 1e-9)) for i in range(len(block_sigs) - 1)]
+        chop_var = float(np.mean(diffs))
+    else:
+        chop_var = 0.15
+
+    rhythm_gate_4x4 = clamp((perc_share - 0.04) / 0.22, 0.0, 1.0)
+    rhythm_gate_brk = clamp((perc_share - 0.04) / 0.14, 0.0, 1.0)
+    raw_4x4 = (
+        50.0 * clamp((q_total_share - 0.24) / 0.34, 0.0, 1.0)
+        + 50.0 * clamp((q_min2_ratio - 0.22) / 0.58, 0.0, 1.0)
+    ) * (1.0 - 0.45 * clamp((sync_kicks - 0.44) / 0.26, 0.0, 1.0))
+
+    raw_brk = (
+        34.0 * clamp((0.68 - q_min2_ratio) / 0.56, 0.0, 1.0)
+        + 28.0 * clamp((sync_kicks - 0.34) / 0.28, 0.0, 1.0)
+        + 18.0 * clamp(gap_ent, 0.0, 1.0)
+        + 12.0 * ghost_richness
+        + 8.0 * clamp(chop_var / 0.35, 0.0, 1.0)
+    ) * (0.65 + 0.35 * hat_16_density)
+
+    four_on_floor = round(clamp(rhythm_gate_4x4 * raw_4x4), 1)
+    breakbeat_score = round(clamp(rhythm_gate_brk * raw_brk), 1)
+
+    if four_on_floor >= breakbeat_score + 6.0 and four_on_floor >= 36.0:
+        g_style = "four_on_floor"
+    elif breakbeat_score >= four_on_floor + 4.0 and breakbeat_score >= 34.0:
+        g_style = "breakbeat"
+    elif perc_share >= 0.09:
+        g_style = "downtempo"
+    else:
+        g_style = "ambient"
+
+    return {
+        "four_on_floor": four_on_floor,
+        "breakbeat_score": breakbeat_score,
+        "chop_var": round(chop_var, 3),
+        "groove_style": g_style,
+    }
+
+
 def analyze_harmony_and_rhythm(y: np.ndarray, bpm_est: float) -> dict:
-    """Compute HPSS chromagram macro harmonic complexity, modal darkness, microtonal index, and drum complexity."""
+    """Compute HPSS chromagram macro harmonic complexity, modal darkness, microtonal index, and groove/drum complexity."""
     sr = float(dsp_models.SR)
     nfft = 2048
     hop = 512
     nfr = 1 + max(0, (len(y) - nfft) // hop)
     if nfr < 24:
         return {
-            "key_camelot": "5A", "key_label": "Cm", "tonic_pc": 0,
+            "key_camelot": "5A", "key_label": "Cm", "tonic_pc": 0, "is_minor": True,
             "chord_richness": 45.0, "harmonic_motion": 40.0, "modal_darkness": 50.0,
             "microtonal_score": 15.0, "harmonic_complexity": 45.0,
-            "drum_complexity": 35.0, "perc_share": 0.25, "syncopation": 0.4,
+            "drum_complexity": 35.0, "perc_share": 0.25, "perc_onset_rate": 2.0,
+            "gap_cv": 0.2, "gap_entropy": 0.1, "high_low_ratio": 0.3,
+            "four_on_floor": 20.0, "breakbeat_score": 20.0, "groove_style": "downtempo",
             "scale_deg_12": [round(1 / 12, 4)] * 12,
         }
 
@@ -176,20 +323,27 @@ def analyze_harmony_and_rhythm(y: np.ndarray, bpm_est: float) -> dict:
     denom = S_h ** 2 + S_p ** 2 + 1e-12
     P_h = (S * (S_h ** 2 / denom)) ** 2
     P_p = (S * (S_p ** 2 / denom)) ** 2
+    P_tot = P_h + P_p + 1e-12
 
-    perc_share = float(P_p.sum() / (P_h.sum() + P_p.sum() + 1e-12))
-
-    # Map FFT bins (55 Hz .. 2400 Hz) onto 12 pitch classes
     freqs = np.fft.rfftfreq(nfft, 1.0 / sr)
-    mask_pitch = (freqs >= 55.0) & (freqs <= 2400.0)
+
+    # Band-weighted percussive share so heavy jungle/dub sub-bass does not mask sharp upper drums
+    m_hi = (freqs >= 160.0) & (freqs <= 9000.0)
+    m_lo = (freqs >= 45.0) & (freqs < 160.0)
+    perc_hi = float(P_p[m_hi].sum() / (P_tot[m_hi].sum() + 1e-12))
+    perc_lo = float(P_p[m_lo].sum() / (P_tot[m_lo].sum() + 1e-12))
+    perc_share = 0.82 * perc_hi + 0.18 * perc_lo
+
+    # Map midrange-filtered harmonic bins (95 Hz .. 3000 Hz) onto 12 pitch classes
+    # so heavy sub-bass fundamentals never drown out upper triad/extension voicings.
+    mask_pitch = (freqs >= 95.0) & (freqs <= 3000.0)
     f_p = freqs[mask_pitch]
     midi_f = 69.0 + 12.0 * np.log2(f_p / 440.0)
     pc_bin = np.round(midi_f).astype(int) % 12
-    # Tuning offset in semitones (-0.5..+0.5) per active pitch bin weighted by spectral energy
     dev_st = np.abs(midi_f - np.round(midi_f))
 
-    chroma = np.zeros((12, P_h.shape[1]), dtype=np.float64)
     P_sub = P_h[mask_pitch, :]
+    chroma = np.zeros((12, P_h.shape[1]), dtype=np.float64)
     for pc in range(12):
         m_pc = pc_bin == pc
         if np.any(m_pc):
@@ -308,17 +462,12 @@ def analyze_harmony_and_rhythm(y: np.ndarray, bpm_est: float) -> dict:
         gap_cv = 0.2
         gap_ent = 0.1
 
-    # High-to-low percussive complexity ratio (hi-hats/ghost snares/breaks vs pure thump or ambient)
+    # High-to-low percussive complexity ratio & 16-step groove archetype (4/4 vs breakbeat)
     high_low_ratio = float(p_env_high.mean() / (p_env_low.mean() + p_env_high.mean() + 1e-9))
-
-    # Calibrate 0..100 Drum Complexity, gating rhythm detail by actual percussive presence
-    # so beatless ambient washes (perc_share < 0.05) do not score false high complexity from pad ripples.
-    s_perc = clamp(perc_share / 0.42 * 100.0)
-    s_rate = clamp(perc_onset_rate / 7.5 * 100.0)
-    s_sync = clamp((gap_cv / 1.15 * 55.0) + (clamp(gap_ent * 100.0, 0, 100) * 0.45))
-    s_hl = clamp(high_low_ratio * 100.0)
-    presence = clamp(perc_share / 0.16, 0.0, 1.0) ** 0.85
-    drum_complexity = clamp(0.35 * s_perc + presence * (0.30 * s_rate + 0.22 * s_sync + 0.13 * s_hl))
+    groove = compute_groove_metrics(S ** 2, P_p, freqs, fps, bpm_est, perc_share, gap_ent)
+    drum_complexity = compute_drum_complexity(
+        perc_share, perc_onset_rate, gap_cv, gap_ent, high_low_ratio, groove["breakbeat_score"]
+    )
 
     return {
         "key_camelot": key_camelot,
@@ -330,10 +479,15 @@ def analyze_harmony_and_rhythm(y: np.ndarray, bpm_est: float) -> dict:
         "modal_darkness": round(modal_darkness, 1),
         "microtonal_score": round(microtonal_score, 1),
         "harmonic_complexity": round(harmonic_complexity, 1),
-        "drum_complexity": round(drum_complexity, 1),
+        "drum_complexity": drum_complexity,
         "perc_share": round(perc_share, 3),
         "perc_onset_rate": round(perc_onset_rate, 2),
+        "gap_cv": round(gap_cv, 3),
         "gap_entropy": round(gap_ent, 3),
+        "high_low_ratio": round(high_low_ratio, 3),
+        "four_on_floor": groove["four_on_floor"],
+        "breakbeat_score": groove["breakbeat_score"],
+        "groove_style": groove["groove_style"],
         "scale_deg_12": [round(float(x), 4) for x in rot_norm],
     }
 
@@ -365,20 +519,21 @@ def make_tags(t: dict) -> tuple[str, str]:
     en = t["energy"]
     bpm = t["bpm"]
     pc = t["perc_share"]
-    pulse = t["pulse_clarity"]
-    if dc < 24 and pc < 0.14:
+    f4 = float(t.get("four_on_floor", 0.0))
+    brk = float(t.get("breakbeat_score", 0.0))
+    if dc < 24 and pc < 0.08:
         r_tag = "Beatless ambient wash"
     elif dc < 36:
         r_tag = "Spacious / minimal pulse"
-    elif bpm >= 158 and dc >= 52:
-        r_tag = "Fast D&B breakbeats"
-    elif t["era"] == "bands_archive" and dc >= 45:
-        r_tag = "Live band drums"
-    elif pulse >= 0.34 and en >= 6 and dc >= 42:
-        r_tag = "Driven 4/4 house groove"
-    elif dc >= 60:
-        r_tag = "Intricate syncopated drums"
-    elif en <= 5:
+    elif bpm >= 158 and dc >= 48 and brk >= 35:
+        r_tag = "Fast D&B / jungle breaks"
+    elif brk >= f4 + 6.0 and brk >= 36.0:
+        r_tag = "Breakbeat / syncopated groove"
+    elif f4 >= 45.0 and en >= 5:
+        r_tag = "Driven 4/4 house pulse"
+    elif f4 >= 36.0:
+        r_tag = "Steady 4/4 pulse"
+    elif en <= 5 and bpm < 95:
         r_tag = "Chill downtempo groove"
     else:
         r_tag = "Steady electronic beat"
@@ -386,17 +541,27 @@ def make_tags(t: dict) -> tuple[str, str]:
     return h_tag, r_tag
 
 
+def effective_tempo(t: dict) -> float:
+    """Anchor beatless ambient tracks near 68 BPM so nominal DAW project BPMs never split ambient washes."""
+    dc = float(t.get("drum_complexity", 0.0))
+    r_conf = clamp((dc - 16.0) / 14.0, 0.0, 1.0)
+    return round(r_conf * float(t["bpm"]) + (1.0 - r_conf) * 68.0, 2)
+
+
 def gate_rhythm_features(t: dict) -> None:
-    """Ensure drum_complexity and drum_pulse reflect actual percussive presence."""
+    """Recompute canonical drum complexity, effective BPM, and 4/4 vs breakbeat pulse for clustering."""
+    if all(k in t for k in ("perc_share", "perc_onset_rate", "gap_cv", "gap_entropy", "high_low_ratio")):
+        t["drum_complexity"] = compute_drum_complexity(
+            float(t["perc_share"]),
+            float(t["perc_onset_rate"]),
+            float(t["gap_cv"]),
+            float(t["gap_entropy"]),
+            float(t["high_low_ratio"]),
+            float(t.get("breakbeat_score", 0.0)),
+        )
+    t["effective_bpm"] = effective_tempo(t)
     pc = float(t.get("perc_share", 0.0))
-    dc_val = float(t.get("drum_complexity", 0.0))
-    if not t.get("_dc_gated"):
-        presence = min(1.0, max(0.0, pc / 0.16)) ** 0.85
-        s_perc = min(100.0, pc / 0.42 * 100.0)
-        detail = max(0.0, dc_val - 0.35 * s_perc)
-        t["drum_complexity"] = round(min(100.0, 0.35 * s_perc + detail * presence), 1)
-        t["_dc_gated"] = True
-    pul_presence = min(1.0, max(0.0, (pc - 0.02) / 0.12))
+    pul_presence = clamp((pc - 0.02) / 0.10, 0.0, 1.0)
     t["drum_pulse"] = round(float(t.get("pulse_clarity", 0.0)) * pul_presence * 100.0, 1)
 
 
@@ -405,21 +570,25 @@ def cluster_and_layout(tracks: list[dict]) -> dict:
     for t in tracks:
         gate_rhythm_features(t)
 
-    # Focused 7-feature similarity space aligned with Energy, Drums, 4/4 Pulse, and Macro Harmony
+    # 9-feature similarity space: Groove (Breakbeat vs 4/4), Effective Tempo, Energy, Drums, and Macro Harmony
     weights = np.array([
-        2.20,  # MIK Energy (1-10)
-        2.30,  # Gated Drum Complexity
-        1.70,  # Drum-gated 4/4 Pulse Clarity
-        1.35,  # Macro Harmonic Complexity
-        0.75,  # Chord Richness
-        0.55,  # Harmonic Motion
-        0.45,  # Modal Darkness
+        2.05,  # MIK Energy (1-10)
+        2.75,  # Effective BPM (strongly separates 75 BPM downtempo from 112-120 BPM mid-tempo & 170 BPM D&B)
+        1.85,  # Drum Complexity (sub-bass-compensated)
+        2.85,  # Breakbeat / Syncopated Breaks Score (groups all true breakbeats regardless of chord richness)
+        2.30,  # 4/4 Four-on-the-Floor Regularity (groups steady 4/4 club pulses cleanly away from breakbeats)
+        1.05,  # Macro Harmonic Complexity
+        0.45,  # Chord Richness
+        0.35,  # Harmonic Motion
+        0.25,  # Modal Darkness
     ])
     X_raw = np.array([
         [
             t["energy"],
+            t["effective_bpm"],
             t["drum_complexity"],
-            t["drum_pulse"],
+            t.get("breakbeat_score", 0.0),
+            t.get("four_on_floor", 0.0),
             t["harmonic_complexity"],
             t["chord_richness"],
             t["harmonic_motion"],
@@ -430,16 +599,9 @@ def cluster_and_layout(tracks: list[dict]) -> dict:
     X_std = StandardScaler().fit_transform(X_raw) * weights
     D = np.linalg.norm(X_std[:, None, :] - X_std[None, :, :], axis=2)
 
-    # Choose optimal Ward cluster count between 5 and 6 via silhouette, preferring 6 clear archetypes
-    best_sc, best_k, best_labels = -1.0, 6, None
-    for k in (5, 6):
-        lab = AgglomerativeClustering(n_clusters=k, linkage="ward").fit_predict(X_std)
-        sc = float(silhouette_score(X_std, lab))
-        score_adj = sc + (0.015 if k == 6 else 0.0)
-        if score_adj > best_sc:
-            best_sc, best_k, best_labels = score_adj, k, lab
-            raw_sc = sc
-    best_sc = raw_sc
+    best_k = 6
+    best_labels = AgglomerativeClustering(n_clusters=best_k, linkage="ward").fit_predict(X_std)
+    best_sc = float(silhouette_score(X_std, best_labels))
 
     # Build raw cluster stats
     clusters_raw = []
@@ -449,7 +611,10 @@ def cluster_and_layout(tracks: list[dict]) -> dict:
             "orig_id": cid,
             "idxs": idxs,
             "en": float(np.mean([tracks[i]["energy"] for i in idxs])),
+            "bpm": float(np.mean([tracks[i]["effective_bpm"] for i in idxs])),
             "dc": float(np.mean([tracks[i]["drum_complexity"] for i in idxs])),
+            "brk": float(np.mean([tracks[i].get("breakbeat_score", 0.0) for i in idxs])),
+            "f4": float(np.mean([tracks[i].get("four_on_floor", 0.0) for i in idxs])),
             "dp": float(np.mean([tracks[i]["drum_pulse"] for i in idxs])),
             "perc": float(np.mean([tracks[i]["perc_share"] for i in idxs])),
             "hc": float(np.mean([tracks[i]["harmonic_complexity"] for i in idxs])),
@@ -457,17 +622,17 @@ def cluster_and_layout(tracks: list[dict]) -> dict:
             "micro": float(np.mean([tracks[i]["microtonal_score"] for i in idxs])),
         })
 
-    # Order clusters smoothly from quiet Ambient -> Chill -> Downtempo Lush -> Hypnotic -> House -> Complex Drums
-    clusters_raw.sort(key=lambda c: (c["dc"] >= 24, c["en"], c["dc"]))
+    # Order clusters smoothly from quiet Ambient -> Downtempo Lush -> Chill -> Hypnotic 4/4 -> Ecstatic House -> Complex Breaks
+    clusters_raw.sort(key=lambda c: (c["dc"] >= 22, c["en"], c["dc"], c["brk"]))
     T_PALETTE_HUES = [205, 165, 275, 35, 130, 340]
 
     archetypes = [
-        ("ambient", "Ambient & meditative", lambda c: (120.0 if c["dc"] < 24 else 0.0) + (10 - c["en"]) * 3.0 - c["dc"] * 0.4),
-        ("downtempo_lush", "Downtempo & lush chords", lambda c: (110.0 if c["en"] <= 3.2 and c["hc"] >= 54 and c["dc"] >= 28 else 0.0) + c["cr"] * 0.6 - c["en"] * 5.0),
-        ("chill_elec", "Chill & sparse electronic", lambda c: (100.0 if 24 <= c["dc"] < 38 else 0.0) + (6.0 - abs(c["en"] - 4.0)) * 3.0 - c["cr"] * 0.3),
-        ("dnb_breaks", "Complex drums & breaks", lambda c: c["dc"] * 1.4 + c["en"] * 8.0 + c["perc"] * 50.0),
-        ("house_ecstatic", "House & ecstatic groove", lambda c: c["dp"] * 1.2 + c["cr"] * 0.7 + c["hc"] * 0.5 + c["en"] * 3.0),
-        ("hypnotic_micro", "Hypnotic electro & microtonal", lambda c: (60.0 if c["hc"] < 46 and c["dp"] >= 40 else 0.0) + c["micro"] * 0.4 + c["dp"] * 0.3),
+        ("ambient", "Ambient & meditative", lambda c: (140.0 if c["dc"] < 22 else 0.0) + (10 - c["en"]) * 3.0 - c["dc"] * 0.5),
+        ("downtempo_lush", "Downtempo & lush chords", lambda c: (110.0 if c["dc"] >= 22 and c["f4"] < 30.0 and c["brk"] < 30.0 else 0.0) + c["cr"] * 0.5 - c["en"] * 5.0 - c["brk"] * 0.4),
+        ("chill_elec", "Chill & steady electronic", lambda c: (125.0 if c["dc"] >= 22 and c["bpm"] < 105.0 and c["brk"] < 35.0 else 0.0) + (110.0 - c["bpm"]) * 0.8 - c["brk"] * 0.4),
+        ("hypnotic_micro", "Hypnotic electro & microtonal", lambda c: (95.0 if 95.0 <= c["bpm"] < 132.0 and c["dc"] >= 50.0 else 0.0) + c["dc"] * 0.7 + c["micro"] * 0.6 + c["brk"] * 0.3),
+        ("house_ecstatic", "House & ecstatic 4/4 groove", lambda c: c["f4"] * 1.4 + (75.0 if c["bpm"] >= 120.0 and c["f4"] >= 65.0 else 0.0) + c["en"] * 4.0 - c["brk"] * 0.6),
+        ("dnb_breaks", "Complex drums & breaks", lambda c: c["brk"] * 2.2 + c["dc"] * 1.1 + c["bpm"] * 0.35 - c["f4"] * 0.8),
     ]
     orig_to_name = {}
     pairs2 = []
@@ -517,7 +682,10 @@ def cluster_and_layout(tracks: list[dict]) -> dict:
         aid, alabel = orig_to_name[c["orig_id"]]
         gid = f"s{gi}_{aid}"
         cent = xy[c["idxs"]].mean(axis=0)
+        min_x = float(np.min(xy[c["idxs"], 0]))
+        max_x = float(np.max(xy[c["idxs"], 0]))
         min_y = float(np.min(xy[c["idxs"], 1]))
+        max_y = float(np.max(xy[c["idxs"], 1]))
         member_ids = [tracks[i]["id"] for i in c["idxs"]]
         for i in c["idxs"]:
             tracks[i]["cluster_id"] = gid
@@ -526,14 +694,43 @@ def cluster_and_layout(tracks: list[dict]) -> dict:
             h_tag, r_tag = make_tags(tracks[i])
             tracks[i]["harmony_tag"] = h_tag
             tracks[i]["rhythm_tag"] = r_tag
+
+        pref_x, pref_y = float(cent[0]), max(0.055, min_y - 0.048)
+        candidates = [
+            (pref_x, pref_y),
+            (float(cent[0]), min(0.94, max_y + 0.052)),
+            (max(0.13, min_x - 0.02), max(0.055, min_y - 0.046)),
+            (min(0.87, max_x + 0.02), max(0.055, min_y - 0.046)),
+            (max(0.13, min_x - 0.02), min(0.94, max_y + 0.050)),
+            (min(0.87, max_x + 0.02), min(0.94, max_y + 0.050)),
+        ]
+
+        def _label_penalty(cand: tuple[float, float]) -> float:
+            cx_c = min(0.87, max(0.13, cand[0]))
+            cy_c = min(0.94, max(0.055, cand[1]))
+            dot_pen = sum(
+                20.0 * (1.0 - max(abs(float(xy[k, 0]) - cx_c) / 0.11, abs(float(xy[k, 1]) - cy_c) / 0.038))
+                for k in range(len(xy))
+                if abs(float(xy[k, 0]) - cx_c) < 0.11 and abs(float(xy[k, 1]) - cy_c) < 0.038
+            )
+            grp_pen = sum(
+                60.0 * (1.0 - max(abs(g["cx"] - cx_c) / 0.22, abs(g["cy"] - cy_c) / 0.075))
+                for g in style_groups
+                if abs(g["cx"] - cx_c) < 0.22 and abs(g["cy"] - cy_c) < 0.075
+            )
+            return dot_pen + grp_pen + 0.15 * math.hypot(cx_c - pref_x, cy_c - pref_y)
+
+        best_cand = min(candidates, key=_label_penalty)
+        lx = min(0.87, max(0.13, best_cand[0]))
+        ly = min(0.94, max(0.055, best_cand[1]))
         style_groups.append({
             "id": gid,
             "label": alabel,
             "idx": gi,
             "hue": T_PALETTE_HUES[gi % len(T_PALETTE_HUES)],
             "members": member_ids,
-            "cx": round(float(cent[0]), 4),
-            "cy": round(float(max(0.05, min_y - 0.035)), 4),
+            "cx": round(float(lx), 4),
+            "cy": round(float(ly), 4),
         })
 
     # Nearest neighbors
@@ -668,12 +865,19 @@ def main() -> None:
         print(f"MIK GUI skipped/unavailable ({len(staged_files)} untagged); using MIK DB + source tags + DJVibes calibrated MIK model.")
 
     bpm_overrides = {}
+    manifest_bpm_by_id = {}
+    manifest_path = SCRIPTS_DIR / "audio_manifest.json"
+    if manifest_path.exists():
+        m_json = json.loads(manifest_path.read_text(encoding="utf-8"))
+        for lst in m_json.get("tracks_by_era", {}).values():
+            for mt in lst:
+                manifest_bpm_by_id[mt["id"]] = float(mt["bpm"])
+
     analyzed_tracks = []
 
     try:
         for tid, (src_kind, era, slot, title, default_bpm, src, fixed_cue) in resolved_sources.items():
-            # Keep existing 24 MP3 tracks' calibrated BPM so their Beat-1 loops stay sample-exact!
-            is_existing = (ROOT / "audio" / f"{tid}.mp3").exists() and tid != "new"
+            # Prefer canonical BPM stored in audio_manifest.json so loop playback & beat LEDs stay sample-exact.
             src_tags = read_mutagen_mik(src)
             k_norm = "".join(c for c in src.stem.lower() if c.isalnum())
             db_hit = mik_db.get(k_norm, {})
@@ -691,9 +895,8 @@ def main() -> None:
             energy = int(round(float(mik_en))) if mik_en is not None else int(en_dsp)
             energy_source = "mik" if mik_en is not None else "mik_model"
 
-            # Determine BPM (for new tracks compute from MIK or DSP with genre-aware octave handling)
-            if is_existing:
-                bpm = float(default_bpm)
+            if tid in manifest_bpm_by_id:
+                bpm = float(manifest_bpm_by_id[tid])
             else:
                 theta = p["bpm"]["theta"]
                 xs, C = dsp_models._prepare(env)
@@ -725,6 +928,7 @@ def main() -> None:
                 "title": title,
                 "shortTitle": title.split(" (")[0][:24],
                 "bpm": round(bpm, 2),
+                "effective_bpm": round(bpm, 2),
                 "energy": energy,
                 "energy_source": energy_source,
                 "key_camelot": key_cam,
@@ -736,6 +940,13 @@ def main() -> None:
                 "microtonal_score": hr["microtonal_score"],
                 "drum_complexity": hr["drum_complexity"],
                 "perc_share": hr["perc_share"],
+                "perc_onset_rate": hr["perc_onset_rate"],
+                "gap_cv": hr["gap_cv"],
+                "gap_entropy": hr["gap_entropy"],
+                "high_low_ratio": hr["high_low_ratio"],
+                "four_on_floor": hr["four_on_floor"],
+                "breakbeat_score": hr["breakbeat_score"],
+                "groove_style": hr["groove_style"],
                 "pulse_clarity": round(float(feats.get("pulse_clarity", 0.25)), 3),
                 "onset_rate": round(float(feats.get("onset_rate", 2.0)), 2),
                 "sub_share": round(float(feats.get("band_sub_frac", 0.2)), 3),
@@ -751,8 +962,8 @@ def main() -> None:
             t_obj["rhythm_tag"] = r_tag
             analyzed_tracks.append(t_obj)
             print(
-                f"[{tid:22s}] En={energy:2d} ({energy_source:9s}) | {bpm:6.2f} BPM | {key_label:11s} "
-                f"| Harm={hr['harmonic_complexity']:4.1f} ({h_tag}) | Drum={hr['drum_complexity']:4.1f} ({r_tag})"
+                f"[{tid:22s}] E{energy:2d} {bpm:6.2f} | Harm={hr['harmonic_complexity']:4.1f} | Drum={hr['drum_complexity']:4.1f} "
+                f"| 4x4={hr['four_on_floor']:4.1f} Brk={hr['breakbeat_score']:4.1f} ({hr['groove_style']})"
             )
     finally:
         if stage_dir.exists():

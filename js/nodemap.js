@@ -190,7 +190,7 @@
         const pill = elSvg("rect", "map-group-pill");
         const label = g.label;
         const sub = `${g.members.length} tracks`;
-        const w = Math.max(128, label.length * 6.8 + 26);
+        const w = Math.max(132, label.length * 7.3 + 30);
         pill.setAttribute("x", (-w / 2).toFixed(1));
         pill.setAttribute("y", "-18");
         pill.setAttribute("width", w.toFixed(1));
@@ -252,15 +252,22 @@
   function positionGroupLabels() {
     const pts = groupEls.map((g) => {
       const [sx, sy] = placeOnScreen(g.nx, g.ny);
-      return { g, sx, sy, w: g.w || 130, h: 32 };
+      return { g, sx, sy, w: g.w || 132, h: 32 };
     });
-    // Separate overlapping floating label pills cleanly across any desktop/mobile viewport
-    for (let it = 0; it < 20; it++) {
+    const dotPts = layout === "similarity"
+      ? nodes.map((n) => {
+          const [nx, ny] = normPosFor(n.id, layout);
+          const [px, py] = placeOnScreen(nx, ny);
+          return { px, py };
+        })
+      : [];
+    // Separate overlapping floating label pills and push away from track dots across desktop/mobile
+    for (let it = 0; it < 28; it++) {
       for (let i = 0; i < pts.length; i++) {
         for (let j = i + 1; j < pts.length; j++) {
           const a = pts[i], b = pts[j];
-          const minDx = (a.w + b.w) * 0.5 + 8;
-          const minDy = 36;
+          const minDx = (a.w + b.w) * 0.5 + 18;
+          const minDy = 46;
           const dx = a.sx - b.sx;
           const dy = a.sy - b.sy;
           if (Math.abs(dx) < minDx && Math.abs(dy) < minDy) {
@@ -277,6 +284,20 @@
             }
           }
         }
+      }
+      if (dotPts.length) {
+        pts.forEach((p) => {
+          const rx = p.w * 0.5 + 12;
+          const ry = 25;
+          for (let k = 0; k < dotPts.length; k++) {
+            const d = dotPts[k];
+            const dx = p.sx - d.px;
+            const dy = p.sy - d.py;
+            if (Math.abs(dx) < rx && Math.abs(dy) < ry) {
+              p.sy += (dy >= 0 ? 1 : -1) * (ry - Math.abs(dy)) * 0.38;
+            }
+          }
+        });
       }
       const minTop = vw <= 520 ? 78 : 26;
       pts.forEach((p) => {
@@ -467,7 +488,8 @@
       </div>
       <div class="mp-tags">
         <span class="badge">${esc(t.harmony_tag)}</span>
-        <span class="badge">${esc(t.rhythm_tag)}</span>
+        <span class="badge ${t.groove_style === "breakbeat" ? "badge-purple" : t.groove_style === "four_on_floor" ? "badge-blue" : ""}">${esc(t.rhythm_tag)}</span>
+        ${t.groove_style === "breakbeat" ? `<span class="badge badge-purple">Breakbeat ${Math.round(t.breakbeat_score || 0)}%</span>` : t.groove_style === "four_on_floor" ? `<span class="badge badge-blue">4/4 Pulse ${Math.round(t.four_on_floor || 0)}%</span>` : ""}
         <span class="badge">Darkness ${Math.round(t.modal_darkness)}%</span>
       </div>
       <div class="mp-near">

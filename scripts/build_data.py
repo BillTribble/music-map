@@ -18,7 +18,7 @@ ASSETS_DIR = Path.home() / ".agents" / "skills" / "bill-music" / "assets"
 OUT_JS = ROOT / "js" / "data.js"
 
 PHASE_META = [
-    ("phase0_archive", "Phase 0: Archive", "P0 Archive", "2001–2014", "Early DAWs & Bands"),
+    ("phase0_archive", "Phase 0: Archive", "P0 Archive", "2001–2014", "Early DAWs & Archive"),
     ("phase1_early", "Phase 1: Early", "P1 Early", "2013–2018", "Live 8–10"),
     ("phase2_mid", "Phase 2: Mid", "P2 Mid", "2018–2022", "Live 10"),
     ("phase3_ambient", "Phase 3: Ambient", "P3 Ambient", "2020–2024", "Live 10→12"),
@@ -31,7 +31,7 @@ ERA_META = [
     ("present_ambient", "Present Ambient", "Pres Amb", "2001–12", "phase0_archive", "P0", "Early ambient sketches"),
     ("present_electro", "Present Electro", "Pres Elec", "2003–12", "phase0_archive", "P0", "Early electro & chiptune"),
     ("hd_2005", "2005 Hard Drive", "2005 HD", "2005–10", "phase0_archive", "P0", "Archival bounces & mixes"),
-    ("bands_archive", "Early Bands", "Bands", "2006–14", "phase0_archive", "P0", "Infants, Real Feal, Spudboy"),
+    ("bands_archive", "Archive 2006–14", "Arch 06", "2006–14", "phase0_archive", "P0", "Spudboy & 2006–14 solo archive"),
     ("archive_2013_18", "Archive 13–18", "Arch 13", "2013–18", "phase1_early", "P1", ""),
     ("nihon_forever", "Nihon Forever", "Nihon", "~2015–17", "phase1_early", "P1", ""),
     ("ep_concepts", "EP Concepts", "EP Conc", "~2016–18", "phase1_early", "P1", "Includes 'Le Garage ≤2018' folder"),
@@ -772,7 +772,7 @@ def main() -> None:
                     pshort,
                     pyears,
                     p_tracks,
-                    extra={"daw": pdaw, "note": "Pre-2013 audio bounces & bands", "tracks": p_rep_tracks},
+                    extra={"daw": pdaw, "note": "Pre-2013 audio archive bounces", "tracks": p_rep_tracks},
                 )
             )
             continue

@@ -39,12 +39,7 @@ TRACK_SPECS = [
     ("archive", "hd_2005", 2, "Sine Mix 01", 125.0, "me music - 2005 hard drive/sine mix 01.m4a"),
     ("archive", "hd_2005", 3, "Junglemassive", 170.0, "me music - 2005 hard drive/junglemassive.m4a"),
     ("archive", "hd_2005", 4, "White Morning", 120.0, "me music - 2005 hard drive/White Morning Mixdown 03.m4a"),
-    ("archive", "hd_2005", 5, "Clor — Wolf (Remix)", 128.0, "me music - 2005 hard drive/Clor Wolf rmx 25 Rendered.m4a"),
 
-    ("archive", "bands_archive", 1, "Infants — Foam Party", 132.0, "Infants/Infants Album (Mastered)/01 Foam Party (Mastered).mp3"),
-    ("archive", "bands_archive", 2, "Infants — Dark Hoist", 124.0, "Infants/Infants Album (Mastered)/07 Dark Hoist (Mastered).mp3"),
-    ("archive", "bands_archive", 3, "Real Feal — Shout", 128.0, "Real Feal/Real_Feal-Shout.mp3"),
-    ("archive", "bands_archive", 4, "Feal Real — Theogen Disco", 126.0, "Feal Real/Zombies EP/00  Theogen Disco.mp3"),
     ("archive", "bands_archive", 5, "Spudboy — Drone 2 Static", 92.0, "Spudboy/drone 2 static C Maj.mp3"),
     ("archive", "bands_archive", 6, "Make It Thru", 124.0, "me archive/2014/make it thru.mp3"),
 
