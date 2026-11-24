@@ -21,6 +21,9 @@
     "--md-sys-color-cluster-5",
     "--md-sys-color-cluster-6",
     "--md-sys-color-cluster-7",
+    "--md-sys-color-cluster-8",
+    "--md-sys-color-cluster-9",
+    "--md-sys-color-cluster-10",
   ];
   const PHASE_VARS = {
     phase0_archive: "--md-sys-color-cluster-4",

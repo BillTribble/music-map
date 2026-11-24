@@ -3,6 +3,7 @@
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <meta name="color-scheme" content="light dark" />
   <title>Bill Tribble Music Map</title>
   <meta name="description" content="Interactive sonic atlas and evolutionary music map of Bill Tribble's catalog from 2001 to 2026 — Vibe clusters, Energy-Wave Era timeline, and harmonic analysis." />
   <meta property="og:title" content="Bill Tribble Music Map" />
@@ -40,6 +41,46 @@
       }, 4500);
     })();
   </script>
+  <script>
+    (function () {
+      var THEME_KEY = "btmm.theme";
+      var MIGRATION_KEY = "btmm.theme_v2";
+      var mode = "auto";
+      try {
+        if (localStorage.getItem(MIGRATION_KEY) !== "1") {
+          localStorage.removeItem(THEME_KEY);
+          localStorage.removeItem("me.theme");
+          localStorage.setItem(MIGRATION_KEY, "1");
+          localStorage.setItem(THEME_KEY, "auto");
+        } else {
+          var saved = localStorage.getItem(THEME_KEY);
+          if (saved === "auto" || saved === "light" || saved === "dark") {
+            mode = saved;
+          }
+        }
+      } catch (_) {}
+
+      function resolveAuto() {
+        try {
+          if (window.parent && window.parent !== window && window.parent.document) {
+            var pt = window.parent.document.documentElement.getAttribute("data-theme");
+            if (pt === "dark" || pt === "light") return pt;
+          }
+        } catch (_) {}
+        try {
+          if (window.matchMedia && window.matchMedia("(prefers-color-scheme: dark)").matches) {
+            return "dark";
+          }
+        } catch (_) {}
+        return "light";
+      }
+
+      var resolved = mode === "auto" ? resolveAuto() : mode;
+      document.documentElement.setAttribute("data-theme", resolved);
+      document.documentElement.setAttribute("data-theme-mode", mode);
+      document.documentElement.style.colorScheme = resolved;
+    })();
+  </script>
   <link rel="preconnect" href="https://fonts.googleapis.com" />
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
   <link href="https://fonts.googleapis.com/css2?family=Google+Sans+Flex:opsz,wght@6..144,400..700&family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet" />
@@ -75,8 +116,8 @@
         </button>
       </div>
     </div>
-    <button id="theme-toggle" type="button" class="icon-btn" aria-label="Toggle color theme" title="Switch light / dark theme">
-      <span class="ms">light_mode</span>
+    <button id="theme-toggle-btn" type="button" class="icon-btn" data-theme-mode="auto" aria-label="Theme: Auto (system)" title="Theme: Auto (system)">
+      <span id="theme-toggle-icon" class="ms">brightness_auto</span>
     </button>
     <button id="settings-open" type="button" class="icon-btn" aria-label="Settings" aria-expanded="false" title="Settings &amp; theme">
       <span class="ms">tune</span>
@@ -159,5 +200,6 @@
   <script src="js/views-harmony.js?v=20261124g"></script>
   <script src="js/views-evolution.js?v=20261124g"></script>
   <script src="js/app.js?v=20261124g"></script>
+  <script src="js/theme.js?v=20261124g"></script>
 </body>
 </html>

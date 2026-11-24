@@ -1,15 +1,16 @@
-// Persistent Collapsible Floating Track Player Card (Starred, Badges, Tier A/B/C CTAs & Private Analytics)
+// Persistent Collapsible Floating Track Player Card (SoundCloud Waveform, Transport, 'i' Analysis Drawer & Tier A/B/C CTAs)
 (function () {
   "use strict";
 
   const STAR_KEY = "btmm.starred";
   const COLLAPSE_KEY = "btmm.playerCollapsed";
+  const AUTOPLAY_KEY = "btmm.autoPlay";
   const LEGACY_STAR_KEY = "me.starred";
-  const PRE_2015_ERAS = new Set(["present_ambient", "present_electro", "hd_2005", "bands_archive"]);
   // Public opaque Web3Forms UUID (zero email address in client bundle; paste key from web3forms.com)
   let web3FormsKey = "";
   const WEB3FORMS_URL = "https://api.web3forms.com/submit";
   const INSTAGRAM_URL = "https://www.instagram.com/bill_tribble/";
+  const DEFAULT_PEAK_BARS = 160;
 
   // Official inline brand SVG paths (zero external icon CDNs)
   const BRAND_SVGS = {
@@ -27,6 +28,8 @@
 
   let selectedId = null;
   let collapsed = false;
+  let infoOpen = false;
+  let localAutoPlay = true;
   let starred = new Set();
   const requestedIds = new Set();
   let formOpenForId = null;
@@ -35,8 +38,29 @@
   let draftEmail = "";
   let draftNote = "";
 
+  // Waveform & playback animation state
+  const fallbackPeaksCache = new Map();
+  const resampledBarsCache = new Map();
+  let waveHoverFrac = null;
+  let isWaveScrubbing = false;
+  let hasWaveDragged = false;
+  let scrubFrac = null;
+  let optimisticSeekTrackId = null;
+  let optimisticSeekSec = null;
+  let optimisticSeekUntilMs = 0;
+  let waveRafId = null;
+  let lastRenderedTrackId = null;
+  let cachedThemeKey = "";
+  let cachedPalette = null;
+  let themeObserver = null;
+  let waveResizeObserver = null;
+
   function esc(s) {
     return String(s).replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;").replace(/"/g, "&quot;");
+  }
+
+  function clamp(v, lo, hi) {
+    return Math.max(lo, Math.min(hi, v));
   }
 
   function loadPrefs() {
@@ -47,6 +71,9 @@
         if (Array.isArray(arr)) starred = new Set(arr.filter((x) => typeof x === "string"));
       }
       collapsed = localStorage.getItem(COLLAPSE_KEY) === "true";
+      const savedAuto = localStorage.getItem(AUTOPLAY_KEY);
+      if (savedAuto === "false") localAutoPlay = false;
+      else if (savedAuto === "true") localAutoPlay = true;
     } catch (_) {}
   }
 
@@ -56,6 +83,10 @@
 
   function saveCollapsed() {
     try { localStorage.setItem(COLLAPSE_KEY, collapsed ? "true" : "false"); } catch (_) {}
+  }
+
+  function saveLocalAutoPlay() {
+    try { localStorage.setItem(AUTOPLAY_KEY, localAutoPlay ? "true" : "false"); } catch (_) {}
   }
 
   function energyBadgeCls(en) {
@@ -81,16 +112,22 @@
 
   function resolveTier(t) {
     if (isReleased(t)) return "A";
-    if (t.tier === "archive_dl" || (typeof t.year === "number" && t.year < 2015) || PRE_2015_ERAS.has(t.era)) {
+    if (
+      t &&
+      t.tier === "archive_dl" &&
+      Boolean(t.mp3_320_url) &&
+      !(typeof t.year === "number" && t.year >= 2015)
+    ) {
       return "B";
     }
     return "C";
   }
 
-  function formatDur(sec) {
-    if (!sec || !Number.isFinite(sec)) return "";
-    const m = Math.floor(sec / 60);
-    const s = Math.round(sec % 60);
+  function formatClock(sec, roundNearest = false) {
+    if (!Number.isFinite(sec) || sec < 0) return "0:00";
+    const whole = roundNearest ? Math.max(0, Math.round(sec)) : Math.max(0, Math.floor(sec));
+    const m = Math.floor(whole / 60);
+    const s = whole % 60;
     return `${m}:${String(s).padStart(2, "0")}`;
   }
 
@@ -124,7 +161,504 @@
       </div>`;
   }
 
-  function buildTierActionsHtml(t, eraLabel) {
+  // Deterministic hash-seeded fallback waveform (0..100) from t.id + track dynamics when t.peaks isn't populated yet
+  function getTrackPeaks(t) {
+    if (!t) return [];
+    if (Array.isArray(t.peaks) && t.peaks.length >= 16) {
+      let maxVal = 0;
+      for (let i = 0; i < t.peaks.length; i++) {
+        const v = Number(t.peaks[i]) || 0;
+        if (v > maxVal) maxVal = v;
+      }
+      const scale = maxVal > 0 && maxVal <= 1.05 ? 100 : 1;
+      return t.peaks.map((v) => clamp(Math.round((Number(v) || 0) * scale), 4, 100));
+    }
+    if (fallbackPeaksCache.has(t.id)) return fallbackPeaksCache.get(t.id);
+
+    const seedStr = String(t.id || t.title || "track");
+    let h = 2166136261 >>> 0;
+    for (let i = 0; i < seedStr.length; i++) {
+      h ^= seedStr.charCodeAt(i);
+      h = Math.imul(h, 16777619) >>> 0;
+    }
+    let state = h || 123456789;
+    function nextRand() {
+      state ^= state << 13;
+      state ^= state >>> 17;
+      state ^= state << 5;
+      return (state >>> 0) / 4294967296;
+    }
+
+    const energyNorm = clamp((Number(t.energy) || 5) / 10, 0.2, 1);
+    const punch = clamp((Number(t.drum_complexity) || 35) / 100, 0.1, 0.95);
+    const phaseA = nextRand() * Math.PI * 2;
+    const phaseB = nextRand() * Math.PI * 2;
+    const freqA = 2.2 + nextRand() * 2.6;
+    const freqB = 5.5 + nextRand() * 4.5;
+
+    const bars = new Array(DEFAULT_PEAK_BARS);
+    for (let i = 0; i < DEFAULT_PEAK_BARS; i++) {
+      const u = i / (DEFAULT_PEAK_BARS - 1);
+      const intro = u < 0.08 ? 0.35 + 0.65 * (u / 0.08) : 1;
+      const outro = u > 0.9 ? 0.3 + 0.7 * ((1 - u) / 0.1) : 1;
+      const macro =
+        0.58 +
+        0.22 * Math.sin(u * freqA * Math.PI + phaseA) +
+        0.14 * Math.sin(u * freqB * Math.PI + phaseB);
+      const transient = (1 - punch * 0.55) + nextRand() * (0.42 + punch * 0.68);
+      const raw = 100 * intro * outro * macro * transient * (0.62 + 0.38 * energyNorm);
+      bars[i] = clamp(Math.round(raw), 10, 98);
+    }
+    fallbackPeaksCache.set(t.id, bars);
+    return bars;
+  }
+
+  function getResampledBars(t, count) {
+    const src = getTrackPeaks(t);
+    if (!src.length || count <= 0) return [];
+    const hasLivePeaks = Array.isArray(t.peaks) && t.peaks.length >= 16;
+    const cacheKey = `${t.id}:${hasLivePeaks ? "p" : "f"}:${src.length}:${count}`;
+    if (resampledBarsCache.has(cacheKey)) return resampledBarsCache.get(cacheKey);
+
+    const out = new Array(count);
+    const n = src.length;
+    for (let i = 0; i < count; i++) {
+      const a = (i * n) / count;
+      const b = ((i + 1) * n) / count;
+      const i0 = clamp(Math.floor(a), 0, n - 1);
+      const i1 = clamp(Math.ceil(b) - 1, i0, n - 1);
+      let mx = 0;
+      let sum = 0;
+      let cnt = 0;
+      for (let j = i0; j <= i1; j++) {
+        const v = src[j];
+        if (v > mx) mx = v;
+        sum += v;
+        cnt++;
+      }
+      const mean = cnt > 0 ? sum / cnt : mx;
+      out[i] = Math.round(mx * 0.65 + mean * 0.35);
+    }
+    if (resampledBarsCache.size > 64) resampledBarsCache.clear();
+    resampledBarsCache.set(cacheKey, out);
+    return out;
+  }
+
+  function getAutoPlayEnabled() {
+    if (typeof window !== "undefined" && window.ME_AUDIO) {
+      if (typeof window.ME_AUDIO.getAutoPlay === "function") {
+        return Boolean(window.ME_AUDIO.getAutoPlay());
+      }
+      if (typeof window.ME_AUDIO.getPlaybackState === "function") {
+        const st = window.ME_AUDIO.getPlaybackState();
+        if (st && typeof st.autoPlay === "boolean") return st.autoPlay;
+      }
+    }
+    return localAutoPlay;
+  }
+
+  function readPlaybackSnapshot(t) {
+    const ma = typeof window !== "undefined" ? window.ME_AUDIO : null;
+    const st = ma && typeof ma.getPlaybackState === "function" ? ma.getPlaybackState() : null;
+    const activeMatch = Boolean(st && st.trackId === t.id);
+
+    const isPlaying = activeMatch
+      ? Boolean(st.playing)
+      : Boolean(
+          (hooks && typeof hooks.playing === "function" && hooks.playing() === t.id) ||
+          (ma && typeof ma.isPlaying === "function" && ma.isPlaying(t.id))
+        );
+    const isPend = activeMatch && typeof st.pending === "boolean"
+      ? st.pending
+      : Boolean(hooks && typeof hooks.pending === "function" && hooks.pending() === t.id);
+
+    const autoPlay = activeMatch && typeof st.autoPlay === "boolean"
+      ? st.autoPlay
+      : getAutoPlayEnabled();
+
+    const hasFullAsset = Boolean(t.stream_url || t.mp3_320_url);
+    const catalogFullDur = Number(t.full_duration_sec) || 0;
+    const catalogClipDur = Number(t.duration_sec) || 22;
+
+    let isFullTrack = hasFullAsset;
+    let seekableDur = hasFullAsset
+      ? (catalogFullDur || catalogClipDur)
+      : catalogClipDur;
+    let displayTotalDur = isFullTrack ? (catalogFullDur || catalogClipDur) : seekableDur;
+    let currentTime = 0;
+
+    if (activeMatch) {
+      if (typeof st.isFullTrack === "boolean") {
+        isFullTrack = st.isFullTrack;
+      } else if (Number.isFinite(st.duration) && st.duration > catalogClipDur + 5) {
+        isFullTrack = true;
+      }
+      if (Number.isFinite(st.duration) && st.duration > 0) {
+        seekableDur = st.duration;
+        displayTotalDur = st.duration;
+      } else {
+        seekableDur = isFullTrack ? (catalogFullDur || catalogClipDur) : catalogClipDur;
+        displayTotalDur = seekableDur;
+      }
+      if (Number.isFinite(st.currentTime) && st.currentTime >= 0) {
+        currentTime = st.currentTime;
+      }
+    } else if (isPlaying && ma && typeof ma.activeVoice === "function") {
+      const av = ma.activeVoice();
+      if (av && av.trackId === t.id) {
+        if (av.isHtmlFallback && av.htmlAudio) {
+          const elDur = Number(av.htmlAudio.duration);
+          if (Number.isFinite(elDur) && elDur > 0) {
+            seekableDur = elDur;
+            isFullTrack = elDur > catalogClipDur + 5;
+            displayTotalDur = elDur;
+          } else {
+            isFullTrack = false;
+            seekableDur = catalogClipDur;
+            displayTotalDur = seekableDur;
+          }
+          if (Number.isFinite(av.htmlAudio.currentTime)) {
+            currentTime = av.htmlAudio.currentTime;
+          }
+        } else {
+          const ctxNow = typeof ma.ctxTime === "function" ? ma.ctxTime() : 0;
+          const elapsed = Math.max(0, ctxNow - (av.barOriginCtxTime || 0));
+          isFullTrack = false;
+          seekableDur = catalogClipDur;
+          displayTotalDur = seekableDur;
+          currentTime = seekableDur > 0 ? (elapsed % seekableDur) : 0;
+        }
+      }
+    } else if (!isFullTrack) {
+      seekableDur = catalogClipDur;
+      displayTotalDur = seekableDur;
+    }
+
+    const timelineDur = isFullTrack ? Math.max(1, displayTotalDur) : Math.max(1, seekableDur);
+
+    const nowMs = typeof performance !== "undefined" ? performance.now() : 0;
+    if (optimisticSeekTrackId === t.id && optimisticSeekSec !== null && nowMs < optimisticSeekUntilMs) {
+      currentTime = clamp(optimisticSeekSec, 0, timelineDur);
+    }
+
+    let winStart = 0;
+    let winEnd = Math.min(timelineDur, catalogClipDur);
+    let hasPreviewWindow = false;
+
+    if (activeMatch && Number.isFinite(st.previewStart) && Number.isFinite(st.previewEnd) && st.previewEnd > st.previewStart) {
+      winStart = clamp(st.previewStart, 0, timelineDur);
+      winEnd = clamp(st.previewEnd, winStart, timelineDur);
+      hasPreviewWindow = winEnd > winStart + 0.2;
+    } else if (isFullTrack) {
+      const cue = Number.isFinite(t.preview_start_sec)
+        ? Number(t.preview_start_sec)
+        : (Number(t.cue_sec) || 0);
+      const pDur = Number(t.preview_dur_sec) || catalogClipDur;
+      winStart = clamp(cue, 0, timelineDur);
+      winEnd = clamp(winStart + pDur, winStart, timelineDur);
+      hasPreviewWindow = timelineDur > pDur * 1.15 && winEnd > winStart + 0.5;
+    } else {
+      winStart = 0;
+      winEnd = timelineDur;
+      hasPreviewWindow = true;
+    }
+
+    const looping = activeMatch && typeof st.looping === "boolean"
+      ? st.looping
+      : (!autoPlay || !isFullTrack);
+
+    const progressFrac = timelineDur > 0 ? clamp(currentTime / timelineDur, 0, 1) : 0;
+
+    return {
+      isPlaying,
+      isPend,
+      autoPlay,
+      isFullTrack,
+      looping,
+      showLoopMarkers: Boolean(looping),
+      hasPreviewWindow,
+      winStart,
+      winEnd,
+      currentTime,
+      timelineDur,
+      seekableDur: Math.max(1, seekableDur),
+      displayTotalDur: Math.max(1, displayTotalDur),
+      progressFrac,
+    };
+  }
+
+  function resolveWavePalette() {
+    if (typeof document === "undefined" || typeof getComputedStyle !== "function") {
+      return {
+        primary: "rgb(14, 87, 208)",
+        secondary: "rgb(1, 99, 156)",
+        secondaryContainer: "rgb(193, 231, 255)",
+        onSurface: "rgb(31, 31, 31)",
+        onSurfaceVariant: "rgb(68, 71, 70)",
+      };
+    }
+    const themeAttr = document.documentElement.getAttribute("data-theme") || "light";
+    if (cachedPalette && cachedThemeKey === themeAttr) return cachedPalette;
+    const cs = getComputedStyle(document.documentElement);
+    const pick = (prop, fb) => (cs.getPropertyValue(prop) || "").trim() || fb;
+    cachedThemeKey = themeAttr;
+    cachedPalette = {
+      primary: pick("--md-sys-color-primary", "rgb(14, 87, 208)"),
+      secondary: pick("--md-sys-color-secondary", "rgb(1, 99, 156)"),
+      secondaryContainer: pick("--md-sys-color-secondary-container", "rgb(193, 231, 255)"),
+      onSurface: pick("--md-sys-color-on-surface", "rgb(31, 31, 31)"),
+      onSurfaceVariant: pick("--md-sys-color-on-surface-variant", "rgb(68, 71, 70)"),
+    };
+    return cachedPalette;
+  }
+
+  function formatWaveTimeText(snap) {
+    if (isWaveScrubbing && scrubFrac !== null) {
+      const target = scrubFrac * snap.timelineDur;
+      return `${formatClock(target)} / ${formatClock(snap.timelineDur, true)}`;
+    }
+    if (waveHoverFrac !== null) {
+      const hoverSec = waveHoverFrac * snap.timelineDur;
+      return `${formatClock(hoverSec)} / ${formatClock(snap.timelineDur, true)}`;
+    }
+    if (snap.isPlaying || snap.currentTime > 0.05) {
+      return `${formatClock(snap.currentTime)} / ${formatClock(snap.timelineDur, true)}`;
+    }
+    return formatClock(snap.displayTotalDur, true);
+  }
+
+  function drawRoundedRect(ctx, x, y, w, h, r) {
+    const rad = Math.max(0, Math.min(r, w * 0.5, h * 0.5));
+    ctx.beginPath();
+    ctx.moveTo(x + rad, y);
+    ctx.lineTo(x + w - rad, y);
+    ctx.quadraticCurveTo(x + w, y, x + w, y + rad);
+    ctx.lineTo(x + w, y + h - rad);
+    ctx.quadraticCurveTo(x + w, y + h, x + w - rad, y + h);
+    ctx.lineTo(x + rad, y + h);
+    ctx.quadraticCurveTo(x, y + h, x, y + h - rad);
+    ctx.lineTo(x, y + rad);
+    ctx.quadraticCurveTo(x, y, x + rad, y);
+    ctx.closePath();
+  }
+
+  function syncWaveVisuals() {
+    if (!cardEl || cardEl.hidden || collapsed || !selectedId || !byId.has(selectedId)) return;
+    const t = byId.get(selectedId);
+    const canvas = cardEl.querySelector("#mp-waveform");
+    const wrapEl = cardEl.querySelector("#mp-wave-wrap");
+    const timeEl = cardEl.querySelector("#mp-wave-time");
+    if (!canvas) return;
+
+    const snap = readPlaybackSnapshot(t);
+    if (timeEl) {
+      const nextTxt = formatWaveTimeText(snap);
+      if (timeEl.textContent !== nextTxt) timeEl.textContent = nextTxt;
+    }
+    if (wrapEl) {
+      const vNow = String(Math.round(snap.currentTime));
+      const vMax = String(Math.round(snap.timelineDur));
+      if (wrapEl.getAttribute("aria-valuenow") !== vNow) wrapEl.setAttribute("aria-valuenow", vNow);
+      if (wrapEl.getAttribute("aria-valuemax") !== vMax) wrapEl.setAttribute("aria-valuemax", vMax);
+    }
+
+    const rect = canvas.getBoundingClientRect();
+    if (rect.width < 12 || rect.height < 12) return;
+    const dpr = Math.min(3, (typeof window !== "undefined" && window.devicePixelRatio) || 1);
+    const pxW = Math.round(rect.width * dpr);
+    const pxH = Math.round(rect.height * dpr);
+    if (canvas.width !== pxW || canvas.height !== pxH) {
+      canvas.width = pxW;
+      canvas.height = pxH;
+    }
+
+    const ctx = canvas.getContext("2d");
+    if (!ctx) return;
+    ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+    ctx.clearRect(0, 0, rect.width, rect.height);
+
+    const pal = resolveWavePalette();
+    const W = rect.width;
+    const H = rect.height;
+    const barStep = 3;
+    const barW = 2;
+    const sidePad = 8;
+    const barCount = Math.max(24, Math.floor((W - sidePad * 2 + 1) / barStep));
+    const totalBarsW = barCount * barStep - (barStep - barW);
+    const startX = Math.floor((W - totalBarsW) * 0.5);
+
+    const splitY = Math.round(H * 0.67);
+    const gapY = 1.5;
+    const maxUpperH = Math.max(8, splitY - 6 - gapY * 0.5);
+    const maxLowerH = Math.max(4, H - 6 - splitY - gapY * 0.5);
+
+    const w0 = snap.hasPreviewWindow ? clamp(snap.winStart / snap.timelineDur, 0, 1) : 0;
+    const w1 = snap.hasPreviewWindow ? clamp(snap.winEnd / snap.timelineDur, w0, 1) : 0;
+    const winX0 = startX + w0 * totalBarsW;
+    const winX1 = startX + w1 * totalBarsW;
+
+    // 1. Highlighted snippet / loop window backdrop
+    if (snap.hasPreviewWindow && winX1 > winX0 + 2) {
+      const fullSpan = w1 - w0 >= 0.98;
+      if (snap.showLoopMarkers || !fullSpan) {
+        ctx.save();
+        ctx.fillStyle = pal.secondaryContainer;
+        ctx.globalAlpha = snap.showLoopMarkers ? 0.36 : 0.18;
+        drawRoundedRect(ctx, winX0, 3, winX1 - winX0, H - 6, 5);
+        ctx.fill();
+        ctx.restore();
+      }
+    }
+
+    // 2. SoundCloud split upper + mirrored lower amplitude bars
+    const bars = getResampledBars(t, barCount);
+    const dispFrac = isWaveScrubbing && scrubFrac !== null ? scrubFrac : snap.progressFrac;
+    const hasProgress = snap.isPlaying || dispFrac > 0.001;
+
+    for (let i = 0; i < barCount; i++) {
+      const barFrac = (i + 0.5) / barCount;
+      const amp = bars[i] || 12;
+      const x = startX + i * barStep;
+      const uH = Math.max(2, Math.round((amp / 100) * maxUpperH));
+      const lH = Math.max(1.5, Math.round((amp / 100) * maxLowerH));
+
+      const played = hasProgress && barFrac <= dispFrac;
+      const inWin = snap.hasPreviewWindow && barFrac >= w0 && barFrac <= w1;
+      const inHover =
+        waveHoverFrac !== null &&
+        !isWaveScrubbing &&
+        ((waveHoverFrac > dispFrac && barFrac > dispFrac && barFrac <= waveHoverFrac) ||
+          (waveHoverFrac < dispFrac && barFrac >= waveHoverFrac && barFrac <= dispFrac));
+
+      let col = pal.onSurfaceVariant;
+      let uAlpha = 0.28;
+      let lAlpha = 0.13;
+
+      if (played) {
+        col = pal.primary;
+        uAlpha = 0.96;
+        lAlpha = 0.38;
+      } else if (inHover) {
+        col = pal.primary;
+        uAlpha = 0.56;
+        lAlpha = 0.22;
+      } else if (inWin) {
+        col = pal.secondary;
+        uAlpha = snap.showLoopMarkers ? 0.68 : 0.46;
+        lAlpha = snap.showLoopMarkers ? 0.26 : 0.18;
+      }
+
+      ctx.fillStyle = col;
+      ctx.globalAlpha = uAlpha;
+      ctx.fillRect(x, splitY - gapY * 0.5 - uH, barW, uH);
+      ctx.globalAlpha = lAlpha;
+      ctx.fillRect(x, splitY + gapY * 0.5, barW, lH);
+    }
+    ctx.globalAlpha = 1;
+
+    // 3. Loop brackets (when looping / preview-only) or subtle snippet cue tick (when Auto-Play ON)
+    if (snap.hasPreviewWindow && winX1 > winX0 + 2) {
+      if (snap.showLoopMarkers) {
+        const bx0 = Math.round(winX0) + 0.5;
+        const bx1 = Math.round(winX1) - 0.5;
+        const cap = 4.5;
+        ctx.save();
+        ctx.strokeStyle = pal.secondary;
+        ctx.globalAlpha = 0.92;
+        ctx.lineWidth = 1.6;
+        ctx.beginPath();
+        // Left loop bracket [
+        ctx.moveTo(bx0 + cap, 3.5);
+        ctx.lineTo(bx0, 3.5);
+        ctx.lineTo(bx0, H - 3.5);
+        ctx.lineTo(bx0 + cap, H - 3.5);
+        // Right loop bracket ]
+        ctx.moveTo(bx1 - cap, 3.5);
+        ctx.lineTo(bx1, 3.5);
+        ctx.lineTo(bx1, H - 3.5);
+        ctx.lineTo(bx1 - cap, H - 3.5);
+        ctx.stroke();
+        ctx.restore();
+      } else if (w0 > 0.01) {
+        const cx = Math.round(winX0) + 0.5;
+        ctx.save();
+        ctx.strokeStyle = pal.secondary;
+        ctx.fillStyle = pal.secondary;
+        ctx.globalAlpha = 0.72;
+        ctx.lineWidth = 1.25;
+        ctx.beginPath();
+        ctx.moveTo(cx, 4);
+        ctx.lineTo(cx, H - 4);
+        ctx.stroke();
+        // Subtle cue-in flag triangle at top of snippet start
+        ctx.beginPath();
+        ctx.moveTo(cx, 3.5);
+        ctx.lineTo(cx + 4.5, 6);
+        ctx.lineTo(cx, 8.5);
+        ctx.closePath();
+        ctx.fill();
+        ctx.restore();
+      }
+    }
+
+    // 4. Hover scrub preview cursor
+    if (waveHoverFrac !== null && !isWaveScrubbing) {
+      const hx = Math.round(startX + waveHoverFrac * totalBarsW) + 0.5;
+      ctx.save();
+      ctx.strokeStyle = pal.onSurface;
+      ctx.globalAlpha = 0.34;
+      ctx.lineWidth = 1;
+      ctx.beginPath();
+      ctx.moveTo(hx, 3);
+      ctx.lineTo(hx, H - 3);
+      ctx.stroke();
+      ctx.restore();
+    }
+
+    // 5. Live playhead needle
+    if (hasProgress) {
+      const px = clamp(startX + dispFrac * totalBarsW, startX + 1, startX + totalBarsW - 1);
+      ctx.save();
+      ctx.strokeStyle = pal.primary;
+      ctx.fillStyle = pal.primary;
+      ctx.lineWidth = 1.75;
+      ctx.beginPath();
+      ctx.moveTo(px, 4);
+      ctx.lineTo(px, H - 4);
+      ctx.stroke();
+      ctx.beginPath();
+      ctx.arc(px, 5, 2.4, 0, Math.PI * 2);
+      ctx.fill();
+      ctx.restore();
+    }
+  }
+
+  function stopWaveRaf() {
+    if (waveRafId !== null && typeof cancelAnimationFrame === "function") {
+      cancelAnimationFrame(waveRafId);
+      waveRafId = null;
+    }
+  }
+
+  function ensureWaveRaf() {
+    if (typeof requestAnimationFrame !== "function") return;
+    if (waveRafId !== null) return;
+    function tick() {
+      waveRafId = null;
+      if (!cardEl || cardEl.hidden || collapsed || !selectedId || !byId.has(selectedId)) return;
+      if (typeof document !== "undefined" && document.hidden) return;
+      const t = byId.get(selectedId);
+      const snap = readPlaybackSnapshot(t);
+      syncWaveVisuals();
+      const nowMs = typeof performance !== "undefined" ? performance.now() : 0;
+      if (snap.isPlaying || snap.isPend || isWaveScrubbing || nowMs < optimisticSeekUntilMs) {
+        waveRafId = requestAnimationFrame(tick);
+      }
+    }
+    waveRafId = requestAnimationFrame(tick);
+  }
+
+  function buildTierActionsHtml(t) {
     const tier = resolveTier(t);
     if (tier === "A") {
       const links = t.links || {};
@@ -152,26 +686,15 @@
     }
 
     if (tier === "B") {
-      const mp3Url = t.mp3_320_url || t.download_url || "";
+      const mp3Url = t.mp3_320_url;
       const flacUrl = t.flac_url || "";
       const safeFilename = `Bill Tribble - ${(t.title || t.id).replace(/[\\/:*?"<>|]/g, "")}.mp3`;
-      const durTxt = formatDur(t.full_duration_sec);
-      const sizeTxt = t.mp3_size_mb ? `${Number(t.mp3_size_mb).toFixed(1)} MB` : "";
-      const subParts = ["Free 320 kbps MP3", durTxt, sizeTxt].filter(Boolean);
-
-      if (!mp3Url && !flacUrl) {
-        return `
-          <div class="player-actions">
-            <div class="action-sub">Full 320 kbps MP3 &amp; FLAC queued for archive upload (${esc(eraLabel)}).</div>
-          </div>`;
-      }
       return `
         <div class="player-actions">
           <div class="player-cta-row">
-            ${mp3Url ? `<a class="btn" href="${esc(mp3Url)}" download="${esc(safeFilename)}" target="_blank" rel="noopener noreferrer" data-dl-kind="track-download-mp3"><span class="ms">download</span><span>Download MP3 (320 kbps)</span></a>` : ""}
+            <a class="btn" href="${esc(mp3Url)}" download="${esc(safeFilename)}" target="_blank" rel="noopener noreferrer" data-dl-kind="track-download-mp3"><span class="ms">download</span><span>Download MP3 (320 kbps)</span></a>
             ${flacUrl ? `<a class="btn-secondary-pill" href="${esc(flacUrl)}" target="_blank" rel="noopener noreferrer" data-dl-kind="track-download-flac" title="Download lossless FLAC"><span class="ms">album</span><span>FLAC</span></a>` : ""}
           </div>
-          <div class="action-sub">${esc(subParts.join(" · "))}</div>
         </div>`;
     }
 
@@ -212,32 +735,52 @@
       </div>`;
   }
 
+  function syncInPlaceButtons(t, snap) {
+    const playBtn = cardEl.querySelector("[data-player-play]");
+    if (playBtn) {
+      playBtn.classList.toggle("is-playing", snap.isPlaying);
+      playBtn.setAttribute("aria-label", snap.isPlaying ? "Pause" : "Play");
+      playBtn.title = snap.isPlaying ? "Pause (Space)" : "Play (Space)";
+      const ic = playBtn.querySelector(".ms");
+      if (ic) ic.textContent = snap.isPlaying ? "pause" : snap.isPend ? "hourglass_top" : "play_arrow";
+    }
+    const autoBtn = cardEl.querySelector("#mp-autoplay-toggle");
+    if (autoBtn) {
+      autoBtn.classList.toggle("is-active", snap.autoPlay);
+      autoBtn.setAttribute("aria-pressed", String(snap.autoPlay));
+      const ic = autoBtn.querySelector(".ms");
+      if (ic) ic.textContent = snap.autoPlay ? "playlist_play" : "repeat";
+    }
+  }
+
   function render() {
     if (!cardEl || !hooks) return;
     if (!selectedId || !byId.has(selectedId)) {
       cardEl.hidden = true;
+      lastRenderedTrackId = null;
+      stopWaveRaf();
       return;
     }
     const t = byId.get(selectedId);
     const er = erasById.get(t.era);
     const eraLabel = er ? `${er.label} (${er.sublabel})` : t.era;
-    const isPlaying = hooks.playing() === t.id;
-    const isPend = hooks.pending() === t.id;
+    const snap = readPlaybackSnapshot(t);
+    const isPlaying = snap.isPlaying;
+    const isPend = snap.isPend;
     const isStar = starred.has(t.id);
 
     if (
       !collapsed &&
-      formOpenForId === t.id &&
-      typeof document !== "undefined" &&
-      cardEl.contains(document.activeElement) &&
-      (document.activeElement.tagName === "INPUT" || document.activeElement.tagName === "TEXTAREA")
+      lastRenderedTrackId === t.id &&
+      (isWaveScrubbing ||
+        (formOpenForId === t.id &&
+          typeof document !== "undefined" &&
+          cardEl.contains(document.activeElement) &&
+          (document.activeElement.tagName === "INPUT" || document.activeElement.tagName === "TEXTAREA")))
     ) {
-      const playBtn = cardEl.querySelector("[data-player-play]");
-      if (playBtn) {
-        playBtn.classList.toggle("is-playing", isPlaying);
-        const ic = playBtn.querySelector(".ms");
-        if (ic) ic.textContent = isPlaying ? "stop" : isPend ? "hourglass_top" : "play_arrow";
-      }
+      syncInPlaceButtons(t, snap);
+      syncWaveVisuals();
+      if (isPlaying || isPend || isWaveScrubbing) ensureWaveRaf();
       return;
     }
 
@@ -245,10 +788,12 @@
     cardEl.classList.toggle("is-collapsed", collapsed);
 
     if (collapsed) {
+      lastRenderedTrackId = null;
+      stopWaveRaf();
       cardEl.innerHTML = `
         <div class="mp-mini-row">
-          <button type="button" class="btn-tonal mp-play ${isPlaying ? "is-playing" : ""}" data-player-play="${esc(t.id)}" aria-label="${isPlaying ? "Stop" : "Play"}" title="${isPlaying ? "Stop (Space)" : "Play preview (Space)"}">
-            <span class="ms filled">${isPlaying ? "stop" : isPend ? "hourglass_top" : "play_arrow"}</span>
+          <button type="button" class="btn-tonal mp-play ${isPlaying ? "is-playing" : ""}" data-player-play="${esc(t.id)}" aria-label="${isPlaying ? "Pause" : "Play"}" title="${isPlaying ? "Pause (Space)" : "Play (Space)"}">
+            <span class="ms filled">${isPlaying ? "pause" : isPend ? "hourglass_top" : "play_arrow"}</span>
           </button>
           <div class="mp-mini-title" title="${esc(t.title)}">${esc(t.title)}</div>
           <button type="button" class="star-btn ${isStar ? "is-starred" : ""}" data-player-star="${esc(t.id)}" aria-pressed="${isStar}" aria-label="${isStar ? "Unstar track" : "Star track"}" title="${isStar ? "Remove star" : "Star track"}">
@@ -264,42 +809,171 @@
     const released = isReleased(t);
     const sketch = isSketch(t);
     const clusterName = t.cluster_label || "Unclassified";
+    const eraShort = er ? er.label : t.era;
+    const metaShort = `${eraShort} · ${clusterName}`;
+    const metaFull = `${eraLabel} · ${clusterName}`;
+    const timeReadout = formatWaveTimeText(snap);
 
     cardEl.innerHTML = `
       <div class="mp-head">
-        <button type="button" class="btn-tonal mp-play ${isPlaying ? "is-playing" : ""}" data-player-play="${esc(t.id)}" aria-label="${isPlaying ? "Stop" : "Play"}" title="${isPlaying ? "Stop (Space)" : "Play preview (Space)"}">
-          <span class="ms filled">${isPlaying ? "stop" : isPend ? "hourglass_top" : "play_arrow"}</span>
+        <button type="button" class="btn-tonal mp-play ${isPlaying ? "is-playing" : ""}" data-player-play="${esc(t.id)}" aria-label="${isPlaying ? "Pause" : "Play"}" title="${isPlaying ? "Pause (Space)" : "Play (Space)"}">
+          <span class="ms filled">${isPlaying ? "pause" : isPend ? "hourglass_top" : "play_arrow"}</span>
         </button>
         <div class="mp-titles">
           <div class="mp-name" title="${esc(t.title)}">${esc(t.title)}</div>
-          <div class="mp-meta">${esc(eraLabel)} · ${esc(clusterName)}</div>
+          <div class="mp-meta" title="${esc(metaFull)}">${esc(metaShort)}</div>
         </div>
         <div class="mp-head-actions">
+          <button type="button" class="icon-btn mp-info-btn ${infoOpen ? "is-active" : ""}" id="mp-info-toggle" aria-expanded="${infoOpen}" aria-controls="mp-info-panel" aria-label="Musical analysis details" title="${infoOpen ? "Hide musical analysis" : "Show key, BPM, energy & harmonic analysis"}">
+            <span class="ms">info</span>
+          </button>
           <button type="button" class="star-btn ${isStar ? "is-starred" : ""}" data-player-star="${esc(t.id)}" aria-pressed="${isStar}" aria-label="${isStar ? "Unstar track" : "Star track"}" title="${isStar ? "Remove star" : "Star track"}">
             <span class="ms">star</span>
           </button>
           <button type="button" class="icon-btn" id="mp-collapse" aria-label="Collapse player" title="Collapse to mini bar">
             <span class="ms">expand_more</span>
           </button>
-          <button type="button" class="icon-btn" id="mp-close" aria-label="Close player" title="Close">
-            <span class="ms">close</span>
+        </div>
+      </div>
+      <div class="mp-wave-section">
+        <div class="mp-wave-wrap" id="mp-wave-wrap" role="slider" tabindex="0" aria-label="Track waveform seek" aria-valuemin="0" aria-valuemax="${Math.round(snap.timelineDur)}" aria-valuenow="${Math.round(snap.currentTime)}">
+          <canvas id="mp-waveform" class="mp-wave-canvas" aria-hidden="true"></canvas>
+          <div id="mp-wave-time" class="mp-wave-time">${esc(timeReadout)}</div>
+        </div>
+        <div class="mp-transport-row">
+          <button type="button" class="mp-ctrl-btn" id="mp-restart" data-player-restart="${esc(t.id)}" aria-label="Play from start (0:00)" title="Restart track from 0:00">
+            <span class="ms">skip_previous</span>
+            <span>0:00</span>
+          </button>
+          <button type="button" class="mp-ctrl-btn ${snap.autoPlay ? "is-active" : ""}" id="mp-autoplay-toggle" data-player-autoplay="1" aria-pressed="${snap.autoPlay}" aria-label="Auto-play similar tracks" title="${snap.autoPlay ? "Auto-play on: plays full track & 1s crossfades to nearest similar track (click to loop snippet)" : "Auto-play off: looping snippet window (click to enable Auto-play)"}">
+            <span class="ms">${snap.autoPlay ? "playlist_play" : "repeat"}</span>
+            <span>Auto-play</span>
           </button>
         </div>
       </div>
-      <div class="mp-badges">
-        <span class="badge ${energyBadgeCls(t.energy)}" title="Mixed In Key energy level (1–10)">E${t.energy}/10</span>
-        <span class="badge badge-indigo">${esc(t.key_label)}</span>
-        <span class="badge badge-blue mono-num">${Math.round(t.bpm)} BPM</span>
-        ${sketch ? '<span class="badge badge-amber">Sketch</span>' : ""}
-        ${!released ? '<span class="badge badge-purple">Unreleased</span>' : ""}
+      <div id="mp-info-panel" class="mp-info-panel" ${infoOpen ? "" : "hidden"}>
+        <div class="mp-badges">
+          <span class="badge ${energyBadgeCls(t.energy)}" title="Mixed In Key energy level (1–10)">E${t.energy}/10</span>
+          <span class="badge badge-indigo">${esc(t.key_label || "—")}</span>
+          <span class="badge badge-blue mono-num">${Math.round(t.bpm || 0)} BPM</span>
+          ${sketch ? '<span class="badge badge-amber">Sketch</span>' : ""}
+          ${!released ? '<span class="badge badge-purple">Unreleased</span>' : ""}
+        </div>
+        <div class="mp-meters">
+          ${meterHtml("Harmonic complexity", t.harmonic_complexity, "var(--c5)")}
+          ${meterHtml("Chord richness", t.chord_richness, "var(--c1)")}
+          ${meterHtml("Harmonic motion", t.harmonic_motion, "var(--c2)")}
+          ${meterHtml("Drum complexity", t.drum_complexity, "var(--c3)")}
+        </div>
       </div>
-      <div class="mp-meters">
-        ${meterHtml("Harmonic complexity", t.harmonic_complexity, "var(--c5)")}
-        ${meterHtml("Chord richness", t.chord_richness, "var(--c1)")}
-        ${meterHtml("Harmonic motion", t.harmonic_motion, "var(--c2)")}
-        ${meterHtml("Drum complexity", t.drum_complexity, "var(--c3)")}
-      </div>
-      ${buildTierActionsHtml(t, er ? er.label : t.era)}`;
+      ${buildTierActionsHtml(t)}`;
+
+    lastRenderedTrackId = t.id;
+    observeWaveWrap();
+    syncWaveVisuals();
+    if (isPlaying || isPend) ensureWaveRaf();
+    else stopWaveRaf();
+  }
+
+  function observeWaveWrap() {
+    if (!waveResizeObserver || !cardEl) return;
+    waveResizeObserver.disconnect();
+    const wrapEl = cardEl.querySelector("#mp-wave-wrap");
+    if (wrapEl) waveResizeObserver.observe(wrapEl);
+  }
+
+  function fracFromPointerEvent(wrapEl, ev) {
+    const rect = wrapEl.getBoundingClientRect();
+    const sidePad = 8;
+    const usable = Math.max(12, rect.width - sidePad * 2);
+    return clamp((ev.clientX - rect.left - sidePad) / usable, 0, 1);
+  }
+
+  function seekToFraction(frac, opts = {}) {
+    if (!selectedId || !byId.has(selectedId)) return;
+    const t = byId.get(selectedId);
+    const clamped = clamp(Number(frac) || 0, 0, 1);
+    const snap = readPlaybackSnapshot(t);
+    const targetSec = clamped * snap.seekableDur;
+
+    optimisticSeekTrackId = t.id;
+    optimisticSeekSec = targetSec;
+    optimisticSeekUntilMs = (typeof performance !== "undefined" ? performance.now() : 0) + 320;
+
+    const ma = typeof window !== "undefined" ? window.ME_AUDIO : null;
+    if (!snap.isPlaying && !snap.isPend && !opts.dragging) {
+      if (ma && typeof ma.playTrack === "function") {
+        ma.playTrack(t.id, { startSec: targetSec, isManual: true });
+        if (typeof ma.seek !== "function" && typeof ma.activeVoice === "function") {
+          const av = ma.activeVoice();
+          if (av && av.trackId === t.id && av.htmlAudio) {
+            try { av.htmlAudio.currentTime = targetSec; } catch (_) {}
+          }
+        }
+      } else if (ma && typeof ma.seek === "function") {
+        if (hooks && typeof hooks.onPlayToggle === "function") hooks.onPlayToggle(t.id);
+        ma.seek(targetSec);
+      } else if (hooks && typeof hooks.onPlayToggle === "function") {
+        hooks.onPlayToggle(t.id);
+      }
+    } else if (ma && typeof ma.seek === "function") {
+      ma.seek(targetSec);
+    } else if (ma && typeof ma.activeVoice === "function") {
+      const av = ma.activeVoice();
+      if (av && av.trackId === t.id && av.htmlAudio) {
+        try { av.htmlAudio.currentTime = targetSec; } catch (_) {}
+      }
+    }
+    syncWaveVisuals();
+    ensureWaveRaf();
+  }
+
+  function handleRestartTrack(tid) {
+    if (!tid || !byId.has(tid)) return;
+    optimisticSeekTrackId = tid;
+    optimisticSeekSec = 0;
+    optimisticSeekUntilMs = (typeof performance !== "undefined" ? performance.now() : 0) + 320;
+
+    const t = byId.get(tid);
+    const snap = readPlaybackSnapshot(t);
+    const ma = typeof window !== "undefined" ? window.ME_AUDIO : null;
+
+    if (!snap.isPlaying && !snap.isPend) {
+      if (ma && typeof ma.playTrack === "function") {
+        ma.playTrack(tid, { startSec: 0, fromStart: true, isManual: true });
+        if (typeof ma.restart !== "function" && typeof ma.activeVoice === "function") {
+          const av = ma.activeVoice();
+          if (av && av.trackId === tid && av.htmlAudio) {
+            try { av.htmlAudio.currentTime = 0; } catch (_) {}
+          }
+        }
+      } else if (ma && typeof ma.restart === "function") {
+        ma.restart();
+      } else if (hooks && typeof hooks.onPlayToggle === "function") {
+        hooks.onPlayToggle(tid);
+      }
+    } else if (ma && typeof ma.restart === "function") {
+      ma.restart();
+    } else if (ma && typeof ma.seek === "function") {
+      ma.seek(0);
+    } else if (ma && typeof ma.activeVoice === "function") {
+      const av = ma.activeVoice();
+      if (av && av.trackId === tid && av.htmlAudio) {
+        try { av.htmlAudio.currentTime = 0; } catch (_) {}
+      }
+    }
+    syncWaveVisuals();
+    ensureWaveRaf();
+  }
+
+  function handleToggleAutoPlay() {
+    const next = !getAutoPlayEnabled();
+    localAutoPlay = next;
+    saveLocalAutoPlay();
+    if (typeof window !== "undefined" && window.ME_AUDIO && typeof window.ME_AUDIO.setAutoPlay === "function") {
+      window.ME_AUDIO.setAutoPlay(next);
+    }
+    render();
   }
 
   function handleRequestTrack(t) {
@@ -388,12 +1062,93 @@
         submitRequestForm(f);
       }
     });
+
+    // Pointer scrubbing & hover preview on SoundCloud waveform
+    cardEl.addEventListener("pointerdown", (ev) => {
+      const wrap = ev.target.closest("#mp-wave-wrap");
+      if (!wrap || (ev.button !== undefined && ev.button !== 0)) return;
+      ev.stopPropagation();
+      isWaveScrubbing = true;
+      hasWaveDragged = false;
+      const frac = fracFromPointerEvent(wrap, ev);
+      scrubFrac = frac;
+      waveHoverFrac = frac;
+      if (typeof wrap.setPointerCapture === "function") {
+        try { wrap.setPointerCapture(ev.pointerId); } catch (_) {}
+      }
+      seekToFraction(frac, { dragging: false });
+    });
+
+    cardEl.addEventListener("pointermove", (ev) => {
+      const wrap = ev.target.closest("#mp-wave-wrap");
+      if (isWaveScrubbing) {
+        const activeWrap = cardEl.querySelector("#mp-wave-wrap");
+        if (!activeWrap) return;
+        hasWaveDragged = true;
+        const frac = fracFromPointerEvent(activeWrap, ev);
+        scrubFrac = frac;
+        waveHoverFrac = frac;
+        seekToFraction(frac, { dragging: true });
+        return;
+      }
+      if (wrap) {
+        waveHoverFrac = fracFromPointerEvent(wrap, ev);
+        syncWaveVisuals();
+      } else if (waveHoverFrac !== null) {
+        waveHoverFrac = null;
+        syncWaveVisuals();
+      }
+    });
+
+    const finishWaveScrub = (ev) => {
+      if (!isWaveScrubbing) return;
+      const activeWrap = cardEl.querySelector("#mp-wave-wrap");
+      const finalFrac = activeWrap && ev ? fracFromPointerEvent(activeWrap, ev) : scrubFrac;
+      const didDrag = hasWaveDragged;
+      isWaveScrubbing = false;
+      hasWaveDragged = false;
+      scrubFrac = null;
+      if (activeWrap && ev && typeof activeWrap.releasePointerCapture === "function") {
+        try { activeWrap.releasePointerCapture(ev.pointerId); } catch (_) {}
+      }
+      if (didDrag && finalFrac !== null) seekToFraction(finalFrac, { dragging: true });
+      else syncWaveVisuals();
+    };
+    cardEl.addEventListener("pointerup", finishWaveScrub);
+    cardEl.addEventListener("pointercancel", () => {
+      if (!isWaveScrubbing) return;
+      isWaveScrubbing = false;
+      hasWaveDragged = false;
+      scrubFrac = null;
+      syncWaveVisuals();
+    });
+    cardEl.addEventListener("pointerleave", () => {
+      if (!isWaveScrubbing && waveHoverFrac !== null) {
+        waveHoverFrac = null;
+        syncWaveVisuals();
+      }
+    });
+
+    cardEl.addEventListener("keydown", (ev) => {
+      const wrap = ev.target.closest("#mp-wave-wrap");
+      if (!wrap || !selectedId || !byId.has(selectedId)) return;
+      const t = byId.get(selectedId);
+      const snap = readPlaybackSnapshot(t);
+      if (ev.key === "ArrowLeft" || ev.key === "ArrowRight") {
+        ev.preventDefault();
+        const delta = ev.key === "ArrowRight" ? 5 : -5;
+        const nextFrac = clamp((snap.currentTime + delta) / snap.seekableDur, 0, 1);
+        seekToFraction(nextFrac, { dragging: false });
+      } else if (ev.key === "Home") {
+        ev.preventDefault();
+        handleRestartTrack(t.id);
+      }
+    });
+
     cardEl.addEventListener("click", (ev) => {
-      if (ev.target.closest("#mp-close")) {
-        selectedId = null;
-        formOpenForId = null;
+      if (ev.target.closest("#mp-info-toggle")) {
+        infoOpen = !infoOpen;
         render();
-        if (hooks && hooks.onSelectionChange) hooks.onSelectionChange(null);
         return;
       }
       if (ev.target.closest("#mp-collapse")) {
@@ -406,6 +1161,15 @@
         collapsed = false;
         saveCollapsed();
         render();
+        return;
+      }
+      const restartBtn = ev.target.closest("[data-player-restart]");
+      if (restartBtn) {
+        handleRestartTrack(restartBtn.getAttribute("data-player-restart"));
+        return;
+      }
+      if (ev.target.closest("[data-player-autoplay]")) {
+        handleToggleAutoPlay();
         return;
       }
       const pBtn = ev.target.closest("[data-player-play]");
@@ -450,6 +1214,9 @@
     if (!tid || !byId.has(tid)) {
       selectedId = null;
       formOpenForId = null;
+      waveHoverFrac = null;
+      isWaveScrubbing = false;
+      scrubFrac = null;
       render();
       if (!opts.silent && hooks && hooks.onSelectionChange) hooks.onSelectionChange(null);
       return;
@@ -457,6 +1224,11 @@
     if (selectedId !== tid) {
       formOpenForId = null;
       reqError = "";
+      waveHoverFrac = null;
+      isWaveScrubbing = false;
+      scrubFrac = null;
+      optimisticSeekTrackId = null;
+      optimisticSeekSec = null;
     }
     selectedId = tid;
     render();
@@ -472,6 +1244,29 @@
     }
     cardEl = typeof document !== "undefined" ? document.getElementById("track-player-card") : null;
     loadPrefs();
+    if (typeof window !== "undefined" && window.ME_AUDIO && typeof window.ME_AUDIO.setAutoPlay === "function") {
+      window.ME_AUDIO.setAutoPlay(localAutoPlay);
+    }
+    if (typeof MutationObserver !== "undefined" && typeof document !== "undefined" && !themeObserver) {
+      themeObserver = new MutationObserver(() => {
+        cachedPalette = null;
+        syncWaveVisuals();
+      });
+      themeObserver.observe(document.documentElement, { attributes: true, attributeFilter: ["data-theme"] });
+    }
+    if (typeof ResizeObserver !== "undefined" && !waveResizeObserver) {
+      waveResizeObserver = new ResizeObserver(() => {
+        syncWaveVisuals();
+      });
+    }
+    if (typeof document !== "undefined") {
+      document.addEventListener("visibilitychange", () => {
+        if (!document.hidden && selectedId) {
+          syncWaveVisuals();
+          ensureWaveRaf();
+        }
+      });
+    }
     bindCardEvents();
     render();
   }
@@ -488,7 +1283,11 @@
     starredCount: () => starred.size,
     isCollapsed: () => collapsed,
     setCollapsed(v) { collapsed = Boolean(v); saveCollapsed(); render(); },
+    isInfoOpen: () => infoOpen,
+    setInfoOpen(v) { infoOpen = Boolean(v); render(); },
     setWeb3FormsKey(k) { web3FormsKey = String(k || ""); render(); },
+    refreshWaveform: syncWaveVisuals,
     logPrivateTrackEvent,
   };
 })();
+

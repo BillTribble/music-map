@@ -92,15 +92,18 @@
   --md-sys-color-cyan-tonal: #CFFAFE;
   --md-sys-color-on-cyan-tonal: #155E75;
 
-  /* 8-Cluster Vibe Map Palette (Light Mode — AA ink on white stage) */
+  /* 10-Cluster Vibe Map Palette (Light Mode — AA ink on white stage) */
   --md-sys-color-cluster-0: #1D4ED8; /* Ambient & meditative (Blue) */
   --md-sys-color-cluster-1: #4338CA; /* Dark ambient & drone (Indigo) */
   --md-sys-color-cluster-2: #0F766E; /* Downtempo & lush chords (Teal) */
   --md-sys-color-cluster-3: #15803D; /* Chill & steady electronic (Green) */
-  --md-sys-color-cluster-4: #B45309; /* Experimental guitar & vocal (Amber) */
+  --md-sys-color-cluster-4: #B45309; /* Guitar demos (Amber) */
   --md-sys-color-cluster-5: #7E22CE; /* Hypnotic electro & microtonal (Violet) */
   --md-sys-color-cluster-6: #C2410C; /* House & ecstatic 4/4 groove (Orange) */
   --md-sys-color-cluster-7: #BE123C; /* Complex drums & breaks (Crimson) */
+  --md-sys-color-cluster-8: #4D7C0F; /* Ambient rock (Lime) */
+  --md-sys-color-cluster-9: #A21CAF; /* Rock & guitar pop (Magenta) */
+  --md-sys-color-cluster-10: #0E7490; /* Auxiliary cluster (Cyan) */
 
   /* Typography Family Tokens */
   --md-ref-typeface-brand: 'Syne', sans-serif;
@@ -236,13 +239,16 @@
   --md-sys-color-cyan-tonal: rgba(21, 94, 117, 0.44);
   --md-sys-color-on-cyan-tonal: #67E8F9;
 
-  /* 8-Cluster Vibe Map Palette (Dark Mode — luminous on obsidian stage) */
+  /* 10-Cluster Vibe Map Palette (Dark Mode — luminous on obsidian stage) */
   --md-sys-color-cluster-0: #60A5FA; /* Ambient & meditative */
   --md-sys-color-cluster-1: #818CF8; /* Dark ambient & drone */
   --md-sys-color-cluster-2: #2DD4BF; /* Downtempo & lush chords */
   --md-sys-color-cluster-3: #4ADE80; /* Chill & steady electronic */
-  --md-sys-color-cluster-4: #FBBF24; /* Experimental guitar & vocal */
+  --md-sys-color-cluster-4: #FBBF24; /* Guitar demos */
   --md-sys-color-cluster-5: #C084FC; /* Hypnotic electro & microtonal */
   --md-sys-color-cluster-6: #FB923C; /* House & ecstatic 4/4 groove */
   --md-sys-color-cluster-7: #FB7185; /* Complex drums & breaks */
+  --md-sys-color-cluster-8: #A3E635; /* Ambient rock */
+  --md-sys-color-cluster-9: #F472B6; /* Rock & guitar pop */
+  --md-sys-color-cluster-10: #22D3EE; /* Auxiliary cluster */
 }
