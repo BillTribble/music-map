@@ -1,52 +1,69 @@
-/* Personal Aesthetic Layer (billtribble.com × GM3) — Syne Display, Obsidian Depth & Tactile Stadium Pills.
+/* Groove Explorer x GM3 Typography & Surface Layer — Google Sans Flex + Inter, Tabular Figures & Tactile Pills.
    Strictly zero raw hex literals here; all colors reference --md-sys-color-*. */
 
 :root {
-  --font-display: var(--md-ref-typeface-brand, 'Syne', sans-serif);
+  --font-display: var(--md-ref-typeface-brand, 'Google Sans Flex', 'Google Sans', sans-serif);
   --font-sans: var(--md-ref-typeface-plain, 'Inter', sans-serif);
-  --font-mono: 'JetBrains Mono', ui-monospace, SFMono-Regular, Menlo, monospace;
+  --font-mono: var(--md-ref-typeface-plain, 'Inter', sans-serif);
 }
 
-/* Display typography in Syne */
+/* Brand & heading typography in Google Sans Flex (matching Groove Explorer) */
 .app-title,
 .mp-name,
+.mp-mini-title,
 .view-title,
 .track-mini-title,
 .kpi-val,
 .btn,
 .btn-primary-cta,
-.era-wave-title {
+.btn-secondary-pill,
+.era-wave-title,
+.map-family-label {
   font-family: var(--font-display);
-  letter-spacing: -0.02em;
+  letter-spacing: 0;
 }
 
 .app-title {
-  font-weight: 700;
+  font-weight: 500;
+  font-size: 20px;
+  letter-spacing: 0;
+}
+
+.mp-name {
+  font-weight: 600;
   font-size: 17px;
 }
 
-/* Tabular mono numbers for BPM, Energy, Duration, Years */
+.mp-mini-title {
+  font-weight: 500;
+  font-size: 14px;
+}
+
+.view-title {
+  font-weight: 600;
+  font-size: 20px;
+}
+
+/* Clean Inter tabular numerals for BPM, Energy, Duration, Years (no terminal monospace) */
 .mono-num,
 .mp-meter-lbl strong,
 .flavor-val,
 .era-tick-year,
 .action-sub {
-  font-family: var(--font-mono);
+  font-family: var(--font-sans);
   font-variant-numeric: tabular-nums;
 }
 
-/* Subtle indigo/violet brand mark tint matching billtribble.com */
 .app-brand-mark {
   background: var(--md-sys-color-indigo-wash);
   color: var(--md-sys-color-on-indigo-wash);
 }
 
-/* Dark obsidian ambient stage depth & elevated translucent overlays */
 [data-theme="dark"] .map {
   background: radial-gradient(
     ellipse 85% 75% at 50% 44%,
-    color-mix(in srgb, var(--md-sys-color-indigo-wash) 26%, var(--md-sys-color-surface-container-lowest)),
-    var(--md-sys-color-surface-container-lowest) 74%
+    color-mix(in srgb, var(--md-sys-color-indigo-wash) 20%, var(--md-sys-color-surface-container-lowest)),
+    var(--md-sys-color-surface-container-lowest) 76%
   );
 }
 
@@ -55,7 +72,7 @@
 [data-theme="dark"] .star-empty-msg,
 [data-theme="dark"] .map-hover-pill,
 [data-theme="dark"] .settings-pop {
-  background: color-mix(in srgb, var(--md-sys-color-surface-container) 84%, transparent);
+  background: color-mix(in srgb, var(--md-sys-color-surface-container) 88%, transparent);
   backdrop-filter: blur(18px);
   -webkit-backdrop-filter: blur(18px);
 }
@@ -66,7 +83,7 @@
   background: var(--md-sys-color-surface-container-lowest);
 }
 
-/* Tactile 9999px stadium-pill primary CTAs */
+/* Tactile 9999px stadium-pill CTAs (Google Sans Flex 500, matching Groove Explorer .btn-tonal) */
 .btn,
 .btn-primary-cta {
   display: inline-flex;
@@ -79,8 +96,9 @@
   border-radius: 9999px;
   background: var(--md-sys-color-primary);
   color: var(--md-sys-color-on-primary);
-  font-size: 13px;
-  font-weight: 700;
+  font-family: var(--font-display);
+  font-size: 14px;
+  font-weight: 500;
   text-decoration: none;
   white-space: nowrap;
   cursor: pointer;
@@ -114,8 +132,8 @@
   background: var(--md-sys-color-secondary-container);
   color: var(--md-sys-color-on-secondary-container);
   font-family: var(--font-display);
-  font-size: 13px;
-  font-weight: 700;
+  font-size: 14px;
+  font-weight: 500;
   text-decoration: none;
   white-space: nowrap;
   cursor: pointer;
@@ -126,7 +144,6 @@
   filter: brightness(1.08);
 }
 
-/* Custom tonal circular play CTA matching billtribble.com .link-btn */
 .btn-tonal.mp-play {
   background: var(--md-sys-color-custom-tonal-bg);
   color: var(--md-sys-color-custom-tonal-text);
@@ -143,7 +160,6 @@
   color: var(--md-sys-color-on-primary);
 }
 
-/* Star action icons */
 .star-btn {
   width: 36px;
   height: 36px;

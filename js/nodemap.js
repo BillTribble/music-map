@@ -259,93 +259,20 @@
       return;
     }
 
-    // Vibe cluster pills positioned cleanly just above each cluster's dot cloud
-    const topPad = vw <= 800 ? 64 : PAD;
-    const sidePad = vw <= 800 ? 18 : PAD;
-    const botPad = vw <= 800 ? 24 : PAD;
-    const w = Math.max(220, vw - sidePad * 2);
-    const h = Math.max(200, vh - topPad - botPad);
-    const compactMob = vw <= 560;
-    const pts = styleGroups.map((g) => {
-      let ax = sidePad + g.cx * w;
-      let ay = topPad + g.cy * h;
-      if (g.members && g.members.length) {
-        let sxSum = 0, minY = Infinity, nCnt = 0;
-        for (let i = 0; i < g.members.length; i++) {
-          const nd = nodeById.get(g.members[i]);
-          if (nd) {
-            sxSum += nd.x;
-            if (nd.y < minY) minY = nd.y;
-            nCnt++;
-          }
-        }
-        if (nCnt > 0) {
-          ax = sxSum / nCnt;
-          ay = minY - (compactMob ? 16 : 22);
-        }
-      }
-      const sx = ax * zoom.k + zoom.x;
-      const sy = ay * zoom.k + zoom.y;
-      const label = g.label;
-      const count = g.members ? g.members.length : (g.count || 0);
-      const pw = Math.min(vw - 24, Math.max(118, label.length * (compactMob ? 6.6 : 7.3) + 26));
-      return { g, sx, sy, w: pw, sub: `${count} tracks` };
-    });
-
-    // Screen-space separation; clamp inside screen at 1x, scroll naturally off-screen when zoomed in
-    const minTop = vw <= 800 ? 74 : 64;
-    const maxBot = vh - 32;
-    const clampToEdges = zoom.k <= 1.05;
-    for (let it = 0; it < 22; it++) {
-      for (let i = 0; i < pts.length; i++) {
-        for (let j = i + 1; j < pts.length; j++) {
-          const a = pts[i], b = pts[j];
-          const minDx = (a.w + b.w) * 0.5 + 10;
-          const minDy = 38;
-          const dx = a.sx - b.sx;
-          const dy = a.sy - b.sy;
-          if (Math.abs(dx) < minDx && Math.abs(dy) < minDy) {
-            const oy = minDy - Math.abs(dy);
-            const shift = (dy >= 0 ? 1 : -1) * oy * 0.48;
-            a.sy += shift;
-            b.sy -= shift;
-          }
-        }
-      }
-      if (clampToEdges) {
-        pts.forEach((p) => {
-          const halfW = p.w * 0.5 + 10;
-          p.sx = Math.max(halfW, Math.min(vw - halfW, p.sx));
-          p.sy = Math.max(minTop, Math.min(maxBot, p.sy));
-        });
-      }
-    }
-
-    pts.forEach((p) => {
-      if (!clampToEdges && (p.sx + p.w * 0.5 < -40 || p.sx - p.w * 0.5 > vw + 40 || p.sy < -40 || p.sy > vh + 40)) return;
-      const grp = elSvg("g", "map-group-label" + (activeClusterId === p.g.id ? " is-active" : ""));
-      const pill = elSvg("rect", "map-group-pill");
-      pill.setAttribute("x", (-p.w / 2).toFixed(1));
-      pill.setAttribute("y", "-18");
-      pill.setAttribute("width", p.w.toFixed(1));
-      pill.setAttribute("height", "30");
-      pill.setAttribute("rx", "15");
-
-      const txt = elSvg("text", "map-group-txt");
-      txt.setAttribute("y", "-5");
-      txt.textContent = p.g.label;
-      const subEl = elSvg("text", "map-group-sub");
-      subEl.setAttribute("y", "7");
-      subEl.textContent = p.sub;
-
-      grp.append(pill, txt, subEl);
-      grp.setAttribute("transform", `translate(${p.sx.toFixed(1)}, ${p.sy.toFixed(1)})`);
-      grp.addEventListener("click", (ev) => {
-        ev.stopPropagation();
-        setClusterFilter(activeClusterId === p.g.id ? null : p.g.id);
+    if (window.BTMM_MAP_LABELS) {
+      window.BTMM_MAP_LABELS.renderClusterLandmarks(groupG, {
+        styleGroups,
+        nodeById,
+        nodes,
+        zoom,
+        vw,
+        vh,
+        activeClusterId,
+        isMatch,
+        mapWrap,
+        onToggleCluster: (cid) => setClusterFilter(activeClusterId === cid ? null : cid),
       });
-      groupG.appendChild(grp);
-    });
+    }
   }
 
   function syncStarHud() {
@@ -499,14 +426,14 @@
         ctx.fill();
 
         if (isSel || isPlay || isHov) {
-          ctx.lineWidth = 1.6 * invK;
+          ctx.lineWidth = 2.0 / zoom.k;
           ctx.strokeStyle = palette.surfaceLowest;
           ctx.globalAlpha = 1;
           ctx.stroke();
-        } else if (match && tracks.length > 220) {
-          ctx.lineWidth = 0.85 * invK;
+        } else if (match) {
+          ctx.lineWidth = 1.6 / zoom.k;
           ctx.strokeStyle = palette.surfaceLowest;
-          ctx.globalAlpha = 0.52;
+          ctx.globalAlpha = 0.88;
           ctx.stroke();
         }
       });
@@ -514,25 +441,29 @@
     drawPass(false);
     drawPass(true);
 
-    // Draw zoomed track labels directly on canvas when zoomed in >= 1.45x
-    if (zoom.k >= 1.45) {
-      ctx.font = `500 ${(11 * invK).toFixed(1)}px Inter, sans-serif`;
-      ctx.textAlign = "center";
-      ctx.textBaseline = "top";
-      nodes.forEach((n) => {
-        if (!isMatch(n.t)) return;
-        const drawR = nodeBaseRadius(n.t) * Math.pow(invK, 0.45);
-        const lbl = n.t.shortTitle || n.t.title;
-        ctx.globalAlpha = 0.88;
-        ctx.lineWidth = 3 * invK;
-        ctx.strokeStyle = palette.surfaceLowest;
-        ctx.strokeText(lbl, n.x, n.y + drawR + 4 * invK);
-        ctx.fillStyle = palette.onSurface;
-        ctx.fillText(lbl, n.x, n.y + drawR + 4 * invK);
-      });
-    }
-
     ctx.restore();
+
+    // Draw crisp 1:1 screen-space 12px Inter track labels with 3px surface knock-out halo & collision culling
+    if (window.BTMM_MAP_LABELS) {
+      ctx.save();
+      ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+      const scaleExp = Math.pow(invK, 0.45) * zoom.k;
+      window.BTMM_MAP_LABELS.drawScreenTrackLabels(ctx, {
+        nodes,
+        zoom,
+        vw,
+        vh,
+        palette,
+        isMatch,
+        nodeScreenRadius: (t) => nodeBaseRadius(t) * scaleExp,
+        playId,
+        selectedId,
+        hoverId,
+        isStarred: (id) => Boolean(window.BTMM_PLAYER && window.BTMM_PLAYER.isStarred(id)),
+        mapWrap,
+      });
+      ctx.restore();
+    }
     paintRings(playId, pendId);
     updateHoverPill();
   }
@@ -794,6 +725,9 @@
     buildEdges();
     bindEvents();
     paint();
+    if (typeof document !== "undefined" && document.fonts && document.fonts.ready) {
+      document.fonts.ready.then(() => paint());
+    }
   }
 
   window.ME_NODEMAP = {

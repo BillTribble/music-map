@@ -35,54 +35,76 @@
 }
 
 .map-group-label,
+.map-family-group,
 .era-spine-hit {
   pointer-events: auto;
   cursor: pointer;
 }
 
-.map-group-pill {
-  fill: color-mix(in srgb, var(--md-sys-color-surface-container-high) 86%, transparent);
-  transition: fill 160ms var(--ease-std);
+.map-family-hit {
+  fill: transparent;
 }
-.map-group-label:hover .map-group-pill,
-.map-group-label.is-active .map-group-pill {
-  fill: var(--md-sys-color-secondary-container);
+
+/* Groove Explorer cartographic floating family landmarks: muted-gray Google Sans Flex + surface knock-out halo */
+.map-family-label {
+  font: 600 14px var(--md-ref-typeface-brand, 'Google Sans Flex', 'Google Sans', sans-serif);
+  fill: var(--md-sys-color-outline);
+  letter-spacing: 0.01em;
+  text-anchor: middle;
+  pointer-events: none;
+  paint-order: stroke;
+  stroke: var(--md-sys-color-surface-container-lowest);
+  stroke-width: 3.5px;
+  stroke-linejoin: round;
+  transition: fill 160ms var(--ease-std), opacity 180ms var(--ease-std);
 }
-.map-group-txt {
-  font-family: var(--font-display);
-  font-size: 12px;
-  font-weight: 700;
+.map.is-zoomed .map-family-label {
+  font-size: 17px;
+  stroke-width: 4px;
+}
+@media (min-width: 841px) {
+  .map-family-label {
+    font-size: 18px;
+    stroke-width: 4px;
+  }
+  .map.is-zoomed .map-family-label {
+    font-size: 20px;
+  }
+}
+.map-family-group:hover .map-family-label {
   fill: var(--md-sys-color-on-surface);
-  text-anchor: middle;
-  pointer-events: none;
 }
-.map-group-label.is-active .map-group-txt {
-  fill: var(--md-sys-color-on-secondary-container);
+.map-family-group.is-active .map-family-label {
+  fill: var(--md-sys-color-primary);
 }
-.map-group-sub {
-  font-family: var(--font-sans);
-  font-size: 10px;
-  font-weight: 500;
-  fill: var(--md-sys-color-on-surface-variant);
-  text-anchor: middle;
-  pointer-events: none;
+.map-family-group.is-dim .map-family-label {
+  opacity: 0.22;
 }
 
 .era-wave-title {
-  font-family: var(--font-display);
-  font-size: 12px;
-  font-weight: 700;
-  fill: var(--md-sys-color-on-surface);
+  font: 600 12.5px var(--md-ref-typeface-brand, 'Google Sans Flex', 'Google Sans', sans-serif);
+  fill: var(--md-sys-color-outline);
+  paint-order: stroke;
+  stroke: var(--md-sys-color-surface-container-lowest);
+  stroke-width: 3.5px;
+  stroke-linejoin: round;
   pointer-events: none;
+  transition: fill 150ms var(--ease-std);
+}
+.era-spine-hit:hover .era-wave-title {
+  fill: var(--md-sys-color-on-surface);
 }
 .era-spine-hit.is-active .era-wave-title {
   fill: var(--md-sys-color-primary);
 }
 .era-tick-year {
-  font-family: var(--font-mono);
-  font-size: 10px;
-  font-weight: 600;
+  font: 500 10.5px var(--md-ref-typeface-plain, 'Inter', sans-serif);
+  font-variant-numeric: tabular-nums;
   fill: var(--md-sys-color-on-surface-variant);
+  paint-order: stroke;
+  stroke: var(--md-sys-color-surface-container-lowest);
+  stroke-width: 3px;
+  stroke-linejoin: round;
   pointer-events: none;
 }
 
@@ -96,9 +118,9 @@
   border-radius: 999px;
   background: var(--md-sys-color-surface-container-high);
   color: var(--md-sys-color-on-surface);
-  font-family: var(--font-display);
+  font-family: var(--font-sans);
   font-size: 12px;
-  font-weight: 600;
+  font-weight: 500;
   white-space: nowrap;
   box-shadow: 0 6px 18px color-mix(in srgb, var(--md-sys-color-shadow) 24%, transparent);
   transform: translate(-50%, -100%);

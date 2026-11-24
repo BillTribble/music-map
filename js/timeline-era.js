@@ -346,14 +346,14 @@
         }
 
         const displayLbl = sw < 130 ? b.shortLabel : b.label;
-        const pillW = Math.max(40, Math.min(sw - 4, displayLbl.length * 6.4 + 14));
+        const pillW = Math.max(40, Math.min(sw - 4, displayLbl.length * 6.8 + 14));
         const rect = document.createElementNS(NS, "rect");
-        rect.setAttribute("class", "map-group-pill");
+        rect.setAttribute("class", "map-family-hit");
         rect.setAttribute("x", (cx - pillW * 0.5).toFixed(1));
-        rect.setAttribute("y", (headerY - 4).toFixed(1));
+        rect.setAttribute("y", (headerY - 6).toFixed(1));
         rect.setAttribute("width", pillW.toFixed(1));
-        rect.setAttribute("height", "22");
-        rect.setAttribute("rx", "11");
+        rect.setAttribute("height", "24");
+        rect.setAttribute("rx", "8");
 
         const txt = document.createElementNS(NS, "text");
         txt.setAttribute("class", "era-wave-title");

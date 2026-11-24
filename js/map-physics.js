@@ -93,7 +93,7 @@
 
       mapWrap.addEventListener("pointerdown", (ev) => {
         if (ev.target.closest("#map-floating-hud")) return;
-        if (ev.target.closest(".map-group-label") || ev.target.closest(".era-spine-hit")) return;
+        if (ev.target.closest(".map-group-label, .map-family-group") || ev.target.closest(".era-spine-hit")) return;
         if (ev.button !== 0 && ev.pointerType === "mouse") return;
         stopMomentum();
         const zoom = opts.getZoom();
@@ -199,7 +199,7 @@
       mapWrap.addEventListener("click", (ev) => {
         if (moved) return;
         if (ev.target.closest("#map-floating-hud")) return;
-        if (ev.target.closest(".map-group-label") || ev.target.closest(".era-spine-hit")) return;
+        if (ev.target.closest(".map-group-label, .map-family-group") || ev.target.closest(".era-spine-hit")) return;
         const [px, py] = pointerLocalXY(ev);
         const handledNode = opts.onTapPoint(ev, px, py);
         if (handledNode) {
