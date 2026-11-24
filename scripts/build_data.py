@@ -8,13 +8,16 @@ audio_manifest.json, emitting js/data.js with zero local filesystem paths.
 
 from __future__ import annotations
 
+import argparse
 import json
+import math
 import statistics
 from collections import Counter, defaultdict
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parent.parent
 ASSETS_DIR = Path.home() / ".agents" / "skills" / "bill-music" / "assets"
+STAGING_DIR = Path.home() / "tmp" / "music_map_staging"
 OUT_JS = ROOT / "js" / "data.js"
 
 PHASE_META = [
@@ -718,7 +721,349 @@ def extract_archive_item(
     return out
 
 
+DEFAULT_EXCLUDED_IDS = {
+    "archive_2013_18_44",
+    "archive_2018_23_33",
+    "archive_2018_23_64",
+    "archive_2018_23_65",
+    "present_electro_57",
+    "present_electro_44",
+    "present_electro_33",
+    "hd_2005_35",
+    "archive_2013_18_151",
+    "sketches_2024_25_10",
+    "archive_2013_18_24",
+    "archive_2013_18_25",
+    "archive_2013_18_48",
+    "archive_2013_18_99",
+    "archive_2013_18_109",
+    "archive_2013_18_110",
+    "archive_2013_18_111",
+    "archive_2013_18_124",
+    "archive_2013_18_92",
+    "archive_2013_18_100",
+    "archive_2013_18_113",
+    "archive_2013_18_115",
+    "archive_2013_18_144",
+    "ecstatic_wave_7",
+    "ecstatic_wave_8",
+}
+
+PRIVATE_TRACK_KEYS = (
+    "local_path",
+    "rel_path",
+    "slug",
+    "source_codec",
+    "raw_drum_complexity",
+    "raw_four_on_floor",
+    "raw_breakbeat_score",
+    "genre_scores",
+)
+
+
+def load_excluded_ids(exclusions_path: Path | None) -> set[str]:
+    if exclusions_path and exclusions_path.exists():
+        data = json.loads(exclusions_path.read_text(encoding="utf-8"))
+        if isinstance(data, dict) and "excluded_ids" in data:
+            return set(str(x) for x in data["excluded_ids"])
+        if isinstance(data, list):
+            return set(str(x) for x in data)
+    return set(DEFAULT_EXCLUDED_IDS)
+
+
+def ensure_feat_vecs(tracks: list[dict]) -> None:
+    """Ensure every track carries a standardized 8-float sonic feature vector `feat_vec` for WT-4 similarity walks."""
+    if not tracks:
+        return
+    if all(isinstance(t.get("feat_vec"), list) and len(t["feat_vec"]) >= 6 for t in tracks):
+        return
+    weights = [1.55, 1.75, 1.45, 1.65, 1.65, 1.35, 1.25, 0.95]
+    raw_cols: list[list[float]] = [[] for _ in range(8)]
+    for t in tracks:
+        vals = [
+            float(t.get("energy", 5.0)),
+            float(t.get("effective_bpm", t.get("musical_bpm", t.get("bpm", 110.0)))),
+            float(t.get("drum_complexity", 35.0)),
+            float(t.get("four_on_floor", 0.0)),
+            float(t.get("breakbeat_score", 0.0)),
+            float(t.get("mid_share", 0.2)),
+            float(t.get("sub_share", 0.2)) + float(t.get("bass_share", 0.25)),
+            float(t.get("harmonic_complexity", 50.0)),
+        ]
+        for ci, v in enumerate(vals):
+            raw_cols[ci].append(v)
+
+    means = [statistics.fmean(col) for col in raw_cols]
+    stds = [statistics.pstdev(col) or 1.0 for col in raw_cols]
+    for idx, t in enumerate(tracks):
+        t["feat_vec"] = [
+            round(((raw_cols[ci][idx] - means[ci]) / stds[ci]) * weights[ci], 3)
+            for ci in range(8)
+        ]
+
+
+def backfill_track_near(tracks: list[dict], raw_near: dict) -> dict[str, list[list]]:
+    """Filter excluded IDs out of track_near and guarantee 4 valid sonic neighbors per track."""
+    valid_ids = {t["id"] for t in tracks}
+    vec_by_id = {t["id"]: t["feat_vec"] for t in tracks}
+    cluster_by_id = {t["id"]: t.get("cluster_id") for t in tracks}
+
+    def _dist(a_id: str, b_id: str) -> float:
+        va, vb = vec_by_id[a_id], vec_by_id[b_id]
+        d = math.sqrt(sum((x - y) * (x - y) for x, y in zip(va, vb)))
+        if cluster_by_id.get(a_id) and cluster_by_id.get(a_id) == cluster_by_id.get(b_id):
+            d *= 0.86
+        return d
+
+    cleaned: dict[str, list[list]] = {}
+    for t in tracks:
+        tid = t["id"]
+        kept = [
+            [nid, float(sim)]
+            for nid, sim in (raw_near.get(tid) or [])
+            if nid in valid_ids and nid != tid
+        ]
+        if len(kept) < 4 and len(tracks) > 1:
+            already = {nid for nid, _ in kept} | {tid}
+            cands = sorted((oid for oid in valid_ids if oid not in already), key=lambda oid: _dist(tid, oid))
+            for oid in cands[: 4 - len(kept)]:
+                d = _dist(tid, oid)
+                kept.append([oid, round(math.exp(-d / 3.2), 3)])
+        cleaned[tid] = kept[:4]
+    return cleaned
+
+
+def resolve_default_analysis_path() -> Path:
+    for cand in (
+        STAGING_DIR / "analyzed_latest.json",
+        STAGING_DIR / "analyzed_559.json",
+        ROOT / "scripts" / "track_analysis.json",
+    ):
+        if cand.exists():
+            return cand
+    return ROOT / "scripts" / "track_analysis.json"
+
+
+def build_from_full_analysis(
+    analysis_path: Path,
+    base_data_js: Path,
+    exclusions_path: Path | None,
+    archive_dl_path: Path | None,
+    waveforms_path: Path | None,
+    out_js_path: Path,
+) -> None:
+    """Self-contained full-corpus builder joining analysis, exclusions, archive DL sizes, and 160-bar waveforms/cues."""
+    an_payload = json.loads(analysis_path.read_text(encoding="utf-8"))
+    base_payload: dict = {}
+    if base_data_js.exists():
+        raw_js = base_data_js.read_text(encoding="utf-8")
+        if "window.CORPUS_DATA = " in raw_js:
+            base_payload = json.loads(raw_js.split("window.CORPUS_DATA = ", 1)[1].rstrip().rstrip(";"))
+
+    excluded_ids = load_excluded_ids(exclusions_path)
+    archive_dl = (
+        json.loads(archive_dl_path.read_text(encoding="utf-8"))
+        if archive_dl_path and archive_dl_path.exists()
+        else {}
+    )
+    waveforms = (
+        json.loads(waveforms_path.read_text(encoding="utf-8"))
+        if waveforms_path and waveforms_path.exists()
+        else {}
+    )
+    if isinstance(waveforms, dict) and "tracks" in waveforms and isinstance(waveforms["tracks"], dict):
+        waveforms = waveforms["tracks"]
+
+    base_track_by_id = {t["id"]: t for t in base_payload.get("tracks", [])}
+    era_order_map = {e[0]: idx for idx, e in enumerate(ERA_META)}
+
+    merged_tracks: list[dict] = []
+    tracks_by_era: dict[str, list[dict]] = defaultdict(list)
+
+    raw_tracks = an_payload.get("tracks", [])
+    for src_t in raw_tracks:
+        tid = src_t["id"]
+        if tid in excluded_ids:
+            continue
+        t = dict(base_track_by_id.get(tid, {}))
+        t.update(src_t)
+
+        # Merge Tier B 320k MP3 / lossless FLAC download metadata when available
+        dl_entry = archive_dl.get(tid) if isinstance(archive_dl, dict) else None
+        if isinstance(dl_entry, dict) and t.get("tier") == "archive_dl":
+            for dk in ("mp3_320_url", "mp3_320_bytes", "mp3_size_mb", "has_lossless", "flac_url", "flac_bytes", "flac_size_mb", "dl_ready"):
+                if dk in dl_entry and dl_entry[dk] not in (None, ""):
+                    t[dk] = dl_entry[dk]
+
+        # Merge precomputed 160-bar SoundCloud waveform peaks, snippet cues, and stream URLs
+        wf_entry = waveforms.get(tid) if isinstance(waveforms, dict) else None
+        if isinstance(wf_entry, dict):
+            if isinstance(wf_entry.get("peaks"), list) and wf_entry["peaks"]:
+                t["peaks"] = [max(0, min(100, int(round(float(v))))) for v in wf_entry["peaks"]]
+            if wf_entry.get("preview_start_sec") is not None:
+                t["preview_start_sec"] = round(max(0.0, float(wf_entry["preview_start_sec"])), 2)
+            if wf_entry.get("preview_dur_sec") is not None:
+                t["preview_dur_sec"] = round(max(0.5, float(wf_entry["preview_dur_sec"])), 2)
+            if wf_entry.get("full_duration_sec") is not None and float(wf_entry["full_duration_sec"]) > 0:
+                t["full_duration_sec"] = round(float(wf_entry["full_duration_sec"]), 2)
+            if wf_entry.get("stream_url"):
+                t["stream_url"] = str(wf_entry["stream_url"])
+            if wf_entry.get("youtube_id"):
+                t["youtube_id"] = str(wf_entry["youtube_id"])
+
+        for pk in PRIVATE_TRACK_KEYS:
+            t.pop(pk, None)
+
+        merged_tracks.append(t)
+
+    merged_tracks.sort(key=lambda t: (era_order_map.get(t["era"], 99), int(t.get("slot", 0)), t["id"]))
+    ensure_feat_vecs(merged_tracks)
+
+    for t in merged_tracks:
+        tracks_by_era[t["era"]].append(t)
+
+    valid_ids = {t["id"] for t in merged_tracks}
+    an_meta = an_payload.get("meta", {})
+    base_meta = base_payload.get("meta", {})
+
+    # Clean style_groups, track_map, and track_near against excluded_ids
+    raw_groups = an_meta.get("style_groups") or base_meta.get("style_groups") or []
+    style_groups = []
+    for g in raw_groups:
+        members = [mid for mid in g.get("members", []) if mid in valid_ids]
+        if members:
+            g_out = dict(g)
+            g_out["members"] = members
+            style_groups.append(g_out)
+
+    raw_map = an_meta.get("track_map") or base_meta.get("track_map") or {}
+    track_map = {tid: coords for tid, coords in raw_map.items() if tid in valid_ids}
+
+    raw_near = an_meta.get("track_near") or base_meta.get("track_near") or {}
+    track_near = backfill_track_near(merged_tracks, raw_near)
+
+    era_anchors = an_meta.get("era_anchors") or base_meta.get("era_anchors") or []
+
+    # Rebuild eras & phases preserving rich MIDI/audio distributions while updating track lists & macro_harmony
+    base_eras_by_id = {
+        e["id"]: e
+        for e in (base_payload.get("eras") or an_payload.get("eras") or [])
+        if isinstance(e, dict) and "id" in e
+    }
+    eras_out: list[dict] = []
+    phase_to_eras: dict[str, list[str]] = defaultdict(list)
+    for ekey, elabel, eshort, eyears, ephase, ptag, enote in ERA_META:
+        phase_to_eras[ephase].append(ekey)
+        e_tracks = tracks_by_era.get(ekey, [])
+        if ekey in ARCHIVE_ERAS or ekey not in base_eras_by_id:
+            eras_out.append(
+                extract_archive_item(
+                    ekey,
+                    elabel,
+                    eshort,
+                    eyears,
+                    e_tracks,
+                    extra={"phase": ephase, "phaseTag": ptag, "note": enote, "tracks": e_tracks},
+                )
+            )
+        else:
+            er_copy = dict(base_eras_by_id[ekey])
+            er_copy["tracks"] = e_tracks
+            er_copy["audio_files"] = max(int(er_copy.get("projects") or 0), len(e_tracks))
+            er_copy["macro_harmony"] = compute_macro_harmony(e_tracks)
+            eras_out.append(er_copy)
+
+    base_phases_by_id = {
+        p["id"]: p
+        for p in (base_payload.get("phases") or an_payload.get("phases") or [])
+        if isinstance(p, dict) and "id" in p
+    }
+    phases_out: list[dict] = []
+    for pkey, plabel, pshort, pyears, pdaw in PHASE_META:
+        eras_list = list(ARCHIVE_ERAS) if pkey == "phase0_archive" else phase_to_eras[pkey]
+        p_all_tracks = [t for e in eras_list for t in tracks_by_era.get(e, [])]
+        p_rep_tracks = []
+        for idx_e, e in enumerate(eras_list):
+            for rep_t in tracks_by_era.get(e, [])[:2]:
+                t_rep = dict(rep_t)
+                t_rep["slot"] = len(p_rep_tracks) + 1
+                p_rep_tracks.append(t_rep)
+        if pkey == "phase0_archive" or pkey not in base_phases_by_id:
+            phases_out.append(
+                extract_archive_item(
+                    pkey,
+                    plabel,
+                    pshort,
+                    pyears,
+                    p_all_tracks,
+                    extra={"daw": pdaw, "note": "Pre-2013 audio archive bounces" if pkey == "phase0_archive" else "", "tracks": p_rep_tracks},
+                )
+            )
+        else:
+            ph_copy = dict(base_phases_by_id[pkey])
+            ph_copy["tracks"] = p_rep_tracks
+            ph_copy["macro_harmony"] = compute_macro_harmony(p_all_tracks)
+            phases_out.append(ph_copy)
+
+    payload = {
+        "meta": {
+            "total_projects": base_meta.get("total_projects", 229),
+            "total_midi_clips": base_meta.get("total_midi_clips", 1543),
+            "total_pitched_audio_files": base_meta.get("total_pitched_audio_files", 448),
+            "total_pitched_audio_notes": base_meta.get("total_pitched_audio_notes", 36761),
+            "total_map_tracks": len(merged_tracks),
+            "silhouette": an_meta.get("silhouette", base_meta.get("silhouette", 0.0)),
+            "tuning_scales": base_meta.get("tuning_scales", TUNING_SCALES),
+            "cof_order": COF_ORDER,
+            "degree_labels": DEGREE_LABELS,
+            "fine_harmony_keys": FINE_HARMONY_KEYS,
+            "style_groups": style_groups,
+            "era_anchors": era_anchors,
+            "track_near": track_near,
+            "track_map": track_map,
+        },
+        "tracks": merged_tracks,
+        "phases": phases_out,
+        "eras": eras_out,
+    }
+
+    out_js_path.parent.mkdir(parents=True, exist_ok=True)
+    js_text = (
+        "// Auto-generated corpus, archive, MIK energy, macro harmony & node map data.\n"
+        f"window.CORPUS_DATA = {json.dumps(payload, separators=(',', ':'), ensure_ascii=False)};\n"
+    )
+    out_js_path.write_text(js_text, encoding="utf-8")
+    n_peaks = sum(1 for t in merged_tracks if t.get("peaks"))
+    n_cues = sum(1 for t in merged_tracks if t.get("preview_start_sec") is not None)
+    print(
+        f"Wrote {out_js_path} ({len(js_text):,} bytes, {len(merged_tracks)} tracks, "
+        f"{len(style_groups)} clusters, {n_peaks} waveforms, {n_cues} cues)"
+    )
+
+
 def main() -> None:
+    ap = argparse.ArgumentParser(description="Build js/data.js from analyzed corpus, exclusions, and waveform cues.")
+    ap.add_argument("--analysis-json", type=Path, default=None, help="Analyzed corpus JSON from analyze_corpus_map.py")
+    ap.add_argument("--base-data-js", type=Path, default=ROOT / "js" / "data.js", help="Existing data.js for MIDI/audio distribution shells")
+    ap.add_argument("--exclusions-json", type=Path, default=STAGING_DIR / "exclusions.json", help="Excluded track IDs JSON")
+    ap.add_argument("--archive-dl-json", type=Path, default=STAGING_DIR / "archive_dl_results.json", help="Tier B 320k/FLAC download metadata")
+    ap.add_argument("--waveforms-json", type=Path, default=STAGING_DIR / "waveforms_and_cues.json", help="160-bar peaks & snippet cues JSON")
+    ap.add_argument("--out-js", type=Path, default=OUT_JS, help="Output JS file path (default: js/data.js)")
+    ap.add_argument("--legacy-assets", action="store_true", help="Rebuild MIDI/audio distributions from ~/.agents/skills/bill-music/assets")
+    args = ap.parse_args()
+
+    analysis_path = args.analysis_json or resolve_default_analysis_path()
+    if not args.legacy_assets or not (ASSETS_DIR / "style_distributions.json").exists():
+        build_from_full_analysis(
+            analysis_path=analysis_path,
+            base_data_js=args.base_data_js,
+            exclusions_path=args.exclusions_json,
+            archive_dl_path=args.archive_dl_json,
+            waveforms_path=args.waveforms_json,
+            out_js_path=args.out_js,
+        )
+        return
+
     midi = json.loads((ASSETS_DIR / "style_distributions.json").read_text(encoding="utf-8"))
     audio = json.loads((ASSETS_DIR / "audio_style_distributions.json").read_text(encoding="utf-8"))
     phase_map = midi["metadata"]["phase_map"]
@@ -726,15 +1071,10 @@ def main() -> None:
     manifest_path = ROOT / "scripts" / "audio_manifest.json"
     audio_manifest = json.loads(manifest_path.read_text(encoding="utf-8")) if manifest_path.exists() else {}
     raw_by_era = audio_manifest.get("tracks_by_era", {})
-    man_by_id = {
-        item["id"]: item
-        for lst in raw_by_era.values()
-        for item in lst
-    }
 
-    analysis_path = ROOT / "scripts" / "track_analysis.json"
     ta = json.loads(analysis_path.read_text(encoding="utf-8")) if analysis_path.exists() else {}
     ta_by_id = {t["id"]: t for t in ta.get("tracks", [])}
+    excluded_ids = load_excluded_ids(args.exclusions_json)
 
     merged_tracks: list[dict] = []
     tracks_by_era: dict[str, list[dict]] = defaultdict(list)
@@ -742,12 +1082,18 @@ def main() -> None:
     for eid in era_order_list:
         for m_item in raw_by_era.get(eid, []):
             tid = m_item["id"]
+            if tid in excluded_ids:
+                continue
             a_item = ta_by_id.get(tid, {})
             merged = dict(a_item)
             merged.update(m_item)
             merged["era"] = eid
+            for pk in PRIVATE_TRACK_KEYS:
+                merged.pop(pk, None)
             merged_tracks.append(merged)
             tracks_by_era[eid].append(merged)
+
+    ensure_feat_vecs(merged_tracks)
 
     projects_by_era: dict[str, list[dict]] = defaultdict(list)
     for jf in sorted((ASSETS_DIR / "extracted").rglob("*.json")):
@@ -854,7 +1200,7 @@ def main() -> None:
             "fine_harmony_keys": FINE_HARMONY_KEYS,
             "style_groups": ta.get("style_groups", []),
             "era_anchors": ta.get("era_anchors", []),
-            "track_near": ta.get("track_near", {}),
+            "track_near": backfill_track_near(merged_tracks, ta.get("track_near", {})),
             "track_map": ta.get("track_map", {}),
         },
         "tracks": merged_tracks,
@@ -862,13 +1208,13 @@ def main() -> None:
         "eras": eras_out,
     }
 
-    OUT_JS.parent.mkdir(parents=True, exist_ok=True)
+    args.out_js.parent.mkdir(parents=True, exist_ok=True)
     js_text = (
         "// Auto-generated corpus, archive, MIK energy, macro harmony & node map data.\n"
         f"window.CORPUS_DATA = {json.dumps(payload, separators=(',', ':'), ensure_ascii=False)};\n"
     )
-    OUT_JS.write_text(js_text, encoding="utf-8")
-    print(f"Wrote {OUT_JS} ({len(js_text):,} bytes, {len(merged_tracks)} tracks, {len(eras_out)} eras, {len(phases_out)} phases)")
+    args.out_js.write_text(js_text, encoding="utf-8")
+    print(f"Wrote {args.out_js} ({len(js_text):,} bytes, {len(merged_tracks)} tracks, {len(eras_out)} eras, {len(phases_out)} phases)")
 
 
 if __name__ == "__main__":

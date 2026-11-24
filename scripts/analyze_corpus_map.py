@@ -332,6 +332,9 @@ def compute_transient_and_guitar_dsp(
     return {
         "transient_conf": round(transient_conf, 3),
         "perc_crest": round(perc_crest, 2),
+        "raw_drum_complexity": round(raw_dc, 1),
+        "raw_four_on_floor": round(raw_f4, 1),
+        "raw_breakbeat_score": round(raw_brk, 1),
         "drum_complexity": dc_gated,
         "four_on_floor": f4_gated,
         "breakbeat_score": breakbeat_score,
@@ -521,6 +524,509 @@ def analyze_harmony_and_rhythm(
     return out_hr
 
 
+STAGING_DIR = Path.home() / "tmp" / "music_map_staging"
+
+DEFAULT_EXCLUDED_IDS = {
+    "archive_2013_18_44",
+    "archive_2018_23_33",
+    "archive_2018_23_64",
+    "archive_2018_23_65",
+    "present_electro_57",
+    "present_electro_44",
+    "present_electro_33",
+    "hd_2005_35",
+    "archive_2013_18_151",
+    "sketches_2024_25_10",
+    "archive_2013_18_24",
+    "archive_2013_18_25",
+    "archive_2013_18_48",
+    "archive_2013_18_99",
+    "archive_2013_18_109",
+    "archive_2013_18_110",
+    "archive_2013_18_111",
+    "archive_2013_18_124",
+    "archive_2013_18_92",
+    "archive_2013_18_100",
+    "archive_2013_18_113",
+    "archive_2013_18_115",
+    "archive_2013_18_144",
+    "ecstatic_wave_7",
+    "ecstatic_wave_8",
+}
+
+CANONICAL_ARCHETYPES: list[tuple[str, str, int]] = [
+    ("ambient", "Ambient & meditative", 205),
+    ("dark_ambient", "Dark ambient & drone", 245),
+    ("downtempo_lush", "Downtempo & lush chords", 165),
+    ("chill_elec", "Chill & steady electronic", 130),
+    ("guitar_demos", "Guitar demos", 38),
+    ("hypnotic_micro", "Hypnotic electro & microtonal", 275),
+    ("house_ecstatic", "House & ecstatic 4/4 groove", 24),
+    ("dnb_breaks", "Complex drums & breaks", 345),
+    ("ambient_rock", "Ambient rock", 84),
+    ("rock", "Rock & guitar pop", 322),
+]
+ARCH_KEYS = [a[0] for a in CANONICAL_ARCHETYPES]
+ARCH_LABELS = {a[0]: a[1] for a in CANONICAL_ARCHETYPES}
+ARCH_HUES = {a[0]: a[2] for a in CANONICAL_ARCHETYPES}
+ARCH_CANONICAL_IDX = {a[0]: idx for idx, a in enumerate(CANONICAL_ARCHETYPES)}
+
+PIANO_SYNTH_RE = re.compile(
+    r"\b(piano|kalimba|sid|c64|8bit|chiptune|arp|arps|imposcar|diva|serum|modsynth|"
+    r"gamelan|choir|orchestral|techno|house|afro|jungle|d&b|808|ambi|ambisktch|rave|glitchbeat|wizball)\b",
+    re.IGNORECASE,
+)
+GUITAR_INST_RE = re.compile(
+    r"\b(guitar|jamstik|acoustic|strum|campfire|ukulele|3chord)\b",
+    re.IGNORECASE,
+)
+
+ML_SYNONYM_RULES: list[tuple[tuple[str, ...], str]] = [
+    (("ambient rock", "ambient_rock", "post-rock", "post rock", "shoegaze", "dream pop", "krautrock", "space rock", "slowcore", "math rock"), "ambient_rock"),
+    (("guitar demo", "guitar_demos", "guitar sketch", "acoustic guitar", "singer-songwriter", "fingerstyle", "unplugged", "folk guitar", "acoustic"), "guitar_demos"),
+    (("dark ambient", "dark_ambient", "drone", "doom", "industrial ambient", "darkwave", "soundscape"), "dark_ambient"),
+    (("indie rock", "guitar pop", "indie pop", "post-punk", "punk", "garage rock", "grunge", "noise rock", "alternative rock", "hard rock", "art rock", "britpop", "power pop", "metal", "rock"), "rock"),
+    (("drum and bass", "drum & bass", "drum n bass", "dnb", "d&b", "jungle", "breakbeat", "breaks", "footwork", "juke", "dubstep", "halftime", "drill", "grime", "broken beat", "big beat", "uk bass"), "dnb_breaks"),
+    (("deep house", "tech house", "afro house", "afrohouse", "progressive house", "nu-disco", "disco", "melodic techno", "techno", "trance", "house", "ecstatic", "club", "dance", "four on the floor"), "house_ecstatic"),
+    (("microtonal", "gamelan", "hypnotic", "acid", "braindance", "glitch", "berlin school", "modular", "minimal"), "hypnotic_micro"),
+    (("downtempo", "trip hop", "trip-hop", "balearic", "chillwave", "neo-soul", "nu jazz", "future garage", "lush"), "downtempo_lush"),
+    (("chillout", "chill_elec", "chill", "lo-fi", "lofi", "idm", "leftfield", "electronica", "synth-pop", "synthpop", "dub", "electro"), "chill_elec"),
+    (("ambient", "meditative", "new age", "modern classical", "soundtrack", "atmospheric", "choral"), "ambient"),
+]
+
+
+def _norm_lookup_key(s: str) -> str:
+    return re.sub(r"[^a-z0-9]+", "", s.lower())
+
+
+def map_ml_label_to_archetype(raw_label: str) -> str | None:
+    low = raw_label.lower().replace("---", " ").replace("_", " ").strip()
+    if low in ARCH_CANONICAL_IDX:
+        return low
+    for keywords, arch in ML_SYNONYM_RULES:
+        if any(kw in low for kw in keywords):
+            return arch
+    return None
+
+
+def load_ml_genre_predictions(ml_path: Path | None) -> dict[str, dict[str, float]]:
+    """Load optional external ML genre classifier predictions (e.g. JetSki CLAP/Essentia/AST/Gemini JSON)."""
+    if not ml_path or not ml_path.exists():
+        return {}
+    raw = json.loads(ml_path.read_text(encoding="utf-8"))
+    entries: list[tuple[str, object]] = []
+    if isinstance(raw, dict):
+        container = raw.get("tracks") or raw.get("predictions") or raw.get("results") or raw
+        if isinstance(container, dict):
+            entries = list(container.items())
+        elif isinstance(container, list):
+            for item in container:
+                if isinstance(item, dict):
+                    k = str(item.get("id") or item.get("track_id") or item.get("local_path") or item.get("path") or item.get("title") or "")
+                    if k:
+                        entries.append((k, item))
+    elif isinstance(raw, list):
+        for item in raw:
+            if isinstance(item, dict):
+                k = str(item.get("id") or item.get("track_id") or item.get("local_path") or item.get("path") or item.get("title") or "")
+                if k:
+                    entries.append((k, item))
+
+    parsed_index: dict[str, dict[str, float]] = {}
+    for key, val in entries:
+        arch_scores = {a: 0.0 for a in ARCH_KEYS}
+        if isinstance(val, str):
+            mapped = map_ml_label_to_archetype(val)
+            if mapped:
+                arch_scores[mapped] = 85.0
+        elif isinstance(val, dict):
+            score_map = val.get("scores") or val.get("probs") or val.get("probabilities") or val.get("genres")
+            if isinstance(score_map, dict):
+                vals = [float(v) for v in score_map.values() if isinstance(v, (int, float))]
+                scale = 100.0 if (vals and max(vals) <= 1.05) else 1.0
+                for lbl, sc in score_map.items():
+                    if isinstance(sc, (int, float)):
+                        mapped = map_ml_label_to_archetype(str(lbl))
+                        if mapped:
+                            arch_scores[mapped] = max(arch_scores[mapped], clamp(float(sc) * scale))
+            top_list = val.get("top_genres") or val.get("labels") or val.get("predictions")
+            if isinstance(top_list, list):
+                for item in top_list:
+                    if isinstance(item, (list, tuple)) and len(item) >= 2:
+                        lbl, sc = str(item[0]), float(item[1])
+                        scale = 100.0 if sc <= 1.05 else 1.0
+                        mapped = map_ml_label_to_archetype(lbl)
+                        if mapped:
+                            arch_scores[mapped] = max(arch_scores[mapped], clamp(sc * scale))
+                    elif isinstance(item, dict):
+                        lbl = str(item.get("label") or item.get("genre") or "")
+                        sc = float(item.get("score") or item.get("confidence") or item.get("prob") or 0.8)
+                        scale = 100.0 if sc <= 1.05 else 1.0
+                        mapped = map_ml_label_to_archetype(lbl)
+                        if mapped:
+                            arch_scores[mapped] = max(arch_scores[mapped], clamp(sc * scale))
+            single_lbl = val.get("label") or val.get("genre") or val.get("cluster") or val.get("predicted_genre")
+            if isinstance(single_lbl, str):
+                conf = float(val.get("confidence") or val.get("score") or val.get("prob") or 0.85)
+                scale = 100.0 if conf <= 1.05 else 1.0
+                mapped = map_ml_label_to_archetype(single_lbl)
+                if mapped:
+                    arch_scores[mapped] = max(arch_scores[mapped], clamp(conf * scale))
+            if max(arch_scores.values()) == 0.0:
+                vals = [float(v) for k_v, v in val.items() if k_v in ARCH_CANONICAL_IDX and isinstance(v, (int, float))]
+                scale = 100.0 if (vals and max(vals) <= 1.05) else 1.0
+                for k_v, v in val.items():
+                    if k_v in ARCH_CANONICAL_IDX and isinstance(v, (int, float)):
+                        arch_scores[k_v] = clamp(float(v) * scale)
+
+        if max(arch_scores.values()) > 0.0:
+            parsed_index[key] = arch_scores
+            parsed_index[_norm_lookup_key(key)] = arch_scores
+            parsed_index[_norm_lookup_key(Path(key).name)] = arch_scores
+            parsed_index[_norm_lookup_key(Path(key).stem)] = arch_scores
+    return parsed_index
+
+
+def lookup_ml_scores(t: dict, ml_index: dict[str, dict[str, float]]) -> dict[str, float] | None:
+    if not ml_index:
+        return None
+    lp = str(t.get("local_path") or "")
+    candidates = [
+        str(t.get("id") or ""),
+        lp,
+        Path(lp).name if lp else "",
+        Path(lp).stem if lp else "",
+        str(t.get("slug") or ""),
+        str(t.get("title") or ""),
+    ]
+    for c in candidates:
+        if not c:
+            continue
+        if c in ml_index:
+            return ml_index[c]
+        nk = _norm_lookup_key(c)
+        if nk and nk in ml_index:
+            return ml_index[nk]
+    return None
+
+
+def compute_folder_genre_priors(t: dict) -> tuple[dict[str, float], dict[str, object]]:
+    """Extract clean folder-hierarchy & instrument priors from local_path + metadata."""
+    lp = str(t.get("local_path") or "").lower()
+    title = str(t.get("title") or "").lower()
+    p = {a: 0.0 for a in ARCH_KEYS}
+    rule: str | None = None
+
+    is_elec_folder = any(
+        k in lp
+        for k in (
+            "06 - ecstatic wave", "flow wave continue", "01 - nihon forever",
+            "02 - le garage herm", "le garage era tracks", "03 - spirit guides",
+            "04 - lucid crystal", "ai music 2025", "present trax", "02 - psychedailies",
+            "offal beats", "^ music sketches 2026", "ai afrohouse", "afro retro", "techno idea",
+            "musicfx ai test", "maschine", "05 - reflective disc",
+        )
+    )
+    is_band_folder = any(
+        k in lp
+        for k in (
+            "/my own band/", "/psykers/", "/yon/", "/spudboy/", "/random bill bands/",
+            "cae - idles cover", "06 skullz - endlesss band", "/^ jams/",
+        )
+    ) or ("spudboy -" in title or "spudboy —" in title or "slint" in title)
+    is_piano_or_chip = bool(PIANO_SYNTH_RE.search(title) or PIANO_SYNTH_RE.search(lp))
+
+    perc_share = float(t.get("perc_share", 0.0))
+    energy = float(t.get("energy", 5))
+    mid_share = float(t.get("mid_share", 0.0))
+    sub_share = float(t.get("sub_share", 0.0))
+    cr = float(t.get("chord_richness", 50.0))
+
+    if "dark ambient ep" in lp:
+        p["dark_ambient"], p["ambient"], rule = 92.0, 35.0, "folder:dark_ambient_ep"
+    elif "03 - spirit guides" in lp or "jungle and rain atmos" in lp:
+        p["ambient"], p["dark_ambient"], rule = 88.0, 48.0, "folder:spirit_guides_ambient"
+    elif "/present trax/ambient/" in lp:
+        if perc_share >= 0.16 and energy >= 4:
+            p["chill_elec"], p["downtempo_lush"], p["ambient"], rule = 78.0, 62.0, 35.0, "folder:present_ambient_beat"
+        else:
+            p["ambient"], p["dark_ambient"], rule = 88.0, 48.0, "folder:present_ambient"
+    elif "04 - lucid crystal" in lp:
+        p["ambient"], p["downtempo_lush"], rule = 72.0, 58.0, "folder:lucid_crystal"
+    elif "chill choir" in lp or "orchestral abstract" in lp or "vocal orchestral" in lp or re.search(r"\borch\b", title):
+        p["downtempo_lush"], p["ambient"], rule = 62.0, 80.0, "folder:orchestral_chill"
+    elif "guitar sketches" in lp or "guitar loop for kinbana" in lp or "simple mics setup" in lp:
+        p["guitar_demos"], rule = 95.0, "folder:guitar_demos"
+    elif "jamstik" in lp or "jamstik" in title:
+        if "ambient" in title or "crystal bell" in title or perc_share < 0.05:
+            p["ambient"], rule = 88.0, "title:jamstik_ambient"
+        else:
+            p["guitar_demos"], rule = 95.0, "title:jamstik_guitar"
+    elif any(k in lp for k in ("/my own band/", "/psykers/", "/yon/", "cae - idles cover", "06 skullz - endlesss band")):
+        p["rock"], p["ambient_rock"], rule = 90.0, 38.0, "folder:band_rock"
+    elif "/random bill bands/" in lp:
+        if mid_share >= 0.15:
+            if perc_share < 0.15 and energy <= 6:
+                p["ambient_rock"], p["rock"], rule = 85.0, 55.0, "folder:bill_bands_amb_rock"
+            else:
+                p["rock"], p["ambient_rock"], rule = 90.0, 40.0, "folder:bill_bands_rock"
+    elif "/spudboy/" in lp or "spudboy -" in title or "spudboy —" in title:
+        if perc_share < 0.04 and energy <= 3:
+            p["dark_ambient"], rule = 88.0, "folder:spudboy_drone"
+        elif perc_share < 0.10:
+            p["ambient_rock"], p["rock"], rule = 88.0, 45.0, "folder:spudboy_amb_rock"
+        else:
+            p["rock"], p["ambient_rock"], rule = 86.0, 35.0, "folder:spudboy_rock"
+    elif "(spudboy" in title:
+        p["rock"], p["house_ecstatic"], p["dnb_breaks"], rule = 58.0, 48.0, 45.0, "title:spudboy_remix"
+    elif "/^ jams/" in lp:
+        if "3chord" in title:
+            p["guitar_demos"], p["rock"], rule = 84.0, 52.0, "folder:jams_guitar"
+        else:
+            p["rock"], p["ambient_rock"], rule = 84.0, 38.0, "folder:jams_band"
+    elif "slint" in title or "slinted" in title:
+        if energy <= 6 and cr >= 75:
+            p["ambient_rock"], p["rock"], rule = 86.0, 62.0, "title:slint_post_rock"
+        else:
+            p["rock"], p["ambient_rock"], rule = 90.0, 50.0, "title:slint_rock"
+    elif title.strip() == "rock sketch":
+        p["rock"], rule = 92.0, "title:rock_sketch"
+    elif "deepspace guitar" in title:
+        p["ambient"], p["ambient_rock"], rule = 76.0, 58.0, "title:deepspace_guitar"
+    elif GUITAR_INST_RE.search(title) and not is_elec_folder:
+        p["guitar_demos"], p["rock"], rule = 88.0, 32.0, "title:guitar_inst"
+    elif "rc505 looper sketches" in lp:
+        if sub_share < 0.15:
+            p["guitar_demos"], rule = 85.0, "folder:rc505_guitar"
+        else:
+            p["chill_elec"], p["downtempo_lush"], rule = 72.0, 48.0, "folder:rc505_bass_looper"
+    elif any(k in lp for k in ("d&b qzb", "sax d&b", "vox d&b", "breakbeat loops", "classic breaks", "fong drill", "vivaldi drill", "kaskrilli")):
+        p["dnb_breaks"], rule = 92.0, "folder:dnb_breaks"
+    elif "offal beats" in lp:
+        p["dnb_breaks"], p["hypnotic_micro"], rule = 72.0, 58.0, "folder:offal_beats"
+    elif "02 - le garage herm" in lp or "le garage era tracks" in lp or "gamelan" in lp:
+        p["hypnotic_micro"], p["downtempo_lush"], rule = 86.0, 38.0, "folder:le_garage_micro"
+    elif "01 - nihon forever" in lp:
+        p["hypnotic_micro"], p["downtempo_lush"], p["house_ecstatic"], rule = 60.0, 48.0, 44.0, "folder:nihon_forever"
+    elif any(k in lp for k in ("06 - ecstatic wave", "flow wave continue", "ai afrohouse", "afro retro", "techno idea")):
+        p["house_ecstatic"], p["downtempo_lush"], rule = 85.0, 35.0, "folder:ecstatic_house"
+    elif any(k in lp for k in ("/^ downtempo/", "summon downtempo", "dom piano ravel", "me and mya piano", "kalimba, piano")):
+        p["downtempo_lush"], p["chill_elec"], rule = 82.0, 50.0, "folder:downtempo"
+    elif "/present trax/mid tempo/" in lp:
+        p["chill_elec"], p["downtempo_lush"], p["dnb_breaks"], rule = 72.0, 45.0, 40.0, "folder:present_midtempo"
+    elif "/^ uptempo" in lp or "/present trax/up tempo/" in lp:
+        p["house_ecstatic"], p["dnb_breaks"], p["hypnotic_micro"], rule = 66.0, 62.0, 48.0, "folder:uptempo"
+
+    flags = {
+        "rule": rule,
+        "is_elec_folder": is_elec_folder,
+        "is_band_folder": is_band_folder,
+        "is_piano_or_chip": is_piano_or_chip,
+    }
+    return p, flags
+
+
+def recalibrate_and_score_track(
+    t: dict,
+    ml_index: dict[str, dict[str, float]] | None = None,
+    w_folder: float = 0.52,
+    w_dsp: float = 0.48,
+    w_ml: float = 0.32,
+) -> str:
+    """Recalibrate DSP drum/BPM gates and score track across 10 archetypes (folder + DSP + optional ML)."""
+    tc = float(t.get("transient_conf", 0.5))
+    old_gv = float(t.get("guitar_vocal_score", 0.0))
+    perc_share = float(t.get("perc_share", 0.05))
+    perc_rate = float(t.get("perc_onset_rate", 1.5))
+    en = float(t.get("energy", 5))
+    mid = float(t.get("mid_share", 0.2))
+    sub = float(t.get("sub_share", 0.2))
+    bass = float(t.get("bass_share", 0.25))
+    high = float(t.get("high_share", 0.04))
+    hc = float(t.get("harmonic_complexity", 50.0))
+    cr = float(t.get("chord_richness", 50.0))
+    md = float(t.get("modal_darkness", 50.0))
+    micro = float(t.get("microtonal_score", 0.0))
+    bpm = float(t.get("bpm", 110.0))
+    era = str(t.get("era", ""))
+
+    # 1. Recover ungated drum & groove metrics (or read raw_* directly when freshly decoded)
+    if "raw_drum_complexity" in t:
+        raw_dc = float(t["raw_drum_complexity"])
+        raw_f4 = float(t.get("raw_four_on_floor", t.get("four_on_floor", 0.0)))
+        raw_brk = float(t.get("raw_breakbeat_score", t.get("breakbeat_score", 0.0)))
+    else:
+        if tc > 0.005:
+            raw_f4 = clamp(float(t.get("four_on_floor", 0.0)) / (tc ** 1.4))
+            raw_brk = clamp(float(t.get("breakbeat_score", 0.0)) / ((tc ** 1.4) * max(0.15, 1.0 - 0.65 * (old_gv / 100.0))))
+        else:
+            raw_f4, raw_brk = 0.0, 0.0
+        raw_dc = compute_drum_complexity(
+            perc_share, perc_rate, float(t.get("gap_cv", 0.2)), float(t.get("gap_entropy", 0.1)), float(t.get("high_low_ratio", 0.3)), raw_brk
+        )
+
+    f_priors, flags = compute_folder_genre_priors(t)
+    rule = flags["rule"]
+    is_elec_folder = bool(flags["is_elec_folder"])
+    is_band_folder = bool(flags["is_band_folder"])
+    is_piano_or_chip = bool(flags["is_piano_or_chip"])
+    is_explicit_ambient = rule in (
+        "folder:spirit_guides_ambient", "folder:present_ambient", "folder:dark_ambient_ep",
+        "title:jamstik_ambient", "folder:spudboy_drone", "title:deepspace_guitar", "folder:orchestral_chill",
+    )
+
+    # 2. Un-crush compressed wall-of-sound tracks (e.g. Your a Genius, demo G 02, Make It Thru)
+    wall_perc = (
+        clamp((perc_share - 0.10) / 0.11, 0.0, 1.0)
+        * clamp((perc_rate - 1.6) / 1.5, 0.0, 1.0)
+        * clamp((en - 3.2) / 3.0, 0.0, 1.0)
+    )
+    eff_tc = tc if is_explicit_ambient else max(tc, (0.44 + 0.52 * wall_perc) if wall_perc > 0.05 else tc)
+    if eff_tc < 0.55:
+        dc = round(raw_dc * (0.08 + 0.92 * (eff_tc ** 1.1)), 1)
+    else:
+        dc = round(raw_dc, 1)
+    f4 = round(raw_f4 * (eff_tc ** 1.2), 1)
+    brk = round(raw_brk * (eff_tc ** 1.2), 1)
+
+    # 3. Double-time BPM octave fix on strummed guitar / non-sub midrange tracks (e.g. 172.27 -> 86.14 BPM)
+    mus_bpm = bpm
+    if bpm >= 148.0 and ((sub < 0.12 and mid >= 0.23) or (bpm >= 183.0 and sub < 0.30)):
+        mus_bpm = round(bpm * 0.5, 2)
+
+    # 4. Recompute Dark Ambient score with un-crushed drum_complexity
+    low_end_w = clamp((sub + bass - 0.50) / 0.22, 0.0, 1.0)
+    drum_pres = clamp(dc / 28.0, 0.0, 1.0)
+    hi_norm = clamp(high / 0.04, 0.0, 1.0)
+    da = round(clamp(100.0 * (1.0 - drum_pres) * (0.58 * low_end_w + 0.22 * (md / 100.0) + 0.20 * (1.0 - hi_norm))), 1)
+
+    # 5. Guitar Demos DSP detector (E2=82.4 Hz => sub_share ~ 0, strong mid+bass guitar body, strummed perc)
+    gd_gate = (
+        clamp((0.025 - sub) / 0.020, 0.0, 1.0)
+        * clamp((mid - 0.17) / 0.08, 0.0, 1.0)
+        * clamp((mid + bass - 0.74) / 0.14, 0.0, 1.0)
+        * clamp((perc_share - 0.045) / 0.05, 0.0, 1.0)
+        * clamp((0.43 - perc_share) / 0.09, 0.0, 1.0)
+    )
+    if is_elec_folder or is_piano_or_chip:
+        gd_gate *= 0.05
+    if is_band_folder and rule != "folder:jams_guitar":
+        gd_gate *= 0.15
+    if en >= 9 and perc_share >= 0.27 and high >= 0.06:
+        gd_gate *= 0.25
+    gd_dsp = round(clamp(gd_gate * (74.0 + 16.0 * clamp((mid + bass - 0.80) / 0.15, 0.0, 1.0) + 10.0 * clamp(hc / 80.0, 0.0, 1.0))), 1)
+
+    # 6. Rock & Guitar Pop DSP detector (midrange harmonic grit + live cymbals/snare + E>=6, NO 4/4 penalty!)
+    rock_gate = (
+        clamp((mid - 0.22) / 0.09, 0.0, 1.0)
+        * clamp((high - 0.032) / 0.055, 0.0, 1.0)
+        * clamp((dc - 46.0) / 16.0, 0.0, 1.0)
+        * clamp((perc_share - 0.16) / 0.10, 0.0, 1.0)
+        * clamp((en - 5.5) / 2.5, 0.0, 1.0)
+        * clamp((0.55 - sub) / 0.16, 0.0, 1.0)
+        * clamp((sub - 0.022) / 0.035, 0.20, 1.0)
+    )
+    if is_elec_folder or is_piano_or_chip:
+        rock_gate *= 0.12
+    rock_dsp = round(clamp(rock_gate * (72.0 + 16.0 * clamp((mid - 0.25) / 0.22, 0.0, 1.0) + 12.0 * clamp((high - 0.04) / 0.10, 0.0, 1.0))), 1)
+
+    # 7. Ambient Rock DSP detector (shoegaze/post-rock drum wash OR lush harmonic guitar/vocal + live drums)
+    wash_lush = (
+        clamp((0.62 - tc) / 0.34, 0.0, 1.0)
+        * clamp((hc - 56.0) / 18.0, 0.0, 1.0)
+        * clamp((cr - 56.0) / 24.0, 0.0, 1.0)
+        * clamp((mid - 0.18) / 0.09, 0.0, 1.0)
+    )
+    gv_atmos = (
+        clamp((old_gv - 30.0) / 25.0, 0.0, 1.0)
+        * clamp((0.27 - perc_share) / 0.09, 0.0, 1.0)
+        * clamp((9.0 - en) / 2.5, 0.35, 1.0)
+    )
+    ar_core = max(wash_lush, 0.92 * gv_atmos)
+    ar_gate = (
+        ar_core
+        * clamp((perc_share - 0.095) / 0.055, 0.0, 1.0)
+        * clamp((0.35 - perc_share) / 0.10, 0.25, 1.0)
+        * clamp((en - 2.5) / 2.2, 0.0, 1.0)
+        * clamp((0.48 - sub) / 0.18, 0.0, 1.0)
+    )
+    if is_elec_folder or is_piano_or_chip:
+        ar_gate *= 0.15
+    if high >= 0.11 and perc_share >= 0.28 and en >= 9:
+        ar_gate *= 0.25
+    ar_dsp = round(clamp(ar_gate * (76.0 + 14.0 * clamp((0.55 - tc) / 0.35, 0.0, 1.0) + 10.0 * clamp((cr - 65.0) / 25.0, 0.0, 1.0))), 1)
+
+    micro_eff = micro if era in ("le_garage", "ep_concepts", "nihon_forever", "sketches_2024_25", "remixes_commissions", "lucid_crystal") else micro * 0.25
+    guitar_or_rock_suppress = 1.0 - 0.50 * clamp(max(rock_dsp, gd_dsp, ar_dsp) / 68.0, 0.0, 1.0)
+
+    dsp_scores = {
+        "ambient": round(clamp(((82.0 if dc < 22 and da < 38 else 10.0) + (10.0 - en) * 2.2 - da * 0.5 - dc * 0.9) * (1.0 - 0.7 * clamp(gd_dsp / 60.0, 0.0, 1.0))), 1),
+        "dark_ambient": round(clamp((85.0 if dc < 22 and da >= 36 else 8.0) + da * 0.65 - dc * 0.9), 1),
+        "downtempo_lush": round(clamp(((56.0 if 18 <= dc < 58 and f4 < 48 and brk < 36 and mus_bpm < 116 else 16.0) + cr * 0.25 + hc * 0.12 - en * 1.6 - brk * 0.25) * guitar_or_rock_suppress), 1),
+        "chill_elec": round(clamp(((60.0 if dc >= 22 and mus_bpm < 106 and f4 < 54 and brk < 40 else 16.0) + (108.0 - mus_bpm) * 0.32 - f4 * 0.20 - brk * 0.20) * guitar_or_rock_suppress), 1),
+        "guitar_demos": gd_dsp,
+        "hypnotic_micro": round(clamp(((54.0 if 94 <= mus_bpm < 146 and dc >= 40 and brk < 48 and f4 < 58 else 14.0) + micro_eff * 0.48 + dc * 0.20 - brk * 0.15) * guitar_or_rock_suppress), 1),
+        "house_ecstatic": round(clamp(((64.0 if f4 >= 50 and dc >= 38 else 12.0) + f4 * 0.32 + en * 1.0 - brk * 0.30) * guitar_or_rock_suppress), 1),
+        "dnb_breaks": round(clamp(((66.0 if brk >= 42 and f4 < 50 and sub >= 0.06 else 12.0) + brk * 0.42 + dc * 0.22 + clamp((bpm - 125.0) * 0.22, 0.0, 14.0) - f4 * 0.30) * (0.20 if sub < 0.03 and mid > 0.23 else guitar_or_rock_suppress)), 1),
+        "ambient_rock": ar_dsp,
+        "rock": rock_dsp,
+    }
+
+    ml_scores = lookup_ml_scores(t, ml_index or {})
+    has_prior = max(f_priors.values()) > 0.0
+    has_ml = ml_scores is not None and max(ml_scores.values()) > 0.0
+
+    if has_prior and has_ml and ml_scores is not None:
+        tot = max(1e-6, w_folder + w_dsp + w_ml)
+        wf, wd, wm = w_folder / tot, w_dsp / tot, w_ml / tot
+        comb = {a: round(wf * f_priors[a] + wd * dsp_scores[a] + wm * ml_scores[a], 1) for a in ARCH_KEYS}
+    elif has_prior:
+        tot = max(1e-6, w_folder + w_dsp)
+        wf, wd = w_folder / tot, w_dsp / tot
+        comb = {a: round(wf * f_priors[a] + wd * dsp_scores[a], 1) for a in ARCH_KEYS}
+    elif has_ml and ml_scores is not None:
+        tot = max(1e-6, w_dsp + w_ml)
+        wd, wm = w_dsp / tot, w_ml / tot
+        comb = {a: round(wd * dsp_scores[a] + wm * ml_scores[a], 1) for a in ARCH_KEYS}
+    else:
+        comb = dict(dsp_scores)
+
+    best_arch = max(ARCH_KEYS, key=lambda a: comb[a])
+
+    # Write recalibrated metrics onto track dict
+    t["drum_complexity"] = dc
+    t["four_on_floor"] = f4
+    t["breakbeat_score"] = brk
+    t["dark_ambient_score"] = da
+    t["musical_bpm"] = mus_bpm
+    t["rock_score"] = rock_dsp
+    t["ambient_rock_score"] = ar_dsp
+    t["guitar_demo_score"] = gd_dsp
+    t["guitar_vocal_score"] = round(max(gd_dsp, 0.65 * rock_dsp, 0.55 * ar_dsp), 1)
+    if rule:
+        t["folder_prior"] = rule
+    t["genre_scores"] = comb
+
+    if best_arch == "rock":
+        t["groove_style"] = "rock"
+    elif best_arch == "ambient_rock":
+        t["groove_style"] = "ambient_rock"
+    elif best_arch == "guitar_demos":
+        t["groove_style"] = "guitar_demo"
+    elif best_arch == "dark_ambient":
+        t["groove_style"] = "dark_ambient"
+    elif best_arch == "ambient":
+        t["groove_style"] = "ambient"
+    elif f4 >= brk + 6.0 and f4 >= 36.0:
+        t["groove_style"] = "four_on_floor"
+    elif brk >= f4 + 4.0 and brk >= 34.0:
+        t["groove_style"] = "breakbeat"
+    else:
+        t["groove_style"] = "downtempo"
+
+    return best_arch
+
+
 def make_tags(t: dict) -> tuple[str, str]:
     cr, hm, md, ms = t["chord_richness"], t["harmonic_motion"], t["modal_darkness"], t["microtonal_score"]
     if ms >= 48 and t["era"] in ("le_garage", "ep_concepts", "sketches_2024_25", "remixes_commissions"):
@@ -540,17 +1046,22 @@ def make_tags(t: dict) -> tuple[str, str]:
     else:
         h_tag = "Balanced modal harmony"
 
-    dc, en, bpm = t["drum_complexity"], t["energy"], t["bpm"]
+    dc, en, bpm = t["drum_complexity"], t["energy"], float(t.get("musical_bpm", t["bpm"]))
     f4, brk = float(t.get("four_on_floor", 0.0)), float(t.get("breakbeat_score", 0.0))
-    if t.get("guitar_vocal_score", 0.0) >= 45.0:
-        r_tag = "Guitar & vocal phrasing"
+    cid = str(t.get("cluster_id", ""))
+    if cid.endswith("_rock") and not cid.endswith("_ambient_rock"):
+        r_tag = "Driving guitar & rock kit"
+    elif cid.endswith("_ambient_rock"):
+        r_tag = "Atmospheric drum & guitar wash"
+    elif cid.endswith("_guitar_demos"):
+        r_tag = "Acoustic / electric guitar demo"
     elif dc < 20 and t.get("dark_ambient_score", 0.0) >= 28.0:
         r_tag = "Dark ambient drone"
     elif dc < 24 and t["perc_share"] < 0.08:
         r_tag = "Beatless ambient wash"
     elif dc < 36:
         r_tag = "Spacious / minimal pulse"
-    elif bpm >= 158 and dc >= 48 and brk >= 35:
+    elif float(t["bpm"]) >= 158 and dc >= 48 and brk >= 35:
         r_tag = "Fast D&B / jungle breaks"
     elif brk >= f4 + 6.0 and brk >= 36.0:
         r_tag = "Breakbeat / syncopated groove"
@@ -568,124 +1079,82 @@ def make_tags(t: dict) -> tuple[str, str]:
 def effective_tempo(t: dict) -> float:
     dc = float(t.get("drum_complexity", 0.0))
     r_conf = clamp((dc - 16.0) / 14.0, 0.0, 1.0)
-    return round(r_conf * float(t["bpm"]) + (1.0 - r_conf) * 68.0, 2)
+    base_bpm = float(t.get("musical_bpm", t["bpm"]))
+    return round(r_conf * base_bpm + (1.0 - r_conf) * 68.0, 2)
 
 
 def cluster_and_layout(tracks: list[dict]) -> dict:
-    """Cluster tracks into the canonical 8 Vibe groups and project Vibe + Energy-Wave Era coords."""
+    """Assign tracks into the canonical 10 Vibe groups, emit 8-dim feat_vec, and project Vibe + Era coords."""
     for t in tracks:
         t["effective_bpm"] = effective_tempo(t)
-        pul_presence = clamp((float(t.get("perc_share", 0.0)) - 0.02) / 0.10, 0.0, 1.0) * float(t.get("transient_conf", 1.0))
+        pul_presence = clamp((float(t.get("perc_share", 0.0)) - 0.02) / 0.10, 0.0, 1.0) * max(0.35, float(t.get("transient_conf", 1.0)))
         t["drum_pulse"] = round(float(t.get("pulse_clarity", 0.0)) * pul_presence * 100.0, 1)
 
-    # Standardize continuous features + add bounded sparse detectors so N=557 z-scores stay balanced
-    dense_w = np.array([1.85, 2.85, 1.85, 4.45, 2.65, 0.55, 0.40, 0.30, 0.30, 0.90])
-    X_dense = np.array([
+    # 8-dimensional standardized continuous sonic feature vector (for WT-4 full-catalog no-repeat similarity walk)
+    sonic_w = np.array([1.55, 1.75, 1.45, 1.65, 1.65, 1.35, 1.25, 0.95], dtype=np.float64)
+    X_sonic_raw = np.array([
         [
-            t["energy"], t["effective_bpm"], t["drum_complexity"],
-            t.get("breakbeat_score", 0.0), t.get("four_on_floor", 0.0),
-            t["harmonic_complexity"], t["chord_richness"], t["harmonic_motion"],
-            t["modal_darkness"], t.get("microtonal_score", 0.0),
+            float(t["energy"]),
+            float(t["effective_bpm"]),
+            float(t["drum_complexity"]),
+            float(t.get("four_on_floor", 0.0)),
+            float(t.get("breakbeat_score", 0.0)),
+            float(t.get("mid_share", 0.2)),
+            float(t.get("sub_share", 0.2)) + float(t.get("bass_share", 0.25)),
+            float(t["harmonic_complexity"]),
         ]
         for t in tracks
     ], dtype=np.float64)
-    da_col = np.clip(np.array([t.get("dark_ambient_score", 0.0) for t in tracks]) / 18.0, 0.0, 3.2)[:, None] * 4.2
-    gv_arr = np.array([t.get("guitar_vocal_score", 0.0) for t in tracks])
-    gv_col = (np.clip(gv_arr / 14.0, 0.0, 3.5) * 5.0 + (gv_arr >= 32.0).astype(np.float64) * 5.5)[:, None]
-    X_std = np.hstack([StandardScaler().fit_transform(X_dense) * dense_w, da_col, gv_col])
-    D = np.linalg.norm(X_std[:, None, :] - X_std[None, :, :], axis=2)
+    X_sonic = StandardScaler().fit_transform(X_sonic_raw) * sonic_w
+    for i, t in enumerate(tracks):
+        t["feat_vec"] = [round(float(v), 3) for v in X_sonic[i]]
 
-    n_sub = 44 if len(tracks) > 120 else 8
-    sub_labels = AgglomerativeClustering(n_clusters=n_sub, linkage="ward").fit_predict(X_std)
-    if n_sub == 8:
-        for cid in range(n_sub):
-            members = [i for i, lbl in enumerate(sub_labels) if lbl == cid]
-            if len(members) == 1:
-                idx0 = members[0]
-                other = [c for c in range(n_sub) if c != cid and np.sum(sub_labels == c) >= 2]
-                if other:
-                    best_c = min(other, key=lambda c: float(np.linalg.norm(X_std[idx0] - X_std[sub_labels == c].mean(axis=0))))
-                    sub_labels[idx0] = best_c
-                    largest = max(other, key=lambda c: int(np.sum(sub_labels == c)))
-                    l_idxs = [i for i, lbl in enumerate(sub_labels) if lbl == largest]
-                    if len(l_idxs) >= 4:
-                        s2 = AgglomerativeClustering(n_clusters=2, linkage="ward").fit_predict(X_std[l_idxs])
-                        for k_i, ti in enumerate(l_idxs):
-                            if s2[k_i] == 1:
-                                sub_labels[ti] = cid
+    # Ensemble 10-archetype score matrix
+    S_ens = np.array(
+        [[float(t.get("genre_scores", {}).get(aid, 0.0)) for aid in ARCH_KEYS] for t in tracks],
+        dtype=np.float64,
+    )
+    win_arch_idxs = np.argmax(S_ens, axis=1)
 
-    def _stats(idxs: list[int]) -> dict:
-        return {
-            "en": float(np.mean([tracks[i]["energy"] for i in idxs])),
-            "bpm": float(np.mean([tracks[i]["effective_bpm"] for i in idxs])),
-            "dc": float(np.mean([tracks[i]["drum_complexity"] for i in idxs])),
-            "brk": float(np.mean([tracks[i].get("breakbeat_score", 0.0) for i in idxs])),
-            "f4": float(np.mean([tracks[i].get("four_on_floor", 0.0) for i in idxs])),
-            "da": float(np.mean([tracks[i].get("dark_ambient_score", 0.0) for i in idxs])),
-            "gv": float(np.mean([tracks[i].get("guitar_vocal_score", 0.0) for i in idxs])),
-            "cr": float(np.mean([tracks[i]["chord_richness"] for i in idxs])),
-            "micro": float(np.mean([tracks[i]["microtonal_score"] for i in idxs])),
-        }
+    # Combine sonic coordinates + normalized ensemble territory pull for cohesive, high-legibility 2D Vibe islands
+    X_map = np.hstack([X_sonic, (S_ens / 22.0) * 1.65])
 
-    archetypes = [
-        ("ambient", "Ambient & meditative", lambda c: (320.0 if c["dc"] < 24 and c["da"] < 38 and c["gv"] < 25 else -300.0) + (10 - c["en"]) * 3.0 - c["da"] * 1.6 - c["dc"] * 0.7),
-        ("dark_ambient", "Dark ambient & drone", lambda c: (340.0 if c["dc"] < 24 and c["da"] >= 38 else -300.0) + c["da"] * 3.0 - c["dc"] * 0.9 - c["gv"]),
-        ("downtempo_lush", "Downtempo & lush chords", lambda c: (160.0 if c["dc"] >= 20 and c["f4"] < 44 and c["brk"] < 32 and c["gv"] < 25 and c["bpm"] >= 98 else 0.0) + c["cr"] * 0.7 - c["en"] * 3.5 - c["brk"] * 0.5),
-        ("chill_elec", "Chill & steady electronic", lambda c: (165.0 if c["dc"] >= 20 and c["bpm"] < 104 and c["f4"] < 50 and c["brk"] < 38 and c["gv"] < 25 else 0.0) + (110.0 - c["bpm"]) * 1.1 - c["f4"] * 0.35 - c["brk"] * 0.4),
-        ("guitar_vocal", "Experimental guitar & vocal", lambda c: (360.0 if c["gv"] >= 30 else -300.0) + c["gv"] * 4.5 - c["f4"] * 0.5),
-        ("hypnotic_micro", "Hypnotic electro & microtonal", lambda c: (155.0 if 95 <= c["bpm"] < 146 and c["dc"] >= 42 and c["brk"] < 46 and c["f4"] < 54 and c["gv"] < 25 else 0.0) + c["dc"] * 0.6 + c["micro"] * 1.1 - c["brk"] * 0.25),
-        ("house_ecstatic", "House & ecstatic 4/4 groove", lambda c: (175.0 if c["f4"] >= 50 and c["dc"] >= 38 else 0.0) + c["f4"] * 1.9 + c["en"] * 3.0 - c["brk"] * 0.6),
-        ("dnb_breaks", "Complex drums & breaks", lambda c: (185.0 if c["brk"] >= 44 and c["f4"] < 48 and c["gv"] < 28 else 0.0) + c["brk"] * 2.6 + c["dc"] * 1.1 + c["bpm"] * 0.35 - c["f4"] * 0.8 - c["gv"] * 1.8),
-    ]
-    sub_clusters = [{"sid": sid, "idxs": [i for i, l in enumerate(sub_labels) if l == sid]} for sid in range(n_sub)]
-    for sc in sub_clusters:
-        sc.update(_stats(sc["idxs"]))
-    # First guarantee every archetype has at least 1 best-matching subcluster
-    pairs = [(fn(sc), sc["sid"], aid, alabel) for sc in sub_clusters for aid, alabel, fn in archetypes]
-    pairs.sort(reverse=True)
-    sid_to_arch, used_a = {}, set()
-    for _, sid, aid, alabel in pairs:
-        if sid not in sid_to_arch and aid not in used_a:
-            sid_to_arch[sid] = (aid, alabel)
-            used_a.add(aid)
-    # Assign all remaining subclusters cleanly to their highest-scoring physical territory
-    for sc in sub_clusters:
-        if sc["sid"] not in sid_to_arch:
-            best_aid, best_alabel = max(archetypes, key=lambda a: a[2](sc))[:2]
-            sid_to_arch[sc["sid"]] = (best_aid, best_alabel)
+    # Pairwise sonic distance for track_near (pure sonic distance + gentle same-cluster continuity bonus)
+    D_sonic = np.linalg.norm(X_sonic[:, None, :] - X_sonic[None, :, :], axis=2)
+    same_arch = (win_arch_idxs[:, None] == win_arch_idxs[None, :]).astype(np.float64)
+    D_sim = D_sonic * (1.0 - 0.14 * same_arch)
 
-    arch_members: dict[str, list[int]] = {}
-    arch_labels = {aid: alabel for aid, alabel, _ in archetypes}
-    for sc in sub_clusters:
-        aid = sid_to_arch[sc["sid"]][0]
-        arch_members.setdefault(aid, []).extend(sc["idxs"])
+    arch_members: dict[str, list[int]] = {aid: [] for aid in ARCH_KEYS}
+    for i, a_idx in enumerate(win_arch_idxs):
+        arch_members[ARCH_KEYS[int(a_idx)]].append(i)
 
-    canonical_order = ["ambient", "dark_ambient", "downtempo_lush", "chill_elec", "guitar_vocal", "hypnotic_micro", "house_ecstatic", "dnb_breaks"]
-    orig_to_name = {idx: (aid, arch_labels[aid]) for idx, aid in enumerate(canonical_order)}
-    clusters_raw = [{"orig_id": idx, "idxs": arch_members[aid], **_stats(arch_members[aid])} for idx, aid in enumerate(canonical_order)]
-    merged_labels = np.zeros(len(tracks), dtype=int)
-    for c in clusters_raw:
-        for i in c["idxs"]:
-            merged_labels[i] = c["orig_id"]
-    sil = float(silhouette_score(X_std, merged_labels))
-    T_PALETTE_HUES = [205, 245, 165, 275, 24, 38, 130, 340]
+    active_archs = [aid for aid in ARCH_KEYS if arch_members[aid]]
+    merged_labels = np.array([int(win_arch_idxs[i]) for i in range(len(tracks))], dtype=int)
+    sil = float(silhouette_score(X_map, merged_labels)) if len(set(merged_labels)) >= 2 and len(tracks) > len(set(merged_labels)) else 0.0
 
-    perp = min(22, max(6, len(tracks) // 16)) if len(tracks) > 100 else min(14, max(5, len(tracks) // 5))
-    xy = TSNE(n_components=2, perplexity=perp, init="pca", learning_rate="auto", random_state=42).fit_transform(X_std)
+    perp = min(24, max(6, len(tracks) // 16)) if len(tracks) > 100 else min(14, max(5, max(2, len(tracks) // 5)))
+    xy = TSNE(n_components=2, perplexity=perp, init="pca", learning_rate="auto", random_state=42).fit_transform(X_map)
     xy = (xy - xy.min(axis=0)) / (xy.max(axis=0) - xy.min(axis=0) + 1e-9)
 
-    # Pull Dark Ambient centroid smoothly adjacent to Ambient & meditative
-    amb_idxs = next((c["idxs"] for c in clusters_raw if orig_to_name[c["orig_id"]][0] == "ambient"), [])
-    da_idxs = next((c["idxs"] for c in clusters_raw if orig_to_name[c["orig_id"]][0] == "dark_ambient"), [])
+    # Pull Dark Ambient & Ambient Rock smoothly adjacent to Ambient & meditative
+    amb_idxs = arch_members.get("ambient", [])
+    da_idxs = arch_members.get("dark_ambient", [])
+    ar_idxs = arch_members.get("ambient_rock", [])
     if amb_idxs and da_idxs:
         amb_cent = xy[amb_idxs].mean(axis=0)
         da_cent = xy[da_idxs].mean(axis=0)
         target_cent = np.clip(amb_cent + np.array([0.085, 0.055]), 0.10, 0.90)
         xy[da_idxs] = xy[da_idxs] - da_cent + target_cent
+    if amb_idxs and ar_idxs:
+        amb_cent = xy[amb_idxs].mean(axis=0)
+        ar_cent = xy[ar_idxs].mean(axis=0)
+        target_ar = np.clip(amb_cent + np.array([0.115, -0.065]), 0.10, 0.90)
+        xy[ar_idxs] = 0.55 * xy[ar_idxs] + 0.45 * (xy[ar_idxs] - ar_cent + target_ar)
 
-    for c in clusters_raw:
-        cent = xy[c["idxs"]].mean(axis=0)
-        xy[c["idxs"]] = 0.78 * xy[c["idxs"]] + 0.22 * cent
+    for aid in active_archs:
+        idxs = arch_members[aid]
+        cent = xy[idxs].mean(axis=0)
+        xy[idxs] = 0.76 * xy[idxs] + 0.24 * cent
 
     min_sep = 0.036 if len(tracks) <= 100 else 0.017
     for _ in range(45):
@@ -699,20 +1168,22 @@ def cluster_and_layout(tracks: list[dict]) -> dict:
     xy = 0.07 + 0.86 * ((xy - xy.min(axis=0)) / (xy.max(axis=0) - xy.min(axis=0) + 1e-9))
 
     style_groups = []
-    for gi, c in enumerate(clusters_raw):
-        aid, alabel = orig_to_name[c["orig_id"]]
-        gid = f"s{gi}_{aid}"
-        member_ids = [tracks[i]["id"] for i in c["idxs"]]
-        for i in c["idxs"]:
+    for aid in active_archs:
+        c_idx = ARCH_CANONICAL_IDX[aid]
+        alabel = ARCH_LABELS[aid]
+        gid = f"s{c_idx}_{aid}"
+        idxs = arch_members[aid]
+        member_ids = [tracks[i]["id"] for i in idxs]
+        for i in idxs:
             tracks[i]["cluster_id"] = gid
             tracks[i]["cluster_label"] = alabel
-            tracks[i]["cluster_idx"] = gi
+            tracks[i]["cluster_idx"] = c_idx
             h_tag, r_tag = make_tags(tracks[i])
             tracks[i]["harmony_tag"], tracks[i]["rhythm_tag"] = h_tag, r_tag
 
-        cent = xy[c["idxs"]].mean(axis=0)
-        min_x, max_x = float(np.min(xy[c["idxs"], 0])), float(np.max(xy[c["idxs"], 0]))
-        min_y, max_y = float(np.min(xy[c["idxs"], 1])), float(np.max(xy[c["idxs"], 1]))
+        cent = xy[idxs].mean(axis=0)
+        min_x, max_x = float(np.min(xy[idxs, 0])), float(np.max(xy[idxs, 0]))
+        min_y, max_y = float(np.min(xy[idxs, 1])), float(np.max(xy[idxs, 1]))
         pref_x, pref_y = float(cent[0]), max(0.055, min_y - 0.048)
         candidates = [
             (pref_x, pref_y),
@@ -737,13 +1208,18 @@ def cluster_and_layout(tracks: list[dict]) -> dict:
 
         bx, by = min(candidates, key=_pen)
         style_groups.append({
-            "id": gid, "label": alabel, "idx": gi, "hue": T_PALETTE_HUES[gi % len(T_PALETTE_HUES)],
-            "members": member_ids, "cx": round(min(0.87, max(0.13, bx)), 4), "cy": round(min(0.94, max(0.055, by)), 4),
+            "id": gid,
+            "label": alabel,
+            "idx": c_idx,
+            "hue": ARCH_HUES[aid],
+            "members": member_ids,
+            "cx": round(min(0.87, max(0.13, bx)), 4),
+            "cy": round(min(0.94, max(0.055, by)), 4),
         })
 
-    scale = float(np.median(D[D > 0])) or 1.0
+    scale = float(np.median(D_sim[D_sim > 0])) or 1.0
     track_near = {
-        t["id"]: [[tracks[j]["id"], round(float(math.exp(-D[i, j] / scale)), 3)] for j in np.argsort(D[i]) if j != i][:4]
+        t["id"]: [[tracks[j]["id"], round(float(math.exp(-D_sim[i, j] / scale)), 3)] for j in np.argsort(D_sim[i]) if j != i][:4]
         for i, t in enumerate(tracks)
     }
 
@@ -849,32 +1325,71 @@ def reanalyze_track_worker(ffmpeg_bin: str, base_dir: Path, t_in: dict) -> dict:
     return t
 
 
+def load_excluded_ids(exclusions_path: Path | None) -> set[str]:
+    if exclusions_path and exclusions_path.exists():
+        data = json.loads(exclusions_path.read_text(encoding="utf-8"))
+        if isinstance(data, dict) and "excluded_ids" in data:
+            return set(str(x) for x in data["excluded_ids"])
+        if isinstance(data, list):
+            return set(str(x) for x in data)
+    return set(DEFAULT_EXCLUDED_IDS)
+
+
 def main() -> None:
-    ap = argparse.ArgumentParser(description="Analyze corpus audio and build 8-cluster Vibe + Era layout.")
+    ap = argparse.ArgumentParser(description="Analyze corpus audio and build 10-cluster Vibe + Era layout.")
     ap.add_argument("--reanalyze-local", action="store_true", help="Re-analyze local audio/*.mp3 merged with js/data.js")
     ap.add_argument("--data-js", type=Path, default=ROOT / "js" / "data.js")
     ap.add_argument("--manifest", type=Path, default=None, help="Optional catalog_manifest.json for full corpus analysis")
+    ap.add_argument("--catalog-json", type=Path, default=STAGING_DIR / "catalog_587_enriched.json", help="Catalog JSON with local_path folder priors")
+    ap.add_argument("--exclusions-json", type=Path, default=STAGING_DIR / "exclusions.json", help="JSON listing excluded track IDs")
+    ap.add_argument("--keep-excluded", action="store_true", help="Do not drop excluded_ids before clustering")
+    ap.add_argument("--ml-scores", type=Path, default=STAGING_DIR / "ml_genres.json", help="Optional ML genre predictions JSON")
+    ap.add_argument("--no-ml-scores", action="store_true", help="Disable ML genre prediction blending even if ml_genres.json exists")
+    ap.add_argument("--w-folder", type=float, default=0.52, help="Ensemble weight for folder-hierarchy priors")
+    ap.add_argument("--w-dsp", type=float, default=0.48, help="Ensemble weight for recalibrated DSP detectors")
+    ap.add_argument("--w-ml", type=float, default=0.32, help="Ensemble weight for optional ML genre predictions")
     ap.add_argument("--cache-json", type=Path, default=None, help="Optional path to cache raw DSP tracks before clustering")
     ap.add_argument("--from-cache", type=Path, default=None, help="Optional cached raw DSP JSON to skip audio decoding")
-    ap.add_argument("--out-json", type=Path, default=SCRIPTS_DIR / "track_analysis.json")
+    ap.add_argument("--out-json", type=Path, default=STAGING_DIR / "analyzed_latest.json")
     ap.add_argument("--workers", type=int, default=min(16, os.cpu_count() or 4))
     args = ap.parse_args()
-
-    ffmpeg_bin = shutil.which("ffmpeg")
-    if not ffmpeg_bin:
-        raise SystemExit("ffmpeg not found on PATH")
 
     base_payload: dict = {}
     if args.data_js.exists():
         raw = args.data_js.read_text(encoding="utf-8")
         if "window.CORPUS_DATA = " in raw:
             base_payload = json.loads(raw.split("window.CORPUS_DATA = ", 1)[1].rstrip().rstrip(";"))
+    elif (STAGING_DIR / "analyzed_559.json").exists():
+        base_payload = json.loads((STAGING_DIR / "analyzed_559.json").read_text(encoding="utf-8"))
 
-    if args.from_cache and args.from_cache.exists():
-        analyzed = json.loads(args.from_cache.read_text(encoding="utf-8"))
+    # Preserve preview clip timing/loudness/release metadata from baseline data.js / analyzed_559.json
+    baseline_by_id: dict[str, dict] = {t["id"]: t for t in base_payload.get("tracks", [])}
+    if (STAGING_DIR / "analyzed_559.json").exists():
+        for t_prev in json.loads((STAGING_DIR / "analyzed_559.json").read_text(encoding="utf-8")).get("tracks", []):
+            baseline_by_id.setdefault(t_prev["id"], t_prev)
+
+    # Load local_path folder hierarchy from catalog_587_enriched.json
+    cat_path_by_id: dict[str, str] = {}
+    if args.catalog_json and args.catalog_json.exists():
+        cat_raw = json.loads(args.catalog_json.read_text(encoding="utf-8"))
+        cat_tracks = cat_raw.get("tracks", []) if isinstance(cat_raw, dict) else cat_raw
+        for ct in cat_tracks:
+            if isinstance(ct, dict) and ct.get("id") and ct.get("local_path"):
+                cat_path_by_id[ct["id"]] = str(ct["local_path"])
+
+    cache_src = args.from_cache
+    if cache_src is None and not args.reanalyze_local and args.manifest is None and (STAGING_DIR / "raw_dsp_559.json").exists():
+        cache_src = STAGING_DIR / "raw_dsp_559.json"
+
+    if cache_src and cache_src.exists():
+        loaded = json.loads(cache_src.read_text(encoding="utf-8"))
+        analyzed = loaded.get("tracks", []) if isinstance(loaded, dict) else loaded
         for t in analyzed:
             enrich_track_tiers(t)
     else:
+        ffmpeg_bin = shutil.which("ffmpeg")
+        if not ffmpeg_bin:
+            raise SystemExit("ffmpeg not found on PATH")
         if args.reanalyze_local:
             in_tracks = base_payload.get("tracks", [])
             if not in_tracks:
@@ -884,11 +1399,31 @@ def main() -> None:
         else:
             ap.error("Specify --reanalyze-local, --manifest, or --from-cache")
 
+        for t_in in in_tracks:
+            if not t_in.get("local_path") and t_in.get("id") in cat_path_by_id:
+                t_in["local_path"] = cat_path_by_id[t_in["id"]]
+
         analyzed = []
         with ThreadPoolExecutor(max_workers=args.workers) as pool:
             futs = [pool.submit(reanalyze_track_worker, ffmpeg_bin, ROOT, t) for t in in_tracks]
             for fut in as_completed(futs):
                 analyzed.append(fut.result())
+
+    # Join local_path and preserve preview clip metadata before scoring
+    preview_keep_keys = (
+        "bytes", "duration_sec", "clip_bars", "beat_sec", "bar_sec",
+        "beat_phase_sec", "cue_sec", "rms_db", "gain_trim", "preview_url", "file",
+        "mp3_320_bytes", "mp3_size_mb", "flac_url", "flac_bytes", "flac_size_mb",
+    )
+    for t in analyzed:
+        tid = t["id"]
+        if not t.get("local_path") and tid in cat_path_by_id:
+            t["local_path"] = cat_path_by_id[tid]
+        b_prev = baseline_by_id.get(tid)
+        if b_prev:
+            for pk in preview_keep_keys:
+                if pk not in t and pk in b_prev:
+                    t[pk] = b_prev[pk]
 
     era_rank = {e: idx for idx, e in enumerate(ERA_ORDER)}
     analyzed.sort(key=lambda t: (era_rank.get(t["era"], 99), int(t.get("slot", 0)), t["id"]))
@@ -896,7 +1431,43 @@ def main() -> None:
         args.cache_json.parent.mkdir(parents=True, exist_ok=True)
         args.cache_json.write_text(json.dumps(analyzed, indent=2, ensure_ascii=False) + "\n", encoding="utf-8")
 
+    ml_index = {} if args.no_ml_scores else load_ml_genre_predictions(args.ml_scores)
+    if ml_index:
+        print(f"Loaded ML genre predictions from {args.ml_scores} ({len(ml_index)} lookup keys)")
+
+    # Score ALL tracks first (including calibration-only tracks like hd_2005_35 Selling demo!)
+    calibration_ids = ("hd_2005_35", "hd_2005_50", "archive_2013_18_58", "hd_2005_27", "hd_2005_26")
+    calibration_checks: dict[str, dict] = {}
+    for t in analyzed:
+        best_arch = recalibrate_and_score_track(t, ml_index=ml_index, w_folder=args.w_folder, w_dsp=args.w_dsp, w_ml=args.w_ml)
+        if t["id"] in calibration_ids:
+            top3 = sorted(t["genre_scores"].items(), key=lambda kv: kv[1], reverse=True)[:3]
+            calibration_checks[t["id"]] = {
+                "title": t["title"],
+                "predicted_archetype": best_arch,
+                "predicted_label": ARCH_LABELS[best_arch],
+                "rock_score": t["rock_score"],
+                "ambient_rock_score": t["ambient_rock_score"],
+                "guitar_demo_score": t["guitar_demo_score"],
+                "drum_complexity": t["drum_complexity"],
+                "top3": top3,
+            }
+            print(f"[CALIBRATION] {t['id']} ({t['title']}) -> {best_arch} ({ARCH_LABELS[best_arch]}), top3={top3}")
+
+    excluded_ids = set() if args.keep_excluded else load_excluded_ids(args.exclusions_json)
+    if excluded_ids:
+        before_n = len(analyzed)
+        analyzed = [t for t in analyzed if t["id"] not in excluded_ids]
+        print(f"Filtered exclusions ({before_n} -> {len(analyzed)} tracks; {before_n - len(analyzed)} excluded)")
+
     layout = cluster_and_layout(analyzed)
+
+    # Strip private local filesystem paths before writing analysis payload
+    private_keys = ("local_path", "rel_path", "slug", "source_codec", "raw_drum_complexity", "raw_four_on_floor", "raw_breakbeat_score", "genre_scores")
+    for t in analyzed:
+        for pk in private_keys:
+            t.pop(pk, None)
+
     by_id = {t["id"]: t for t in analyzed}
 
     meta = dict(base_payload.get("meta", {}))
@@ -907,25 +1478,24 @@ def main() -> None:
         "era_anchors": layout["era_anchors"],
         "track_near": layout["track_near"],
         "track_map": layout["track_map"],
+        "calibration_checks": calibration_checks,
     })
 
     eras = base_payload.get("eras", [])
     for er in eras:
         er_tracks = [t for t in analyzed if t["era"] == er["id"]]
-        if er_tracks:
-            er["tracks"] = er_tracks
-            er["audio_files"] = max(int(er.get("audio_files") or 0), len(er_tracks))
+        er["tracks"] = er_tracks
+        er["audio_files"] = len(er_tracks)
     phases = base_payload.get("phases", [])
     for ph in phases:
         ph_tracks = [by_id[t["id"]] for t in ph.get("tracks", []) if t["id"] in by_id]
-        if ph_tracks:
-            ph["tracks"] = ph_tracks
+        ph["tracks"] = ph_tracks
 
     out_payload = {"meta": meta, "tracks": analyzed, "phases": phases, "eras": eras}
     args.out_json.parent.mkdir(parents=True, exist_ok=True)
     args.out_json.write_text(json.dumps(out_payload, indent=2, ensure_ascii=False) + "\n", encoding="utf-8")
 
-    print(f"Analyzed {len(analyzed)} tracks -> {args.out_json} (silhouette={layout['silhouette']})")
+    print(f"Analyzed {len(analyzed)} tracks -> {args.out_json} (silhouette={layout['silhouette']}, clusters={len(layout['style_groups'])})")
     for g in layout["style_groups"]:
         names = [by_id[m]["title"] for m in g["members"]]
         print(f"  [{g['id']}] {g['label']} ({len(names)}): {', '.join(names[:6])}{' ...' if len(names) > 6 else ''}")
