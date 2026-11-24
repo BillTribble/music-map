@@ -406,8 +406,9 @@
     const hint = document.createElementNS(NS, "text");
     hint.setAttribute("class", "era-tick-year");
     if (!data.isMobile) {
-      hint.setAttribute("x", "196");
+      hint.setAttribute("x", String(vw - 24));
       hint.setAttribute("y", "35");
+      hint.setAttribute("text-anchor", "end");
       hint.textContent = "↑ High energy · ↓ Ambient";
     } else {
       hint.setAttribute("x", String(vw - 12));

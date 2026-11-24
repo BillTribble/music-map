@@ -9,9 +9,9 @@ import re
 
 import numpy as np
 from sklearn.cluster import KMeans
+from sklearn.manifold import TSNE
 from sklearn.metrics import silhouette_score
 from sklearn.preprocessing import normalize
-import umap
 
 _ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 DEFAULT_DATA_JS = os.path.join(_ROOT, "js", "data.js")
@@ -482,7 +482,7 @@ def classify_folder_guidance(t: dict, cat_entry: dict | None) -> dict:
   }
 
 
-def _deoverlap_points(pts, min_sep, x_bounds, y_bounds, anchor_pull=0.10, iters=55):
+def _deoverlap_points(pts, min_sep, x_bounds, y_bounds, anchor_pull=0.025, iters=65):
   anchor = pts.copy()
   pos = pts.copy()
   for _ in range(iters):
@@ -502,99 +502,104 @@ def _deoverlap_points(pts, min_sep, x_bounds, y_bounds, anchor_pull=0.10, iters=
 
 
 def compute_organic_continuum_and_ai_layout(X_hybrid, proto_centers, priors, cluster_idx, is_ai_mask):
-  """Project handcrafted tracks onto one organic UMAP continuum with genre blurring,
-  and place Generative AI tracks into a clearly separated genre-subdivided archipelago."""
+  """Project handcrafted tracks onto one organic t-SNE continuum (matching d939dcca organic spacing & blurring),
+  and place Generative AI tracks into a rounded 2D genre-subdivided archipelago on the right."""
   n = len(X_hybrid)
   coords = np.zeros((n, 2), dtype=np.float64)
 
   hc_idx = np.where(~is_ai_mask)[0]
   ai_idx = np.where(is_ai_mask)[0]
 
-  # 1. Handcrafted Music: Continuous Manifold UMAP + Organic Regional Cohesion (NO cookie-cutter clamping!)
-  # Continuous soft prototype affinity + folder priors organizes genre peninsulas while keeping shared borders blurred.
+  # 1. Handcrafted Music: Continuous PCA-initialized t-SNE Manifold + Honeycombed Organic Spacing
+  # Soft Discogs-400 + folder affinity guides genre peninsulas while preserving natural shoreline blurring.
   proto_aff = (X_hybrid[hc_idx] @ proto_centers.T) + priors[hc_idx]
   proto_aff_z = (proto_aff - proto_aff.mean(axis=0)) / (proto_aff.std(axis=0) + 1e-5)
-  proto_soft = np.exp(1.65 * proto_aff_z)
+  proto_soft = np.exp(1.20 * proto_aff_z)
   proto_soft = proto_soft / (proto_soft.sum(axis=1, keepdims=True) + 1e-9)
-  proto_l2 = normalize(proto_soft, norm="l2")
-  X_hc = normalize(np.hstack([X_hybrid[hc_idx], 0.85 * proto_l2]), norm="l2")
+  hc_onehot = np.eye(10, dtype=np.float64)[cluster_idx[hc_idx]]
+  X_hc = np.hstack([
+      X_hybrid[hc_idx] * 1.25,
+      normalize(proto_soft, norm="l2") * 0.58,
+      hc_onehot * 0.12,
+  ])
 
-  reducer_hc = umap.UMAP(
-      n_neighbors=24,
-      min_dist=0.14,
-      spread=1.0,
-      metric="cosine",
-      compatibility_layout=True,
+  perp_hc = min(34, max(16, len(hc_idx) // 14))
+  u_hc = TSNE(
+      n_components=2,
+      perplexity=perp_hc,
+      init="pca",
+      learning_rate="auto",
       random_state=42,
-  )
-  u_hc = reducer_hc.fit_transform(X_hc).astype(np.float64)
+  ).fit_transform(X_hc).astype(np.float64)
 
-  # Orient principal axis horizontally (ambient/chill on left -> energetic/breaks/bass on right)
+  # Orient principal axis horizontally (ambient/acoustic on left -> club/bass/breaks/guitar across core & right)
   u_centered = u_hc - u_hc.mean(axis=0)
   cov = np.cov(u_centered.T)
   eigvals, eigvecs = np.linalg.eigh(cov)
   order = np.argsort(-eigvals)
   rot = u_centered @ eigvecs[:, order]
 
-  amb_mask = cluster_idx[hc_idx] == 0
+  amb_mask = np.isin(cluster_idx[hc_idx], [0, 8])
   if np.any(amb_mask) and rot[amb_mask, 0].mean() > 0:
     rot[:, 0] = -rot[:, 0]
-  house_mask = cluster_idx[hc_idx] == 3
+  house_mask = np.isin(cluster_idx[hc_idx], [3, 9])
   if np.any(house_mask) and rot[house_mask, 1].mean() > 0:
     rot[:, 1] = -rot[:, 1]
 
-  # Gentle 22% pull toward natural UMAP median (same organic technique as post-022668: keeps bays/tendrils & border blurring!)
+  # Gentle 10% pull toward cluster median + soft outer-outlier pull so genres touch & blur across shared borders!
   hc_clusters = cluster_idx[hc_idx]
   for c in range(10):
     m = hc_clusters == c
     if np.sum(m) >= 2:
       med = np.median(rot[m], axis=0)
-      rot[m] = 0.78 * rot[m] + 0.22 * med
+      rot[m] = 0.90 * rot[m] + 0.10 * med
 
-  # Preserve 64% linear organic bays/peninsulas + 36% quantile balance so outer peninsulas sit closer to core
-  x_lo, x_hi = 0.065, 0.745
-  y_lo, y_hi = 0.115, 0.895
+  center = np.median(rot, axis=0)
+  rel = rot - center
+  radii = np.hypot(rel[:, 0] / (np.std(rel[:, 0]) + 1e-6), rel[:, 1] / (np.std(rel[:, 1]) + 1e-6))
+  r_knee = 1.15
+  compress = np.where(radii > r_knee, (r_knee + 0.50 * (radii - r_knee)) / np.maximum(radii, 1e-6), 1.0)
+  rot = center + rel * compress[:, None]
+
+  x_lo, x_hi = 0.082, 0.705
+  y_lo, y_hi = 0.130, 0.870
   hc_pts = np.zeros_like(rot)
   for dim, (lo, hi) in enumerate(((x_lo, x_hi), (y_lo, y_hi))):
     v = rot[:, dim]
-    p2, p98 = np.percentile(v, 1.5), np.percentile(v, 98.5)
-    lin = np.clip((v - p2) / max(1e-6, p98 - p2), 0.0, 1.0)
-    ord_idx = np.argsort(v, kind="mergesort")
-    rnk = np.empty(len(v), dtype=np.float64)
-    rnk[ord_idx] = np.linspace(0.0, 1.0, len(v))
-    blended = (0.64 if dim == 0 else 0.78) * lin + (0.36 if dim == 0 else 0.22) * rnk
-    hc_pts[:, dim] = lo + blended * (hi - lo)
+    p1, p99 = np.percentile(v, 0.8), np.percentile(v, 99.2)
+    lin = np.clip((v - p1) / max(1e-6, p99 - p1), 0.0, 1.0)
+    hc_pts[:, dim] = lo + lin * (hi - lo)
 
-  # Keep top-left HUD corner clear
-  hud_mask = (hc_pts[:, 0] < 0.23) & (hc_pts[:, 1] < 0.16)
-  hc_pts[hud_mask, 1] = np.maximum(hc_pts[hud_mask, 1], 0.165)
+  # Keep top-left HUD pill corner clear
+  hud_mask = (hc_pts[:, 0] < 0.24) & (hc_pts[:, 1] < 0.165)
+  hc_pts[hud_mask, 1] = np.maximum(hc_pts[hud_mask, 1], 0.170)
 
+  # Honeycombed organic dot spacing (matching d939dcca...)
   hc_pts = _deoverlap_points(
       hc_pts,
-      min_sep=0.0155,
-      x_bounds=(0.048, 0.760),
-      y_bounds=(0.10, 0.91),
-      anchor_pull=0.12,
-      iters=60,
+      min_sep=0.0195,
+      x_bounds=(0.052, 0.732),
+      y_bounds=(0.095, 0.905),
+      anchor_pull=0.025,
+      iters=70,
   )
   coords[hc_idx] = hc_pts
 
-  # 2. Generative AI Music: Isolated Archipelago in right reserve [0.835..0.962, 0.185..0.665]
+  # 2. Generative AI Music: Isolated Rounded 2D Archipelago in right reserve [0.798..0.958, 0.285..0.655]
   if len(ai_idx) > 0:
     proto_ai = X_hybrid[ai_idx] @ proto_centers.T
-    X_ai = normalize(np.hstack([X_hybrid[ai_idx], 0.50 * normalize(proto_ai, norm="l2")]), norm="l2")
-    n_nb_ai = max(3, min(7, len(ai_idx) - 1))
-    reducer_ai = umap.UMAP(
-        n_neighbors=n_nb_ai,
-        min_dist=0.22,
-        metric="cosine",
-        compatibility_layout=True,
+    X_ai = np.hstack([X_hybrid[ai_idx], 0.55 * normalize(proto_ai, norm="l2")])
+    perp_ai = max(3, min(6, (len(ai_idx) - 1) // 3))
+    u_ai = TSNE(
+        n_components=2,
+        perplexity=perp_ai,
+        init="pca",
+        learning_rate="auto",
         random_state=42,
-    )
-    u_ai = reducer_ai.fit_transform(X_ai).astype(np.float64)
+    ).fit_transform(X_ai).astype(np.float64)
 
-    ai_x_lo, ai_x_hi = 0.845, 0.952
-    ai_y_lo, ai_y_hi = 0.195, 0.645
+    ai_x_lo, ai_x_hi = 0.812, 0.946
+    ai_y_lo, ai_y_hi = 0.305, 0.640
     ai_pts = np.zeros_like(u_ai)
     for dim, (lo, hi) in enumerate(((ai_x_lo, ai_x_hi), (ai_y_lo, ai_y_hi))):
       v = u_ai[:, dim]
@@ -602,11 +607,12 @@ def compute_organic_continuum_and_ai_layout(X_hybrid, proto_centers, priors, clu
       lin = (v - vmin) / max(1e-6, vmax - vmin)
       ai_pts[:, dim] = lo + lin * (hi - lo)
 
+    # 2x2 organic rounded sub-archipelago so AI music is balanced horizontally & vertically (never a skinny line!)
     sub_anchors = {
-        "ai_sub_orch": np.array([0.875, 0.215]),
-        "ai_sub_downtempo": np.array([0.928, 0.340]),
-        "ai_sub_house": np.array([0.875, 0.475]),
-        "ai_sub_bass": np.array([0.926, 0.605]),
+        "ai_sub_orch": np.array([0.840, 0.340]),
+        "ai_sub_downtempo": np.array([0.922, 0.375]),
+        "ai_sub_house": np.array([0.836, 0.545]),
+        "ai_sub_bass": np.array([0.920, 0.585]),
     }
     for local_i, global_i in enumerate(ai_idx):
       cidx = int(cluster_idx[global_i])
@@ -615,15 +621,15 @@ def compute_organic_continuum_and_ai_layout(X_hybrid, proto_centers, priors, clu
         if cidx in cset:
           sub_id = sid
           break
-      ai_pts[local_i] = 0.32 * ai_pts[local_i] + 0.68 * sub_anchors[sub_id]
+      ai_pts[local_i] = 0.42 * ai_pts[local_i] + 0.58 * sub_anchors[sub_id]
 
     ai_pts = _deoverlap_points(
         ai_pts,
-        min_sep=0.023,
-        x_bounds=(0.836, 0.962),
-        y_bounds=(0.180, 0.665),
-        anchor_pull=0.16,
-        iters=70,
+        min_sep=0.025,
+        x_bounds=(0.798, 0.958),
+        y_bounds=(0.285, 0.655),
+        anchor_pull=0.05,
+        iters=80,
     )
     coords[ai_idx] = ai_pts
 

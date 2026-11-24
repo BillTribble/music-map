@@ -220,11 +220,14 @@
     const coords = trackMap[tid];
     const norm = (coords && (coords.vibe || coords.similarity)) || [0.5, 0.5];
     const topPad = vw <= 800 ? 64 : PAD;
-    const sidePad = vw <= 800 ? 18 : PAD;
+    const sidePad = vw <= 800 ? 16 : PAD;
     const botPad = vw <= 800 ? 24 : PAD;
     const w = Math.max(220, vw - sidePad * 2);
-    const h = Math.max(200, vh - topPad - botPad);
-    return [sidePad + norm[0] * w, topPad + norm[1] * h];
+    const rawH = Math.max(200, vh - topPad - botPad);
+    // Keep organic archipelago proportions on portrait mobile instead of stretching vertically 2.1x
+    const h = vh > vw * 1.15 ? Math.min(rawH, w * 1.38) : rawH;
+    const startY = topPad + (rawH - h) * 0.36;
+    return [sidePad + norm[0] * w, startY + norm[1] * h];
   }
 
   function computeTargetPositions() {
@@ -253,7 +256,7 @@
     const visSet = new Set(visNodes.map((n) => n.id));
 
     if (layout === "vibe") {
-      const maxChordPx = Math.max(vw, vh) * 0.22;
+      const maxChordPx = Math.min(vw, vh) * 0.135;
       visNodes.forEach((n) => {
         const t = n.t;
         const candidates = (trackNear[t.id] || []).filter(([nid]) => {
@@ -357,19 +360,12 @@
   }
 
   function updateHudHint() {
-    if (!hudHintEl) return;
-    let text = "";
-    if (hudHoverTarget === "star") {
-      text = starFilter ? "Starred only · On" : "Starred only";
-    } else if (hudHoverTarget === "sketch") {
-      text = showSketches ? "Hide sketches" : "Show sketches";
-    }
-    if (text) {
-      hudHintEl.textContent = text;
-      hudHintEl.classList.add("is-visible");
-    } else {
-      hudHintEl.classList.remove("is-visible");
-    }
+    const starLbl = document.getElementById("star-btn-label");
+    const sketchLbl = document.getElementById("sketch-btn-label");
+    if (starLbl) starLbl.textContent = starFilter ? "Starred only · On" : "Starred only";
+    if (sketchLbl) sketchLbl.textContent = showSketches ? "Hide sketches" : "Show sketches";
+    if (starBtn) starBtn.classList.toggle("is-hint-open", hudHoverTarget === "star");
+    if (sketchBtn) sketchBtn.classList.toggle("is-hint-open", hudHoverTarget === "sketch");
   }
 
   function syncStarHud() {
@@ -469,6 +465,11 @@
 
     computeScreenPositions();
 
+    const isLight = document.documentElement.getAttribute("data-theme") === "light";
+    const zoomScale = Math.max(1, Math.sqrt(zoom.k));
+    const maxLocalDist = Math.min(vw, vh) * 0.135 * zoomScale;
+    const maxBridgeDist = Math.min(vw, vh) * 0.22 * zoomScale;
+
     // Draw edges & shrunk jewel circles directly in 1:1 screen space so zooming never inflates circle size
     edges.forEach((e) => {
       const a = nodeById.get(e.a);
@@ -479,6 +480,24 @@
       const aMatch = isMatch(a.t);
       const bMatch = isMatch(b.t);
       if (starFilter && (!aMatch || !bMatch) && !lit) return;
+
+      let edgeAlpha = 0.24;
+      if (!lit && layout === "vibe") {
+        const d = Math.hypot(b.px - a.px, b.py - a.py);
+        if (!aMatch && !bMatch) {
+          if (d >= maxLocalDist) return;
+          edgeAlpha = 0.05;
+        } else if (e.weak) {
+          if (d >= maxBridgeDist) return;
+          edgeAlpha = (isLight ? 0.14 : 0.18) * Math.pow(Math.max(0, 1 - d / maxBridgeDist), 0.85);
+        } else {
+          if (d >= maxLocalDist) return;
+          edgeAlpha = (isLight ? 0.27 : 0.36) * Math.pow(Math.max(0, 1 - d / maxLocalDist), 1.45);
+        }
+        if (edgeAlpha < 0.015) return;
+      } else if (!lit && !aMatch && !bMatch) {
+        edgeAlpha = 0.06;
+      }
 
       ctx.beginPath();
       if (layout === "era") {
@@ -498,8 +517,8 @@
         ctx.setLineDash([]);
       } else {
         ctx.strokeStyle = palette.edgeLine || palette.outline;
-        ctx.globalAlpha = (!aMatch && !bMatch) ? 0.07 : (layout === "era" ? 0.24 : (e.weak ? 0.24 : 0.42));
-        ctx.lineWidth = 1.05;
+        ctx.globalAlpha = edgeAlpha;
+        ctx.lineWidth = 1.0;
         if (e.weak && layout === "vibe") ctx.setLineDash([3.5, 4.5]);
         else ctx.setLineDash([]);
       }
@@ -713,22 +732,40 @@
       starBtn.addEventListener("click", (ev) => {
         ev.stopPropagation();
         starFilter = !starFilter;
+        if (isTouchEvent(ev)) hudHoverTarget = null;
         paint();
       });
-      starBtn.addEventListener("pointerenter", () => { hudHoverTarget = "star"; updateHudHint(); });
+      starBtn.addEventListener("pointerenter", (ev) => {
+        if (ev.pointerType === "touch") return;
+        hudHoverTarget = "star";
+        updateHudHint();
+      });
       starBtn.addEventListener("pointerleave", () => { if (hudHoverTarget === "star") { hudHoverTarget = null; updateHudHint(); } });
-      starBtn.addEventListener("focus", () => { hudHoverTarget = "star"; updateHudHint(); });
+      starBtn.addEventListener("focus", () => {
+        if (!starBtn.matches || !starBtn.matches(":focus-visible")) return;
+        hudHoverTarget = "star";
+        updateHudHint();
+      });
       starBtn.addEventListener("blur", () => { if (hudHoverTarget === "star") { hudHoverTarget = null; updateHudHint(); } });
     }
 
     if (sketchBtn) {
       sketchBtn.addEventListener("click", (ev) => {
         ev.stopPropagation();
+        if (isTouchEvent(ev)) hudHoverTarget = null;
         setShowSketches(!showSketches);
       });
-      sketchBtn.addEventListener("pointerenter", () => { hudHoverTarget = "sketch"; updateHudHint(); });
+      sketchBtn.addEventListener("pointerenter", (ev) => {
+        if (ev.pointerType === "touch") return;
+        hudHoverTarget = "sketch";
+        updateHudHint();
+      });
       sketchBtn.addEventListener("pointerleave", () => { if (hudHoverTarget === "sketch") { hudHoverTarget = null; updateHudHint(); } });
-      sketchBtn.addEventListener("focus", () => { hudHoverTarget = "sketch"; updateHudHint(); });
+      sketchBtn.addEventListener("focus", () => {
+        if (!sketchBtn.matches || !sketchBtn.matches(":focus-visible")) return;
+        hudHoverTarget = "sketch";
+        updateHudHint();
+      });
       sketchBtn.addEventListener("blur", () => { if (hudHoverTarget === "sketch") { hudHoverTarget = null; updateHudHint(); } });
     }
 

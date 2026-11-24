@@ -347,6 +347,36 @@
       "Generative AI music": "AI music",
     };
 
+    // Pre-compute Generative AI reserve bounds so handcrafted landmark headers never cross into the AI dashed box
+    let aiGuardBox = null;
+    const aiGrpDef = styleGroups.find((sg) => sg.is_ai_group);
+    if (aiGrpDef) {
+      let aMinX = Infinity, aMaxX = -Infinity, aMinY = Infinity, aMaxY = -Infinity, aCnt = 0;
+      (aiGrpDef.members || []).forEach((id) => {
+        const m = nodeById.get(id);
+        if (!m || (isHidden && isHidden(m.t))) return;
+        const sx = Number.isFinite(m.px) ? m.px : m.x * zoom.k + zoom.x;
+        const sy = Number.isFinite(m.py) ? m.py : m.y * zoom.k + zoom.y;
+        if (zoomed && (sx < -40 || sx > vw + 40 || sy < -40 || sy > vh + 40)) return;
+        if (sx < aMinX) aMinX = sx;
+        if (sx > aMaxX) aMaxX = sx;
+        if (sy < aMinY) aMinY = sy;
+        if (sy > aMaxY) aMaxY = sy;
+        aCnt++;
+      });
+      if (aCnt > 0) {
+        const padX = isWide ? 36 : 16;
+        const padTop = isWide ? 30 : 16;
+        const padBot = isWide ? 28 : 16;
+        aiGuardBox = [
+          Math.max(4, aMinX - padX) - 8,
+          Math.max(4, aMinY - padTop) - 28,
+          Math.min(vw - 6, aMaxX + padX) + 8,
+          Math.min(vh - 6, aMaxY + padBot) + 8,
+        ];
+      }
+    }
+
     styleGroups.forEach((g) => {
       const members = (g.members || [])
         .map((id) => nodeById.get(id))
@@ -397,12 +427,21 @@
       const anchorMaxY = zoomed ? maxY : cMaxY;
 
       const cands = [
-        [anchorTopX, anchorMinY - hh - 7],
-        [mx, cMinY - hh - 9],
-        [cMaxX + hw * 0.45, cMinY - hh - 6],
-        [mx, anchorMaxY + hh + 8],
-        [cMinX - hw - 6, my],
-        [cMaxX + hw + 6, my],
+        [anchorTopX, anchorMinY - hh - 9],
+        [mx, cMinY - hh - 11],
+        [mx, cMinY - hh - 22],
+        [cMaxX + hw * 0.45, cMinY - hh - 9],
+        [cMinX - hw * 0.45, cMinY - hh - 9],
+        [mx, anchorMaxY + hh + 10],
+        [mx, anchorMaxY + hh + 22],
+        [cMaxX + hw * 0.45, anchorMaxY + hh + 10],
+        [cMinX - hw * 0.45, anchorMaxY + hh + 10],
+        [cMinX - hw - 10, my],
+        [cMaxX + hw + 10, my],
+        [cMinX - hw - 8, cMinY - hh],
+        [cMaxX + hw + 8, cMinY - hh],
+        [cMinX - hw - 8, cMaxY + hh],
+        [cMaxX + hw + 8, cMaxY + hh],
       ];
       for (let ui = 0; ui < uiBoxes.length; ui++) {
         const ub = uiBoxes[ui];
@@ -418,8 +457,8 @@
       RINGS.forEach((rad) => {
         if (rad > maxRad) return;
         ANGLES.forEach((ang) => {
-          cands.push([mx + Math.cos(ang) * rad * 1.15, my + Math.sin(ang) * rad]);
-          cands.push([anchorTopX + Math.cos(ang) * rad * 1.1, anchorMinY + Math.sin(ang) * rad]);
+          cands.push([mx + Math.cos(ang) * rad * 1.18, my + Math.sin(ang) * rad]);
+          cands.push([anchorTopX + Math.cos(ang) * rad * 1.12, anchorMinY + Math.sin(ang) * rad]);
         });
       });
 
@@ -430,8 +469,10 @@
         const cy = zoomed ? cands[ci][1] : clampY(cands[ci][1]);
         if (cx - hw < 5 || cx + hw > vw - 5 || cy - hh < 8 || cy + hh > vh - 8) continue;
         const box = [cx - hw, cy - hh, cx + hw, cy + hh];
+        const padBox = [cx - hw - 3, cy - hh - 3, cx + hw + 3, cy + hh + 3];
 
         if (uiBoxes.some((ub) => boxOverlap(box, ub))) continue;
+        if (!g.is_ai_group && aiGuardBox && boxOverlap(box, aiGuardBox)) continue;
         if (placedFam.some((pb) => boxOverlap(box, pb))) continue;
         if (lastTrackBoxes.some((tb) => boxOverlap(box, tb))) continue;
 
@@ -444,8 +485,8 @@
           const d = Math.hypot(cx - dx, cy - dy);
           if (isOwn) { if (d < ownD) ownD = d; }
           else { if (d < otherD) otherD = d; }
-          if (boxOverlap(box, dotBoxes[di])) {
-            dotCost += isOwn ? 95 : 260;
+          if (boxOverlap(padBox, dotBoxes[di])) {
+            dotCost += isOwn ? 240 : 720;
           }
         }
         if (zoomed && dotCost > 0) continue;
@@ -454,12 +495,14 @@
         const dxCoreBox = cx < cMinX ? cMinX - cx : (cx > cMaxX ? cx - cMaxX : 0);
         const dyCoreBox = cy < cMinY ? cMinY - cy : (cy > cMaxY ? cy - cMaxY : 0);
         const distCoreBox = Math.hypot(dxCoreBox, dyCoreBox);
-        if (!zoomed && (distCore > (isWide ? 150 : 105) || distCoreBox > (isWide ? 95 : 56))) continue;
+        if (!zoomed && (distCore > (isWide ? 165 : 112) || distCoreBox > (isWide ? 105 : 64))) continue;
+        const inCoreInterior = (!zoomed && visCount >= 6 && dxCoreBox === 0 && dyCoreBox === 0) ? 280 : 0;
         let score =
-          ownD * 1.2 +
-          distCore * (isWide || zoomed ? 0.6 : 1.9) +
+          ownD * 1.05 +
+          distCore * (isWide || zoomed ? 0.55 : 1.5) +
           dotCost +
-          (cy < cMinY ? -8 : 0) +
+          inCoreInterior +
+          (cy < cMinY ? -12 : 0) +
           (otherD < ownD ? (ownD - otherD) * 18 + 420 : 0);
         if (score < bestScore) {
           bestScore = score;
@@ -481,10 +524,13 @@
       placedFam.push([best[0] - hw - 6, best[1] - hh - 4, best[0] + hw + 6, best[1] + hh + 4]);
 
       const grp = document.createElementNS(NS, "g");
+      const isOwnAiSubActive = Boolean(
+        g.is_ai_group && activeClusterId && activeClusterId.startsWith("ai_sub_")
+      );
       const cls =
         "map-family-group" +
         (activeClusterId === g.id ? " is-active" : "") +
-        (!anyMatch || (activeClusterId && activeClusterId !== g.id) ? " is-dim" : "");
+        (!anyMatch || (activeClusterId && activeClusterId !== g.id && !isOwnAiSubActive) ? " is-dim" : "");
       grp.setAttribute("class", cls);
       grp.setAttribute("transform", `translate(${best[0].toFixed(1)}, ${best[1].toFixed(1)})`);
 
@@ -510,13 +556,13 @@
 
       // Dedicated Generative AI territory boundary + internal Discogs genre sub-labels
       if (g.is_ai_group) {
-        const padX = isWide ? 28 : 14;
-        const padTop = isWide ? 26 : 14;
-        const padBot = isWide ? 22 : 14;
+        const padX = isWide ? 36 : 16;
+        const padTop = isWide ? 30 : 16;
+        const padBot = isWide ? 28 : 16;
         const bx0 = Math.max(4, minX - padX);
         const by0 = Math.max(4, minY - padTop);
-        const bx1 = Math.min(vw - 4, maxX + padX);
-        const by1 = Math.min(vh - 4, maxY + padBot);
+        const bx1 = Math.min(vw - 6, maxX + padX);
+        const by1 = Math.min(vh - 6, maxY + padBot);
         if (bx1 - bx0 > 28 && by1 - by0 > 28) {
           const tBox = document.createElementNS(NS, "rect");
           tBox.setAttribute("class", "map-ai-territory-box");
@@ -562,23 +608,29 @@
             const shh = Math.ceil(subFs * 0.6 + 2);
 
             const sCands = [
-              [smx, sMinY - shh - 6],
-              [smx, sMaxY + shh + 7],
-              [sMinX - shw - 6, smy],
-              [sMaxX + shw + 6, smy],
+              [smx, sMinY - shh - 8],
+              [smx, sMaxY + shh + 9],
+              [sMinX - shw - 8, smy],
+              [sMaxX + shw + 8, smy],
+              [smx, by0 + shh + 5],
+              [smx, by1 - shh - 5],
             ];
-            [14, 24, 36].forEach((rad) => {
+            [16, 26, 38, 50].forEach((rad) => {
               ANGLES.forEach((ang) => {
-                sCands.push([smx + Math.cos(ang) * rad * 1.1, smy + Math.sin(ang) * rad]);
+                sCands.push([smx + Math.cos(ang) * rad * 1.15, smy + Math.sin(ang) * rad]);
               });
             });
 
             let sBest = null;
             let sBestScore = Infinity;
+            const clampLoX = Math.max(shw + 6, bx0 + shw + 5);
+            const clampHiX = Math.min(vw - shw - 6, bx1 - shw - 5);
+            const clampLoY = Math.max(shh + 8, by0 + shh + 4);
+            const clampHiY = Math.min(vh - shh - 8, by1 - shh - 4);
             for (let sci = 0; sci < sCands.length; sci++) {
-              const scx = Math.max(shw + 6, Math.min(vw - shw - 6, sCands[sci][0]));
-              const scy = Math.max(shh + 8, Math.min(vh - shh - 8, sCands[sci][1]));
-              const sbox = [scx - shw, scy - shh, scx + shw, scy + shh];
+              const scx = clampLoX <= clampHiX ? Math.max(clampLoX, Math.min(clampHiX, sCands[sci][0])) : Math.max(shw + 6, Math.min(vw - shw - 6, sCands[sci][0]));
+              const scy = clampLoY <= clampHiY ? Math.max(clampLoY, Math.min(clampHiY, sCands[sci][1])) : Math.max(shh + 8, Math.min(vh - shh - 8, sCands[sci][1]));
+              const sbox = [scx - shw - 2, scy - shh - 2, scx + shw + 2, scy + shh + 2];
               if (uiBoxes.some((ub) => boxOverlap(sbox, ub))) continue;
               if (placedFam.some((pb) => boxOverlap(sbox, pb))) continue;
               if (lastTrackBoxes.some((tb) => boxOverlap(sbox, tb))) continue;
@@ -586,11 +638,11 @@
               let dc = 0;
               for (let di = 0; di < allDots.length; di++) {
                 if (boxOverlap(sbox, dotBoxes[di])) {
-                  dc += sOwn.has(allDots[di][2]) ? 70 : 200;
+                  dc += sOwn.has(allDots[di][2]) ? 260 : 480;
                 }
               }
               const dCore = Math.hypot(scx - smx, scy - smy);
-              if (dCore > 68) continue;
+              if (dCore > 80) continue;
               const sc = dCore + dc;
               if (sc < sBestScore) {
                 sBestScore = sc;
