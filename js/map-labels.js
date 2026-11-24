@@ -37,7 +37,16 @@
   }
 
   function getUiObstacleBoxes(mapWrap) {
-    const boxes = [[0, 0, 214, 58]]; // top-left Vibe | Era | Star HUD
+    let hudW = 248;
+    if (typeof document !== "undefined" && mapWrap) {
+      const mRect = mapWrap.getBoundingClientRect();
+      const hudPill = document.querySelector("#map-floating-hud .map-hud-pill");
+      if (hudPill) {
+        const hRect = hudPill.getBoundingClientRect();
+        if (hRect.width > 0) hudW = Math.max(248, hRect.right - mRect.left + 8);
+      }
+    }
+    const boxes = [[0, 0, hudW, 58]]; // top-left Vibe | Era | Star | Sketches HUD
     if (typeof document !== "undefined" && mapWrap) {
       const mRect = mapWrap.getBoundingClientRect();
       const card = document.getElementById("track-player-card");
@@ -291,6 +300,7 @@
       vh,
       activeClusterId,
       isMatch,
+      isHidden,
       onToggleCluster,
       mapWrap,
     } = opts;
@@ -304,6 +314,7 @@
     const allDots = [];
     for (let i = 0; i < nodes.length; i++) {
       const n = nodes[i];
+      if (isHidden && isHidden(n.t)) continue;
       const sx = Number.isFinite(n.px) ? n.px : n.x * zoom.k + zoom.x;
       const sy = Number.isFinite(n.py) ? n.py : n.y * zoom.k + zoom.y;
       if (sx < -60 || sx > vw + 60 || sy < -60 || sy > vh + 60) continue;
@@ -324,6 +335,7 @@
       "Experimental guitar & vocal": "Guitar & vocal",
       "Ambient & soundscape": "Ambient",
       "Hypnotic & dub techno": "Dub techno",
+      "Hypnotic, dub & microtonal": "Hypnotic & dub",
       "Downtempo & leftfield": "Downtempo",
       "House & deep groove": "House & deep",
       "Indie, post-punk & guitar": "Indie & guitar",
@@ -332,10 +344,13 @@
       "Jungle, DnB & breakcore": "DnB & breaks",
       "Piano, classical & folk": "Piano & acoustic",
       "UK bass, dubstep & juke": "UK bass & dubstep",
+      "Generative AI music": "AI music",
     };
 
     styleGroups.forEach((g) => {
-      const members = (g.members || []).map((id) => nodeById.get(id)).filter(Boolean);
+      const members = (g.members || [])
+        .map((id) => nodeById.get(id))
+        .filter((m) => m && !(isHidden && isHidden(m.t)));
       if (!members.length) return;
       const anyMatch = members.some((m) => isMatch(m.t));
 
@@ -452,6 +467,15 @@
         }
       }
 
+      if (g.is_ai_group) {
+        const boxCenterX = Math.max(hw + 8, Math.min(vw - hw - 8, (minX + maxX) * 0.5));
+        const headerY = Math.max(hh + 10, minY - hh - (isWide ? 34 : 20));
+        const hBox = [boxCenterX - hw, headerY - hh, boxCenterX + hw, headerY + hh];
+        if (!uiBoxes.some((ub) => boxOverlap(hBox, ub)) && !placedFam.some((pb) => boxOverlap(hBox, pb))) {
+          best = [boxCenterX, headerY];
+        }
+      }
+
       if (!best) return;
 
       placedFam.push([best[0] - hw - 6, best[1] - hh - 4, best[0] + hw + 6, best[1] + hh + 4]);
@@ -483,6 +507,129 @@
         if (onToggleCluster) onToggleCluster(g.id);
       });
       svgGroup.appendChild(grp);
+
+      // Dedicated Generative AI territory boundary + internal Discogs genre sub-labels
+      if (g.is_ai_group) {
+        const padX = isWide ? 28 : 14;
+        const padTop = isWide ? 26 : 14;
+        const padBot = isWide ? 22 : 14;
+        const bx0 = Math.max(4, minX - padX);
+        const by0 = Math.max(4, minY - padTop);
+        const bx1 = Math.min(vw - 4, maxX + padX);
+        const by1 = Math.min(vh - 4, maxY + padBot);
+        if (bx1 - bx0 > 28 && by1 - by0 > 28) {
+          const tBox = document.createElementNS(NS, "rect");
+          tBox.setAttribute("class", "map-ai-territory-box");
+          tBox.setAttribute("x", bx0.toFixed(1));
+          tBox.setAttribute("y", by0.toFixed(1));
+          tBox.setAttribute("width", (bx1 - bx0).toFixed(1));
+          tBox.setAttribute("height", (by1 - by0).toFixed(1));
+          tBox.setAttribute("rx", "18");
+          svgGroup.insertBefore(tBox, svgGroup.firstChild);
+        }
+
+        if ((isWide || zoom.k >= 1.35) && Array.isArray(g.sub_groups)) {
+          const subFs = zoomed ? 12.5 : 11.5;
+          const subFont = `500 ${subFs}px Inter, -apple-system, sans-serif`;
+          g.sub_groups.forEach((sg) => {
+            const smem = (sg.members || [])
+              .map((id) => nodeById.get(id))
+              .filter((m) => m && !(isHidden && isHidden(m.t)));
+            if (!smem.length) return;
+            const sAnyMatch = smem.some((m) => isMatch(m.t));
+            const sxs = [], sys = [];
+            const sOwn = new Set();
+            let sMinY = Infinity, sMaxY = -Infinity, sMinX = Infinity, sMaxX = -Infinity;
+            for (let si = 0; si < smem.length; si++) {
+              const sm = smem[si];
+              sOwn.add(sm.id);
+              const sx = Number.isFinite(sm.px) ? sm.px : sm.x * zoom.k + zoom.x;
+              const sy = Number.isFinite(sm.py) ? sm.py : sm.y * zoom.k + zoom.y;
+              sxs.push(sx);
+              sys.push(sy);
+              if (sx < sMinX) sMinX = sx;
+              if (sx > sMaxX) sMaxX = sx;
+              if (sy < sMinY) sMinY = sy;
+              if (sy > sMaxY) sMaxY = sy;
+            }
+            sxs.sort((a, b) => a - b);
+            sys.sort((a, b) => a - b);
+            const smx = sxs[sxs.length >> 1];
+            const smy = sys[sys.length >> 1];
+            const sLbl = sg.short_label || sg.label;
+            const stw = textWidth(subFont, sLbl);
+            const shw = Math.ceil(stw * 0.52 + 4);
+            const shh = Math.ceil(subFs * 0.6 + 2);
+
+            const sCands = [
+              [smx, sMinY - shh - 6],
+              [smx, sMaxY + shh + 7],
+              [sMinX - shw - 6, smy],
+              [sMaxX + shw + 6, smy],
+            ];
+            [14, 24, 36].forEach((rad) => {
+              ANGLES.forEach((ang) => {
+                sCands.push([smx + Math.cos(ang) * rad * 1.1, smy + Math.sin(ang) * rad]);
+              });
+            });
+
+            let sBest = null;
+            let sBestScore = Infinity;
+            for (let sci = 0; sci < sCands.length; sci++) {
+              const scx = Math.max(shw + 6, Math.min(vw - shw - 6, sCands[sci][0]));
+              const scy = Math.max(shh + 8, Math.min(vh - shh - 8, sCands[sci][1]));
+              const sbox = [scx - shw, scy - shh, scx + shw, scy + shh];
+              if (uiBoxes.some((ub) => boxOverlap(sbox, ub))) continue;
+              if (placedFam.some((pb) => boxOverlap(sbox, pb))) continue;
+              if (lastTrackBoxes.some((tb) => boxOverlap(sbox, tb))) continue;
+
+              let dc = 0;
+              for (let di = 0; di < allDots.length; di++) {
+                if (boxOverlap(sbox, dotBoxes[di])) {
+                  dc += sOwn.has(allDots[di][2]) ? 70 : 200;
+                }
+              }
+              const dCore = Math.hypot(scx - smx, scy - smy);
+              if (dCore > 68) continue;
+              const sc = dCore + dc;
+              if (sc < sBestScore) {
+                sBestScore = sc;
+                sBest = [scx, scy];
+              }
+            }
+            if (!sBest) return;
+            placedFam.push([sBest[0] - shw - 4, sBest[1] - shh - 3, sBest[0] + shw + 4, sBest[1] + shh + 3]);
+
+            const sGrp = document.createElementNS(NS, "g");
+            const sCls =
+              "map-ai-sub-group" +
+              (activeClusterId === sg.id ? " is-active" : "") +
+              (!sAnyMatch || (activeClusterId && activeClusterId !== sg.id && activeClusterId !== g.id) ? " is-dim" : "");
+            sGrp.setAttribute("class", sCls);
+            sGrp.setAttribute("transform", `translate(${sBest[0].toFixed(1)}, ${sBest[1].toFixed(1)})`);
+
+            const sHit = document.createElementNS(NS, "rect");
+            sHit.setAttribute("class", "map-family-hit");
+            sHit.setAttribute("x", (-shw).toFixed(1));
+            sHit.setAttribute("y", (-shh).toFixed(1));
+            sHit.setAttribute("width", (shw * 2).toFixed(1));
+            sHit.setAttribute("height", (shh * 2).toFixed(1));
+            sHit.setAttribute("rx", "6");
+
+            const sTxt = document.createElementNS(NS, "text");
+            sTxt.setAttribute("class", "map-ai-sub-label");
+            sTxt.setAttribute("y", (subFs * 0.34).toFixed(1));
+            sTxt.textContent = sLbl;
+
+            sGrp.append(sHit, sTxt);
+            sGrp.addEventListener("click", (ev) => {
+              ev.stopPropagation();
+              if (onToggleCluster) onToggleCluster(sg.id);
+            });
+            svgGroup.appendChild(sGrp);
+          });
+        }
+      }
     });
   }
 

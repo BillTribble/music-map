@@ -77,8 +77,39 @@
 .map-family-group.is-active .map-family-label {
   fill: var(--md-sys-color-primary);
 }
-.map-family-group.is-dim .map-family-label {
-  opacity: 0.22;
+.map-ai-territory-box {
+  fill: color-mix(in srgb, var(--md-sys-color-surface-container) 34%, transparent);
+  stroke: color-mix(in srgb, var(--md-sys-color-outline) 42%, transparent);
+  stroke-width: 1.25px;
+  stroke-dasharray: 4 4.5;
+  pointer-events: none;
+}
+
+.map-ai-sub-group {
+  pointer-events: auto;
+  cursor: pointer;
+}
+.map-ai-sub-label {
+  font: 500 11.5px var(--md-ref-typeface-plain, 'Inter', sans-serif);
+  fill: var(--md-sys-color-on-surface-variant);
+  letter-spacing: 0.01em;
+  text-anchor: middle;
+  pointer-events: none;
+  paint-order: stroke;
+  stroke: var(--md-sys-color-surface-container-lowest);
+  stroke-width: 3px;
+  stroke-linejoin: round;
+  transition: fill 150ms var(--ease-std), opacity 160ms var(--ease-std);
+}
+.map-ai-sub-group:hover .map-ai-sub-label {
+  fill: var(--md-sys-color-on-surface);
+}
+.map-ai-sub-group.is-active .map-ai-sub-label {
+  fill: var(--md-sys-color-primary);
+  font-weight: 600;
+}
+.map-ai-sub-group.is-dim .map-ai-sub-label {
+  opacity: 0.24;
 }
 
 .era-wave-title {
@@ -179,6 +210,28 @@
 .star-filter-btn.is-active .ms,
 .star-filter-btn[aria-pressed="true"] .ms {
   font-variation-settings: 'FILL' 1, 'wght' 500, 'GRAD' 0, 'opsz' 20;
+}
+
+.map-hud-hint {
+  display: inline-flex;
+  align-items: center;
+  max-width: 0;
+  opacity: 0;
+  overflow: hidden;
+  padding: 0;
+  font-family: var(--font-sans);
+  font-size: 12px;
+  font-weight: 500;
+  line-height: 1;
+  color: var(--md-sys-color-on-surface);
+  white-space: nowrap;
+  pointer-events: none;
+  transition: max-width 180ms var(--ease-std), opacity 150ms var(--ease-std), padding 180ms var(--ease-std);
+}
+.map-hud-hint.is-visible {
+  max-width: 150px;
+  opacity: 1;
+  padding: 0 10px 0 3px;
 }
 
 .star-empty-msg {

@@ -178,16 +178,32 @@
     return null;
   }
 
+  function isWalkEligible(cand, curIsAi) {
+    if (!cand) return false;
+    if (Boolean(cand.is_ai) !== curIsAi) return false;
+    const sketchesShown =
+      typeof window !== "undefined" &&
+      window.ME_NODEMAP &&
+      typeof window.ME_NODEMAP.getShowSketches === "function"
+        ? Boolean(window.ME_NODEMAP.getShowSketches())
+        : false;
+    if (!sketchesShown && cand.is_sketch) return false;
+    return true;
+  }
+
   function pickNextSimilarTrack(currentId, opts = {}) {
     if (!tracksList.length) return null;
     if (tracksList.length === 1) return tracksList[0];
+
+    const curTrack = currentId ? byId.get(currentId) : null;
+    const curIsAi = Boolean(curTrack && curTrack.is_ai);
 
     const peekOnly = Boolean(opts.peekOnly);
     let effectiveVisited = visitedIds;
     let unvisited = [];
     for (let i = 0; i < tracksList.length; i++) {
       const tr = tracksList[i];
-      if (tr && tr.id !== currentId && !effectiveVisited.has(tr.id)) {
+      if (tr && tr.id !== currentId && isWalkEligible(tr, curIsAi) && !effectiveVisited.has(tr.id)) {
         unvisited.push(tr);
       }
     }
@@ -196,21 +212,26 @@
       if (peekOnly) {
         effectiveVisited = new Set(currentId && byId.has(currentId) ? [currentId] : []);
       } else {
-        visitedIds.clear();
+        // Clear visited history within this territory so the walk loops cleanly inside its territory
+        Array.from(visitedIds).forEach((vid) => {
+          const vt = byId.get(vid);
+          if (vt && Boolean(vt.is_ai) === curIsAi && vid !== currentId) {
+            visitedIds.delete(vid);
+          }
+        });
         if (currentId && byId.has(currentId)) visitedIds.add(currentId);
         effectiveVisited = visitedIds;
       }
       unvisited = [];
       for (let i = 0; i < tracksList.length; i++) {
         const tr = tracksList[i];
-        if (tr && tr.id !== currentId && !effectiveVisited.has(tr.id)) {
+        if (tr && tr.id !== currentId && isWalkEligible(tr, curIsAi) && !effectiveVisited.has(tr.id)) {
           unvisited.push(tr);
         }
       }
-      if (!unvisited.length) return byId.get(currentId) || tracksList[0];
+      if (!unvisited.length) return curTrack || tracksList[0];
     }
 
-    const curTrack = currentId ? byId.get(currentId) : null;
     if (!curTrack) return unvisited[0];
 
     // 1. Check currentTrack.track_near (or CORPUS_DATA.meta.track_near[currentId]) first
@@ -222,11 +243,12 @@
     for (let i = 0; i < nearList.length; i++) {
       const nid = extractNeighborId(nearList[i]);
       if (nid && nid !== currentId && byId.has(nid) && !effectiveVisited.has(nid)) {
-        return byId.get(nid);
+        const cand = byId.get(nid);
+        if (isWalkEligible(cand, curIsAi)) return cand;
       }
     }
 
-    // 2. All direct track_near neighbors visited -> find closest unvisited track across full catalog
+    // 2. All direct track_near neighbors visited -> find closest unvisited track within same territory
     let bestTrack = unvisited[0];
     let bestDist = Infinity;
     for (let i = 0; i < unvisited.length; i++) {

@@ -856,6 +856,7 @@
           <span class="badge ${energyBadgeCls(t.energy)}" title="Mixed In Key energy level (1–10)">E${t.energy}/10</span>
           <span class="badge badge-indigo">${esc(t.key_label || "—")}</span>
           <span class="badge badge-blue mono-num">${Math.round(t.bpm || 0)} BPM</span>
+          ${t.is_ai ? '<span class="badge badge-indigo">Generative AI</span>' : ""}
           ${sketch ? '<span class="badge badge-amber">Sketch</span>' : ""}
           ${!released ? '<span class="badge badge-purple">Unreleased</span>' : ""}
         </div>

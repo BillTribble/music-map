@@ -51,6 +51,9 @@
   let ringG = null;
   let hoverPill = null;
   let starBtn = null;
+  let sketchBtn = null;
+  let hudHintEl = null;
+  let hudHoverTarget = null; // "star" | "sketch" | null
   let starEmptyEl = null;
 
   let nodes = [];
@@ -63,6 +66,7 @@
   let colorMode = "cluster"; // "cluster" | "energy" | "era"
   let filterSet = null;
   let starFilter = false;
+  let showSketches = false;
   let activeClusterId = null;
   let activeEraId = null;
   let selectedId = null;
@@ -92,6 +96,7 @@
       ],
       primary: val("--md-sys-color-primary", "#A7C7FA"),
       outline: val("--md-sys-color-outline-variant", "#444746"),
+      edgeLine: val("--md-sys-color-outline", "#8E9099"),
       surfaceLowest: val("--md-sys-color-surface-container-lowest", "#16161B"),
       onSurface: val("--md-sys-color-on-surface", "#E8E9EF"),
       playing: val("--md-sys-color-cluster-2", "#2DD4BF"),
@@ -144,6 +149,14 @@
     return Math.max(2.0, base * zoomShrink);
   }
 
+  function isSketchHidden(t) {
+    if (showSketches || !t || !t.is_sketch) return false;
+    const playId = hooks && hooks.playing ? hooks.playing() : null;
+    const pendId = hooks && hooks.pending ? hooks.pending() : null;
+    if (t.id === selectedId || t.id === playId || t.id === pendId) return false;
+    return true;
+  }
+
   // Fan out co-located or near-touching screen dots into a small ring (Groove Explorer style)
   function computeScreenPositions() {
     const T = 7.5;
@@ -151,7 +164,7 @@
     const taken = new Set();
     for (let i = 0; i < nodes.length; i++) {
       if (taken.has(i)) continue;
-      if (!isMatch(nodes[i].t)) {
+      if (isSketchHidden(nodes[i].t) || !isMatch(nodes[i].t)) {
         nodes[i].px = raw[i][0];
         nodes[i].py = raw[i][1];
         nodes[i].fanAngle = null;
@@ -161,7 +174,7 @@
       const grp = [i];
       taken.add(i);
       for (let j = i + 1; j < nodes.length; j++) {
-        if (taken.has(j) || !isMatch(nodes[j].t)) continue;
+        if (taken.has(j) || isSketchHidden(nodes[j].t) || !isMatch(nodes[j].t)) continue;
         if (Math.abs(raw[i][0] - raw[j][0]) < T && Math.hypot(raw[i][0] - raw[j][0], raw[i][1] - raw[j][1]) < T) {
           grp.push(j);
           taken.add(j);
@@ -187,10 +200,18 @@
     }
   }
 
+  function isClusterMatch(t) {
+    if (!activeClusterId) return true;
+    if (activeClusterId === "ai_generative") return Boolean(t.is_ai);
+    if (activeClusterId.startsWith("ai_sub_")) return Boolean(t.is_ai) && t.ai_sub_id === activeClusterId;
+    return !t.is_ai && t.cluster_id === activeClusterId;
+  }
+
   function isMatch(t) {
+    if (isSketchHidden(t)) return false;
     if (filterSet && !filterSet.has(t.id)) return false;
     if (starFilter && window.BTMM_PLAYER && !window.BTMM_PLAYER.isStarred(t.id)) return false;
-    if (layout === "vibe" && activeClusterId && t.cluster_id !== activeClusterId) return false;
+    if (layout === "vibe" && !isClusterMatch(t)) return false;
     if (layout === "era" && activeEraId && t.era !== activeEraId) return false;
     return true;
   }
@@ -208,7 +229,8 @@
 
   function computeTargetPositions() {
     if (layout === "era" && window.BTMM_TIMELINE_ERA) {
-      eraLayout = window.BTMM_TIMELINE_ERA.computeLayout(tracks, eras, erasById, vw, vh);
+      const visTracks = tracks.filter((t) => !isSketchHidden(t));
+      eraLayout = window.BTMM_TIMELINE_ERA.computeLayout(visTracks, eras, erasById, vw, vh);
       nodes.forEach((n) => {
         const c = eraLayout.coords.get(n.id);
         n.tx = c ? c.x : vw * 0.5;
@@ -227,20 +249,28 @@
   function buildEdges() {
     const pairs = new Map();
     const keyFor = (a, b) => (a < b ? `${a}|${b}` : `${b}|${a}`);
+    const visNodes = nodes.filter((n) => !isSketchHidden(n.t));
+    const visSet = new Set(visNodes.map((n) => n.id));
 
     if (layout === "vibe") {
-      tracks.forEach((t) => {
-        const list = (trackNear[t.id] || []).slice(0, LINKS);
-        list.forEach(([nid, sim]) => {
-          if (!nodeById.has(nid)) return;
+      const maxChordPx = Math.max(vw, vh) * 0.22;
+      visNodes.forEach((n) => {
+        const t = n.t;
+        const candidates = (trackNear[t.id] || []).filter(([nid]) => {
+          if (!visSet.has(nid)) return false;
+          const nb = nodeById.get(nid);
+          if (!nb || Boolean(nb.t.is_ai) !== Boolean(t.is_ai)) return false;
+          return Math.hypot(nb.tx - n.tx, nb.ty - n.ty) <= maxChordPx;
+        }).slice(0, LINKS);
+        candidates.forEach(([nid, sim]) => {
           const k = keyFor(t.id, nid);
           if (!pairs.has(k)) pairs.set(k, { a: t.id, b: nid, w: sim, weak: false });
         });
       });
 
-      // Kruskal bridge for detached vibe islands (only when track count <= 800)
-      if (nodes.length <= 800) {
-        const parent = new Map(nodes.map((n) => [n.id, n.id]));
+      // Kruskal bridge for detached vibe islands within each territory (never bridging Handcrafted <-> AI)
+      if (visNodes.length <= 800) {
+        const parent = new Map(visNodes.map((n) => [n.id, n.id]));
         const find = (x) => {
           while (parent.get(x) !== x) {
             parent.set(x, parent.get(parent.get(x)));
@@ -256,9 +286,10 @@
         pairs.forEach((e) => unite(e.a, e.b));
 
         const cands = [];
-        for (let i = 0; i < nodes.length; i++) {
-          for (let j = i + 1; j < nodes.length; j++) {
-            const a = nodes[i], b = nodes[j];
+        for (let i = 0; i < visNodes.length; i++) {
+          for (let j = i + 1; j < visNodes.length; j++) {
+            const a = visNodes[i], b = visNodes[j];
+            if (Boolean(a.t.is_ai) !== Boolean(b.t.is_ai)) continue;
             if (find(a.id) === find(b.id)) continue;
             cands.push({ a: a.id, b: b.id, d: Math.hypot(a.tx - b.tx, a.ty - b.ty) });
           }
@@ -269,9 +300,10 @@
         }
       }
     } else {
-      // Intra-era subtle harmonic arcs (nearest within same era)
+      // Intra-era subtle harmonic arcs (nearest visible within same era)
       const byEra = new Map();
-      tracks.forEach((t) => {
+      visNodes.forEach((n) => {
+        const t = n.t;
         if (!byEra.has(t.era)) byEra.set(t.era, []);
         byEra.get(t.era).push(t);
       });
@@ -279,6 +311,7 @@
         for (let i = 0; i < list.length; i++) {
           const t = list[i];
           const near = (trackNear[t.id] || []).find(([nid]) => {
+            if (!visSet.has(nid)) return false;
             const nt = byId.get(nid);
             return nt && nt.era === t.era;
           });
@@ -316,9 +349,26 @@
         vh,
         activeClusterId,
         isMatch,
+        isHidden: isSketchHidden,
         mapWrap,
         onToggleCluster: (cid) => setClusterFilter(activeClusterId === cid ? null : cid),
       });
+    }
+  }
+
+  function updateHudHint() {
+    if (!hudHintEl) return;
+    let text = "";
+    if (hudHoverTarget === "star") {
+      text = starFilter ? "Starred only · On" : "Starred only";
+    } else if (hudHoverTarget === "sketch") {
+      text = showSketches ? "Hide sketches" : "Show sketches";
+    }
+    if (text) {
+      hudHintEl.textContent = text;
+      hudHintEl.classList.add("is-visible");
+    } else {
+      hudHintEl.classList.remove("is-visible");
     }
   }
 
@@ -326,7 +376,14 @@
     if (starBtn) {
       starBtn.classList.toggle("is-active", starFilter);
       starBtn.setAttribute("aria-pressed", String(starFilter));
+      starBtn.setAttribute("aria-label", starFilter ? "Starred only (active)" : "Starred only");
     }
+    if (sketchBtn) {
+      sketchBtn.classList.toggle("is-active", showSketches);
+      sketchBtn.setAttribute("aria-pressed", String(showSketches));
+      sketchBtn.setAttribute("aria-label", showSketches ? "Hide sketches" : "Show sketches");
+    }
+    updateHudHint();
     if (starEmptyEl) {
       const cnt = window.BTMM_PLAYER ? window.BTMM_PLAYER.starredCount() : 0;
       starEmptyEl.hidden = !(starFilter && cnt === 0);
@@ -417,6 +474,7 @@
       const a = nodeById.get(e.a);
       const b = nodeById.get(e.b);
       if (!a || !b) return;
+      if (isSketchHidden(a.t) || isSketchHidden(b.t)) return;
       const lit = selectedId && (e.a === selectedId || e.b === selectedId);
       const aMatch = isMatch(a.t);
       const bMatch = isMatch(b.t);
@@ -435,13 +493,13 @@
 
       if (lit) {
         ctx.strokeStyle = palette.primary;
-        ctx.globalAlpha = 0.85;
-        ctx.lineWidth = 1.75;
+        ctx.globalAlpha = 0.88;
+        ctx.lineWidth = 1.8;
         ctx.setLineDash([]);
       } else {
-        ctx.strokeStyle = palette.outline;
-        ctx.globalAlpha = (!aMatch && !bMatch) ? 0.05 : (layout === "era" ? 0.15 : (e.weak ? 0.16 : 0.3));
-        ctx.lineWidth = 0.95;
+        ctx.strokeStyle = palette.edgeLine || palette.outline;
+        ctx.globalAlpha = (!aMatch && !bMatch) ? 0.07 : (layout === "era" ? 0.24 : (e.weak ? 0.24 : 0.42));
+        ctx.lineWidth = 1.05;
         if (e.weak && layout === "vibe") ctx.setLineDash([3.5, 4.5]);
         else ctx.setLineDash([]);
       }
@@ -451,6 +509,7 @@
 
     const drawPass = (wantMatch) => {
       nodes.forEach((n) => {
+        if (isSketchHidden(n.t)) return;
         const match = isMatch(n.t);
         if (match !== wantMatch) return;
         if (starFilter && !match) return;
@@ -656,6 +715,21 @@
         starFilter = !starFilter;
         paint();
       });
+      starBtn.addEventListener("pointerenter", () => { hudHoverTarget = "star"; updateHudHint(); });
+      starBtn.addEventListener("pointerleave", () => { if (hudHoverTarget === "star") { hudHoverTarget = null; updateHudHint(); } });
+      starBtn.addEventListener("focus", () => { hudHoverTarget = "star"; updateHudHint(); });
+      starBtn.addEventListener("blur", () => { if (hudHoverTarget === "star") { hudHoverTarget = null; updateHudHint(); } });
+    }
+
+    if (sketchBtn) {
+      sketchBtn.addEventListener("click", (ev) => {
+        ev.stopPropagation();
+        setShowSketches(!showSketches);
+      });
+      sketchBtn.addEventListener("pointerenter", () => { hudHoverTarget = "sketch"; updateHudHint(); });
+      sketchBtn.addEventListener("pointerleave", () => { if (hudHoverTarget === "sketch") { hudHoverTarget = null; updateHudHint(); } });
+      sketchBtn.addEventListener("focus", () => { hudHoverTarget = "sketch"; updateHudHint(); });
+      sketchBtn.addEventListener("blur", () => { if (hudHoverTarget === "sketch") { hudHoverTarget = null; updateHudHint(); } });
     }
 
     if (typeof ResizeObserver !== "undefined") {
@@ -722,6 +796,19 @@
     if (hooks && hooks.onLayoutChange) hooks.onLayoutChange(layout);
   }
 
+  function setShowSketches(val) {
+    const next = Boolean(val);
+    if (next === showSketches) return showSketches;
+    showSketches = next;
+    if (layout === "era") {
+      computeTargetPositions();
+      nodes.forEach((n) => { n.x = n.tx; n.y = n.ty; });
+    }
+    buildEdges();
+    paint();
+    return showSketches;
+  }
+
   function setClusterFilter(cid) {
     activeClusterId = cid;
     paint();
@@ -729,7 +816,7 @@
 
   function firstVisibleTrackId() {
     for (let i = 0; i < nodes.length; i++) {
-      if (isMatch(nodes[i].t)) return nodes[i].id;
+      if (!isSketchHidden(nodes[i].t) && isMatch(nodes[i].t)) return nodes[i].id;
     }
     return tracks[0] ? tracks[0].id : null;
   }
@@ -750,6 +837,8 @@
     svg = document.getElementById("map-svg");
     hoverPill = document.getElementById("map-hover-pill");
     starBtn = document.getElementById("star-filter-btn");
+    sketchBtn = document.getElementById("sketch-filter-btn");
+    hudHintEl = document.getElementById("map-hud-hint");
     starEmptyEl = document.getElementById("star-empty-msg");
     if (!mapWrap || !canvas || !svg) return;
 
@@ -791,6 +880,8 @@
     firstVisibleTrackId,
     setFilter(setOrNull) { filterSet = setOrNull; paint(); },
     setClusterFilter,
+    setShowSketches,
+    getShowSketches: () => showSketches,
     setColorMode(mode) { colorMode = mode; paint(); },
     getColorMode: () => colorMode,
     refreshTheme() { samplePalette(); paint(); },
