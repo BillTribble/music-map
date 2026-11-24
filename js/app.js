@@ -134,19 +134,38 @@
   }
 
   function initTheme() {
+    if (typeof window !== "undefined" && window.BTMM_THEME && typeof window.BTMM_THEME.refresh === "function") {
+      window.BTMM_THEME.refresh();
+      return;
+    }
     let saved = "auto";
     try { saved = localStorage.getItem(THEME_KEY) || localStorage.getItem(LEGACY_THEME_KEY) || "auto"; } catch (_) {}
     applyTheme(saved);
     if (typeof window !== "undefined" && window.matchMedia) {
       const mq = window.matchMedia("(prefers-color-scheme: light)");
-      if (mq.addEventListener) mq.addEventListener("change", () => { if (state.themeMode === "auto") applyTheme("auto"); });
+      if (mq.addEventListener) mq.addEventListener("change", () => {
+        if (window.BTMM_THEME && typeof window.BTMM_THEME.refresh === "function") { window.BTMM_THEME.refresh(); return; }
+        if (state.themeMode === "auto") applyTheme("auto");
+      });
     }
     if (typeof MutationObserver !== "undefined" && typeof document !== "undefined") {
-      const obs = new MutationObserver(() => { if (state.themeMode === "auto") applyTheme("auto"); });
+      const obs = new MutationObserver(() => {
+        if (window.BTMM_THEME && typeof window.BTMM_THEME.refresh === "function") { window.BTMM_THEME.refresh(); return; }
+        if (state.themeMode === "auto") applyTheme("auto");
+      });
       obs.observe(document.body, { attributes: true, attributeFilter: ["class", "style", "data-vscode-theme-kind"] });
     }
     if (typeof setInterval !== "undefined") {
-      setInterval(() => { if (state.themeMode === "auto") { const next = resolveHostTheme(); if (next !== state.resolvedTheme) applyTheme("auto"); } }, 600);
+      const hostThemeTimer = setInterval(() => {
+        if (window.BTMM_THEME && typeof window.BTMM_THEME.refresh === "function") {
+          clearInterval(hostThemeTimer);
+          return;
+        }
+        if (state.themeMode === "auto") {
+          const next = resolveHostTheme();
+          if (next !== state.resolvedTheme) applyTheme("auto");
+        }
+      }, 600);
     }
   }
 
@@ -484,8 +503,13 @@
     document.querySelectorAll("[data-set-color]").forEach((b) => {
       b.classList.toggle("is-active", b.getAttribute("data-set-color") === window.ME_NODEMAP.getColorMode());
     });
+    const activeThemeMode = (typeof window !== "undefined" && window.BTMM_THEME && typeof window.BTMM_THEME.getMode === "function")
+      ? window.BTMM_THEME.getMode()
+      : state.themeMode;
     document.querySelectorAll("[data-set-theme]").forEach((b) => {
-      b.classList.toggle("is-active", b.getAttribute("data-set-theme") === state.themeMode);
+      const active = b.getAttribute("data-set-theme") === activeThemeMode;
+      b.classList.toggle("is-active", active);
+      b.setAttribute("aria-pressed", active ? "true" : "false");
     });
   }
 
@@ -707,7 +731,13 @@
       const cBtn = ev.target.closest("[data-set-color]");
       if (cBtn) { window.ME_NODEMAP.setColorMode(cBtn.getAttribute("data-set-color")); syncSettingsUi(); }
       const tBtn = ev.target.closest("[data-set-theme]");
-      if (tBtn) { applyTheme(tBtn.getAttribute("data-set-theme")); }
+      if (tBtn) {
+        if (window.BTMM_THEME && typeof window.BTMM_THEME.setMode === "function") {
+          window.BTMM_THEME.setMode(tBtn.getAttribute("data-set-theme"));
+        } else {
+          applyTheme(tBtn.getAttribute("data-set-theme"));
+        }
+      }
     });
     document.getElementById("set-mute").addEventListener("change", (ev) => {
       state.audioEnabled = ev.target.checked;
