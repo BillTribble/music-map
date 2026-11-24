@@ -51,6 +51,15 @@ EXCLUDED_DIR_NAMES = {
     "woodlands contributions",
     "uridium",
     "guitar sketches",
+    "cae - idles cover",
+    "06 skullz - endlesss band",
+    "endlesss tracks",
+    "tpj unmastered",
+    "alex reynolds - elma audio project 1",
+    "bambii - bad gyal clean edit",
+    "faxing berlin edit",
+    "led zepellin - immigrant 114 bpm project",
+    "total praise remix",
 }
 EXCLUDED_PATH_SUBSTRS = (
     "jomtones rules",
@@ -77,6 +86,12 @@ EXCLUDED_PATH_SUBSTRS = (
     "metally riff",
     "pavementish",
     "take it back vox idea",
+    "mohammed ali rant",
+    "prince - baby i'm a star",
+    "10 badrico - dissolve 3",
+    "04 meghan -reflection",
+    "08 reflektor - tpj",
+    "heilung tenet edit",
 )
 EXCLUDED_FILE_TOKENS = ("stem", "backing", "drumloop")
 EXCLUDED_EXACT_FILES = {"bass.wav", "vocals.wav", "perc.wav", "other.wav"}
