@@ -322,6 +322,16 @@
       "Complex drums & breaks": "Breaks & drums",
       "Hypnotic electro & microtonal": "Hypnotic electro",
       "Experimental guitar & vocal": "Guitar & vocal",
+      "Ambient & soundscape": "Ambient",
+      "Hypnotic & dub techno": "Dub techno",
+      "Downtempo & leftfield": "Downtempo",
+      "House & deep groove": "House & deep",
+      "Indie, post-punk & guitar": "Indie & guitar",
+      "Electro, acid & techno": "Electro & techno",
+      "IDM, glitch & industrial": "IDM & industrial",
+      "Jungle, DnB & breakcore": "DnB & breaks",
+      "Piano, classical & folk": "Piano & acoustic",
+      "UK bass, dubstep & juke": "UK bass & dubstep",
     };
 
     styleGroups.forEach((g) => {
@@ -357,7 +367,8 @@
       const qHi = xs.length >= 10 ? Math.floor(xs.length * 0.86) : xs.length - 1;
       const cMinX = xs[qLo], cMaxX = xs[qHi];
       const cMinY = ys[qLo], cMaxY = ys[qHi];
-      const label = (!isWide && !zoomed && MOBILE_SHORT[g.label]) ? MOBILE_SHORT[g.label] : g.label;
+      const shortLbl = g.short_label || MOBILE_SHORT[g.label];
+      const label = (!isWide && !zoomed && shortLbl) ? shortLbl : g.label;
       const tw = textWidth(fontSpec, label);
       const hw = Math.ceil(tw * 0.52 + 5);
       const hh = Math.ceil(fs * 0.6 + 2.5);

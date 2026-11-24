@@ -859,6 +859,11 @@
           ${sketch ? '<span class="badge badge-amber">Sketch</span>' : ""}
           ${!released ? '<span class="badge badge-purple">Unreleased</span>' : ""}
         </div>
+        ${Array.isArray(t.discogs_styles) && t.discogs_styles.length ? `
+        <div class="mp-discogs-line">
+          <span class="mp-discogs-styles">${esc(t.discogs_styles.join(" · "))}</span>
+          ${Array.isArray(t.mood_tags) && t.mood_tags.length ? `<span class="mp-discogs-moods">${esc(t.mood_tags.join(" · "))}</span>` : ""}
+        </div>` : ""}
         <div class="mp-meters">
           ${meterHtml("Harmonic complexity", t.harmonic_complexity, "var(--c5)")}
           ${meterHtml("Chord richness", t.chord_richness, "var(--c1)")}

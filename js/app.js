@@ -489,7 +489,7 @@
     state.tab = VIEWS.some((v) => v.id === normalized) ? normalized : "vibe";
     state.hoverIdx = null;
     if (typeof window !== "undefined" && window.history && window.history.replaceState) {
-      try { window.history.replaceState(null, "", `#${state.tab}`); } catch (_) {}
+      try { window.history.replaceState(null, "", `${window.location.pathname}${window.location.search}#${state.tab}`); } catch (_) {}
     }
     renderView();
   }
@@ -526,7 +526,10 @@
           (t.title || "").toLowerCase().includes(ql) ||
           (er && (er.label || "").toLowerCase().includes(ql)) ||
           (t.cluster_label || "").toLowerCase().includes(ql) ||
-          (t.key_label || "").toLowerCase().includes(ql)
+          (t.key_label || "").toLowerCase().includes(ql) ||
+          (Array.isArray(t.discogs_styles) && t.discogs_styles.some((s) => s.toLowerCase().includes(ql))) ||
+          (Array.isArray(t.mood_tags) && t.mood_tags.some((s) => s.toLowerCase().includes(ql))) ||
+          (Array.isArray(t.instrument_tags) && t.instrument_tags.some((s) => s.toLowerCase().includes(ql)))
         ) {
           hits.add(t.id);
         }
@@ -833,6 +836,10 @@
         onLayoutChange: () => renderModeSwitchers(),
       });
       bindGlobalUi();
+      if (meta.classifier === "essentia-discogs400") {
+        const si = document.getElementById("search-input");
+        if (si) si.placeholder = "Filter tracks, genre, mood, key…";
+      }
     }
 
     const rawHash = (typeof window !== "undefined" && window.location && window.location.hash || "").replace(/^#/, "");

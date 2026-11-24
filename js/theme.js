@@ -78,6 +78,12 @@
 
   function syncToggleButton(mode, resolved) {
     if (typeof document === "undefined") return;
+    document.querySelectorAll("[data-set-theme]").forEach(function (pill) {
+      var active = pill.getAttribute("data-set-theme") === mode;
+      pill.classList.toggle("is-active", active);
+      pill.setAttribute("aria-pressed", active ? "true" : "false");
+    });
+
     var btn = document.getElementById("theme-toggle-btn");
     if (!btn) return;
     var icon = document.getElementById("theme-toggle-icon") || btn.querySelector(".ms");
@@ -97,12 +103,6 @@
     btn.setAttribute("aria-label", label);
     btn.setAttribute("data-theme-mode", mode);
     btn.setAttribute("data-resolved-theme", resolved);
-
-    document.querySelectorAll("[data-set-theme]").forEach(function (pill) {
-      var active = pill.getAttribute("data-set-theme") === mode;
-      pill.classList.toggle("is-active", active);
-      pill.setAttribute("aria-pressed", active ? "true" : "false");
-    });
   }
 
   function applyThemeMode(nextMode, opts) {

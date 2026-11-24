@@ -384,6 +384,24 @@
   gap: 6px;
 }
 
+.mp-discogs-line {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 4px 10px;
+  margin: 8px 0 -2px;
+  font-family: var(--font-sans);
+  font-size: 12px;
+  line-height: 1.4;
+}
+.mp-discogs-styles {
+  color: var(--md-sys-color-on-surface);
+  font-weight: 500;
+}
+.mp-discogs-moods {
+  color: var(--md-sys-color-on-surface-variant);
+}
+
 .mp-meters {
   display: grid;
   grid-template-columns: 1fr 1fr;
