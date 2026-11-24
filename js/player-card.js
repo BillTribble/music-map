@@ -180,7 +180,7 @@
           </button>
         </div>
         <div class="request-helper">
-          <span>${sent ? "Opening mail draft to Bill…" : "Unreleased catalog piece"}</span>
+          ${sent ? '<span>Opening mail draft to Bill…</span>' : ""}
           <button type="button" class="copy-email-btn" data-copy-email="${esc(t.id)}" title="Copy ${REQUEST_EMAIL} for webmail">
             <span class="ms" style="font-size:14px">${copied ? "check" : "content_copy"}</span>
             <span>${copied ? "Copied email" : REQUEST_EMAIL}</span>
