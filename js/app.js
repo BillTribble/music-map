@@ -746,12 +746,20 @@
 
   function boot() {
     initTheme();
-    window.ME_AUDIO.setTrackIndex(tracks);
+    const trackMapData = meta.track_map || DATA.track_map || mapBlob.track_map || {};
+    const trackNearData = meta.track_near || DATA.track_near || mapBlob.track_near || {};
+    window.ME_AUDIO.setTrackIndex(tracks, { trackMap: trackMapData, trackNear: trackNearData });
     window.ME_AUDIO.setOnStateChange(() => {
       window.ME_NODEMAP.paint();
       if (window.BTMM_PLAYER) window.BTMM_PLAYER.render();
       if (!isMapTab()) renderView();
     });
+    if (window.ME_AUDIO.setOnAutoAdvance) {
+      window.ME_AUDIO.setOnAutoAdvance((nextId) => {
+        if (window.ME_NODEMAP) window.ME_NODEMAP.setSelectedSilent(nextId);
+        if (window.BTMM_PLAYER) window.BTMM_PLAYER.select(nextId, { fromAutoPlay: true });
+      });
+    }
     window.ME_AUDIO.setOnBeat((tid, step) => {
       const leds = document.querySelectorAll("#audio-beat-leds .beat-led");
       if (leds.length === 4) {
@@ -766,7 +774,12 @@
         erasById,
         playing: () => window.ME_AUDIO.playing(),
         pending: () => window.ME_AUDIO.pending(),
+        getPlaybackState: () => (window.ME_AUDIO.getPlaybackState ? window.ME_AUDIO.getPlaybackState() : null),
         onPlayToggle: (tid) => window.ME_AUDIO.toggleTrack(tid),
+        onSeek: (sec) => (window.ME_AUDIO.seek ? window.ME_AUDIO.seek(sec) : 0),
+        onRestart: () => (window.ME_AUDIO.restart ? window.ME_AUDIO.restart() : false),
+        getAutoPlay: () => (window.ME_AUDIO.getAutoPlay ? window.ME_AUDIO.getAutoPlay() : true),
+        onAutoPlayToggle: (val) => (window.ME_AUDIO.setAutoPlay ? window.ME_AUDIO.setAutoPlay(val) : true),
         onSelectionChange: (tid) => {
           if (window.ME_NODEMAP) window.ME_NODEMAP.setSelectedSilent(tid);
         },
@@ -782,8 +795,8 @@
         erasById,
         styleGroups: meta.style_groups || DATA.style_groups || mapBlob.style_groups || [],
         eraAnchors: meta.era_anchors || DATA.era_anchors || mapBlob.era_anchors || [],
-        trackMap: meta.track_map || DATA.track_map || mapBlob.track_map || {},
-        trackNear: meta.track_near || DATA.track_near || mapBlob.track_near || {},
+        trackMap: trackMapData,
+        trackNear: trackNearData,
         playing: () => window.ME_AUDIO.playing(),
         pending: () => window.ME_AUDIO.pending(),
         onTap: (tid) => window.ME_AUDIO.toggleTrack(tid),
