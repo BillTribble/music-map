@@ -43,6 +43,7 @@
   const resampledBarsCache = new Map();
   let waveHoverFrac = null;
   let isWaveScrubbing = false;
+  let hasWaveDragged = false;
   let scrubFrac = null;
   let optimisticSeekTrackId = null;
   let optimisticSeekSec = null;
@@ -282,8 +283,8 @@
     let isFullTrack = hasFullAsset;
     let seekableDur = hasFullAsset
       ? (catalogFullDur || catalogClipDur)
-      : (catalogFullDur || catalogClipDur);
-    let displayTotalDur = catalogFullDur || catalogClipDur;
+      : catalogClipDur;
+    let displayTotalDur = isFullTrack ? (catalogFullDur || catalogClipDur) : seekableDur;
     let currentTime = 0;
 
     if (activeMatch) {
@@ -294,9 +295,10 @@
       }
       if (Number.isFinite(st.duration) && st.duration > 0) {
         seekableDur = st.duration;
-        displayTotalDur = isFullTrack ? st.duration : (catalogFullDur || st.duration);
-      } else if (!isFullTrack) {
-        seekableDur = catalogClipDur;
+        displayTotalDur = st.duration;
+      } else {
+        seekableDur = isFullTrack ? (catalogFullDur || catalogClipDur) : catalogClipDur;
+        displayTotalDur = seekableDur;
       }
       if (Number.isFinite(st.currentTime) && st.currentTime >= 0) {
         currentTime = st.currentTime;
@@ -309,10 +311,11 @@
           if (Number.isFinite(elDur) && elDur > 0) {
             seekableDur = elDur;
             isFullTrack = elDur > catalogClipDur + 5;
-            if (isFullTrack) displayTotalDur = elDur;
+            displayTotalDur = elDur;
           } else {
             isFullTrack = false;
             seekableDur = catalogClipDur;
+            displayTotalDur = seekableDur;
           }
           if (Number.isFinite(av.htmlAudio.currentTime)) {
             currentTime = av.htmlAudio.currentTime;
@@ -322,11 +325,13 @@
           const elapsed = Math.max(0, ctxNow - (av.barOriginCtxTime || 0));
           isFullTrack = false;
           seekableDur = catalogClipDur;
+          displayTotalDur = seekableDur;
           currentTime = seekableDur > 0 ? (elapsed % seekableDur) : 0;
         }
       }
-    } else if (!hasFullAsset) {
+    } else if (!isFullTrack) {
       seekableDur = catalogClipDur;
+      displayTotalDur = seekableDur;
     }
 
     const timelineDur = isFullTrack ? Math.max(1, displayTotalDur) : Math.max(1, seekableDur);
@@ -897,13 +902,21 @@
 
     const ma = typeof window !== "undefined" ? window.ME_AUDIO : null;
     if (!snap.isPlaying && !snap.isPend && !opts.dragging) {
-      if (hooks && typeof hooks.onPlayToggle === "function") {
+      if (ma && typeof ma.playTrack === "function") {
+        ma.playTrack(t.id, { startSec: targetSec, isManual: true });
+        if (typeof ma.seek !== "function" && typeof ma.activeVoice === "function") {
+          const av = ma.activeVoice();
+          if (av && av.trackId === t.id && av.htmlAudio) {
+            try { av.htmlAudio.currentTime = targetSec; } catch (_) {}
+          }
+        }
+      } else if (ma && typeof ma.seek === "function") {
+        if (hooks && typeof hooks.onPlayToggle === "function") hooks.onPlayToggle(t.id);
+        ma.seek(targetSec);
+      } else if (hooks && typeof hooks.onPlayToggle === "function") {
         hooks.onPlayToggle(t.id);
-      } else if (ma && typeof ma.playTrack === "function") {
-        ma.playTrack(t.id);
       }
-    }
-    if (ma && typeof ma.seek === "function") {
+    } else if (ma && typeof ma.seek === "function") {
       ma.seek(targetSec);
     } else if (ma && typeof ma.activeVoice === "function") {
       const av = ma.activeVoice();
@@ -925,22 +938,28 @@
     const snap = readPlaybackSnapshot(t);
     const ma = typeof window !== "undefined" ? window.ME_AUDIO : null;
 
-    if (ma && typeof ma.restart === "function") {
-      if (!snap.isPlaying && !snap.isPend && hooks && typeof hooks.onPlayToggle === "function") {
-        hooks.onPlayToggle(tid);
-      }
-      ma.restart();
-    } else {
-      if (!snap.isPlaying && !snap.isPend && hooks && typeof hooks.onPlayToggle === "function") {
-        hooks.onPlayToggle(tid);
-      }
-      if (ma && typeof ma.seek === "function") {
-        ma.seek(0);
-      } else if (ma && typeof ma.activeVoice === "function") {
-        const av = ma.activeVoice();
-        if (av && av.trackId === tid && av.htmlAudio) {
-          try { av.htmlAudio.currentTime = 0; } catch (_) {}
+    if (!snap.isPlaying && !snap.isPend) {
+      if (ma && typeof ma.playTrack === "function") {
+        ma.playTrack(tid, { startSec: 0, fromStart: true, isManual: true });
+        if (typeof ma.restart !== "function" && typeof ma.activeVoice === "function") {
+          const av = ma.activeVoice();
+          if (av && av.trackId === tid && av.htmlAudio) {
+            try { av.htmlAudio.currentTime = 0; } catch (_) {}
+          }
         }
+      } else if (ma && typeof ma.restart === "function") {
+        ma.restart();
+      } else if (hooks && typeof hooks.onPlayToggle === "function") {
+        hooks.onPlayToggle(tid);
+      }
+    } else if (ma && typeof ma.restart === "function") {
+      ma.restart();
+    } else if (ma && typeof ma.seek === "function") {
+      ma.seek(0);
+    } else if (ma && typeof ma.activeVoice === "function") {
+      const av = ma.activeVoice();
+      if (av && av.trackId === tid && av.htmlAudio) {
+        try { av.htmlAudio.currentTime = 0; } catch (_) {}
       }
     }
     syncWaveVisuals();
@@ -1050,6 +1069,7 @@
       if (!wrap || (ev.button !== undefined && ev.button !== 0)) return;
       ev.stopPropagation();
       isWaveScrubbing = true;
+      hasWaveDragged = false;
       const frac = fracFromPointerEvent(wrap, ev);
       scrubFrac = frac;
       waveHoverFrac = frac;
@@ -1064,6 +1084,7 @@
       if (isWaveScrubbing) {
         const activeWrap = cardEl.querySelector("#mp-wave-wrap");
         if (!activeWrap) return;
+        hasWaveDragged = true;
         const frac = fracFromPointerEvent(activeWrap, ev);
         scrubFrac = frac;
         waveHoverFrac = frac;
@@ -1083,17 +1104,21 @@
       if (!isWaveScrubbing) return;
       const activeWrap = cardEl.querySelector("#mp-wave-wrap");
       const finalFrac = activeWrap && ev ? fracFromPointerEvent(activeWrap, ev) : scrubFrac;
+      const didDrag = hasWaveDragged;
       isWaveScrubbing = false;
+      hasWaveDragged = false;
       scrubFrac = null;
       if (activeWrap && ev && typeof activeWrap.releasePointerCapture === "function") {
         try { activeWrap.releasePointerCapture(ev.pointerId); } catch (_) {}
       }
-      if (finalFrac !== null) seekToFraction(finalFrac, { dragging: true });
+      if (didDrag && finalFrac !== null) seekToFraction(finalFrac, { dragging: true });
+      else syncWaveVisuals();
     };
     cardEl.addEventListener("pointerup", finishWaveScrub);
     cardEl.addEventListener("pointercancel", () => {
       if (!isWaveScrubbing) return;
       isWaveScrubbing = false;
+      hasWaveDragged = false;
       scrubFrac = null;
       syncWaveVisuals();
     });
@@ -1220,9 +1245,7 @@
     cardEl = typeof document !== "undefined" ? document.getElementById("track-player-card") : null;
     loadPrefs();
     if (typeof window !== "undefined" && window.ME_AUDIO && typeof window.ME_AUDIO.setAutoPlay === "function") {
-      if (typeof window.ME_AUDIO.getAutoPlay !== "function") {
-        window.ME_AUDIO.setAutoPlay(localAutoPlay);
-      }
+      window.ME_AUDIO.setAutoPlay(localAutoPlay);
     }
     if (typeof MutationObserver !== "undefined" && typeof document !== "undefined" && !themeObserver) {
       themeObserver = new MutationObserver(() => {
