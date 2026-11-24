@@ -1,0 +1,173 @@
+/* Personal Aesthetic Layer (billtribble.com × GM3) — Syne Display, Obsidian Depth & Tactile Stadium Pills.
+   Strictly zero raw hex literals here; all colors reference --md-sys-color-*. */
+
+:root {
+  --font-display: var(--md-ref-typeface-brand, 'Syne', sans-serif);
+  --font-sans: var(--md-ref-typeface-plain, 'Inter', sans-serif);
+  --font-mono: 'JetBrains Mono', ui-monospace, SFMono-Regular, Menlo, monospace;
+}
+
+/* Display typography in Syne */
+.app-title,
+.mp-name,
+.view-title,
+.track-mini-title,
+.kpi-val,
+.btn,
+.btn-primary-cta,
+.era-wave-title {
+  font-family: var(--font-display);
+  letter-spacing: -0.02em;
+}
+
+.app-title {
+  font-weight: 700;
+  font-size: 17px;
+}
+
+/* Tabular mono numbers for BPM, Energy, Duration, Years */
+.mono-num,
+.mp-meter-lbl strong,
+.flavor-val,
+.era-tick-year,
+.action-sub {
+  font-family: var(--font-mono);
+  font-variant-numeric: tabular-nums;
+}
+
+/* Subtle indigo/violet brand mark tint matching billtribble.com */
+.app-brand-mark {
+  background: var(--md-sys-color-indigo-wash);
+  color: var(--md-sys-color-on-indigo-wash);
+}
+
+/* Dark obsidian ambient stage depth & elevated translucent overlays */
+[data-theme="dark"] .map {
+  background: radial-gradient(
+    ellipse 85% 75% at 50% 44%,
+    color-mix(in srgb, var(--md-sys-color-indigo-wash) 26%, var(--md-sys-color-surface-container-lowest)),
+    var(--md-sys-color-surface-container-lowest) 74%
+  );
+}
+
+[data-theme="dark"] .player-card,
+[data-theme="dark"] .map-hud-pill,
+[data-theme="dark"] .star-empty-msg,
+[data-theme="dark"] .map-hover-pill,
+[data-theme="dark"] .settings-pop {
+  background: color-mix(in srgb, var(--md-sys-color-surface-container) 84%, transparent);
+  backdrop-filter: blur(18px);
+  -webkit-backdrop-filter: blur(18px);
+}
+
+[data-theme="dark"] .view-card,
+[data-theme="dark"] .era-inspector,
+[data-theme="dark"] .era-strip {
+  background: var(--md-sys-color-surface-container-lowest);
+}
+
+/* Tactile 9999px stadium-pill primary CTAs */
+.btn,
+.btn-primary-cta {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  height: 42px;
+  padding: 0 20px;
+  border: none;
+  border-radius: 9999px;
+  background: var(--md-sys-color-primary);
+  color: var(--md-sys-color-on-primary);
+  font-size: 13px;
+  font-weight: 700;
+  text-decoration: none;
+  white-space: nowrap;
+  cursor: pointer;
+  transition: transform 120ms var(--ease-std), filter 140ms var(--ease-std), background 140ms var(--ease-std);
+}
+
+.btn:hover,
+.btn-primary-cta:hover {
+  filter: brightness(1.07);
+}
+
+.btn:active,
+.btn-primary-cta:active {
+  transform: scale(0.985);
+}
+
+.btn.is-sent {
+  background: var(--md-sys-color-tertiary-container);
+  color: var(--md-sys-color-on-tertiary-container);
+}
+
+.btn-secondary-pill {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  height: 42px;
+  padding: 0 16px;
+  border: none;
+  border-radius: 9999px;
+  background: var(--md-sys-color-secondary-container);
+  color: var(--md-sys-color-on-secondary-container);
+  font-family: var(--font-display);
+  font-size: 13px;
+  font-weight: 700;
+  text-decoration: none;
+  white-space: nowrap;
+  cursor: pointer;
+  transition: filter 140ms var(--ease-std);
+}
+
+.btn-secondary-pill:hover {
+  filter: brightness(1.08);
+}
+
+/* Custom tonal circular play CTA matching billtribble.com .link-btn */
+.btn-tonal.mp-play {
+  background: var(--md-sys-color-custom-tonal-bg);
+  color: var(--md-sys-color-custom-tonal-text);
+  border-radius: 9999px;
+}
+
+.btn-tonal.mp-play:hover {
+  background: var(--md-sys-color-custom-tonal-hover-bg);
+  filter: none;
+}
+
+.btn-tonal.mp-play.is-playing {
+  background: var(--md-sys-color-primary);
+  color: var(--md-sys-color-on-primary);
+}
+
+/* Star action icons */
+.star-btn {
+  width: 36px;
+  height: 36px;
+  border-radius: 9999px;
+  border: none;
+  background: transparent;
+  color: var(--md-sys-color-on-surface-variant);
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+  transition: background 140ms var(--ease-std), color 140ms var(--ease-std), transform 120ms var(--ease-std);
+}
+
+.star-btn:hover {
+  background: var(--md-sys-color-surface-container-high);
+  color: var(--md-sys-color-on-surface);
+}
+
+.star-btn.is-starred {
+  color: var(--md-sys-color-star-active);
+  background: var(--md-sys-color-star-container);
+}
+
+.star-btn.is-starred .ms {
+  font-variation-settings: 'FILL' 1, 'wght' 500, 'GRAD' 0, 'opsz' 20;
+}

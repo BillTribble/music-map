@@ -1,35 +1,38 @@
-// Groove Explorer-style Interactive SVG Node Map (Similarity Default <-> 16-Era Morph)
+// Interactive Hybrid Canvas + SVG Vibe Map & Energy-Wave Era Stage
+// Features 8-cluster palette, 60fps canvas nodes/edges, and container-level Euclidean nearest-node hit-testing.
 (function () {
   "use strict";
 
   const NS = "http://www.w3.org/2000/svg";
-  const PAD = 52;
-  const NODE_R = 8;
-  const HIT_R = 22;
-  const HIT_R_MAX = 36;
+  const PAD = 56;
   const LINKS = 2;
-  const MORPH_MS = 700;
+  const MORPH_MS = 620;
+  const HIT_MOUSE_PX = 28;
+  const HIT_TOUCH_PX = 38;
+  const DRAG_MOUSE_PX = 8;
+  const DRAG_TOUCH_PX = 14;
 
-  // Token-only cluster / energy / phase color maps (all tokens present in Light & Dark modes)
-  const CLUSTER_COLORS = [
-    "var(--md-sys-color-on-blue-tonal)",
-    "var(--md-sys-color-on-teal-tonal)",
-    "var(--md-sys-color-on-green-tonal)",
-    "var(--md-sys-color-on-purple-tonal)",
-    "var(--md-sys-color-on-yellow-tonal)",
-    "var(--md-sys-color-on-red-tonal)",
-    "var(--md-sys-color-on-orange-tonal)",
+  const CLUSTER_VARS = [
+    "--md-sys-color-cluster-0",
+    "--md-sys-color-cluster-1",
+    "--md-sys-color-cluster-2",
+    "--md-sys-color-cluster-3",
+    "--md-sys-color-cluster-4",
+    "--md-sys-color-cluster-5",
+    "--md-sys-color-cluster-6",
+    "--md-sys-color-cluster-7",
   ];
-  const PHASE_COLORS = {
-    phase0_archive: "var(--md-sys-color-on-yellow-tonal)",
-    phase1_early: "var(--md-sys-color-on-blue-tonal)",
-    phase2_mid: "var(--md-sys-color-on-purple-tonal)",
-    phase3_ambient: "var(--md-sys-color-on-teal-tonal)",
-    phase4_recent: "var(--md-sys-color-on-red-tonal)",
+  const PHASE_VARS = {
+    phase0_archive: "--md-sys-color-cluster-4",
+    phase1_early: "--md-sys-color-cluster-0",
+    phase2_mid: "--md-sys-color-cluster-5",
+    phase3_ambient: "--md-sys-color-cluster-2",
+    phase4_recent: "--md-sys-color-cluster-7",
   };
 
   let hooks = null;
   let tracks = [];
+  let eras = [];
   let byId = new Map();
   let erasById = new Map();
   let styleGroups = [];
@@ -37,20 +40,26 @@
   let trackMap = {};
   let trackNear = {};
 
+  let mapWrap = null;
+  let canvas = null;
+  let ctx = null;
   let svg = null;
-  let vp = null;
-  let edgeG = null;
   let groupG = null;
-  let nodeG = null;
-  let panel = null;
-  let legendEl = null;
+  let ringG = null;
+  let hoverPill = null;
+  let starBtn = null;
+  let starEmptyEl = null;
 
   let nodes = [];
   let nodeById = new Map();
+  let edges = [];
+  let eraLayout = null;
   let groupEls = [];
-  let layout = "similarity"; // "similarity" | "era"
+
+  let layout = "vibe"; // "vibe" | "era"
   let colorMode = "cluster"; // "cluster" | "energy" | "era"
   let filterSet = null;
+  let starFilter = false;
   let activeClusterId = null;
   let activeEraId = null;
   let selectedId = null;
@@ -58,9 +67,43 @@
 
   let vw = 1000;
   let vh = 700;
+  let dpr = 1;
   let zoom = { k: 1, x: 0, y: 0 };
   let tweenRaf = 0;
   let resizeRaf = 0;
+  let palette = {};
+
+  function samplePalette() {
+    if (typeof document === "undefined" || typeof getComputedStyle !== "function") return;
+    const cs = getComputedStyle(document.documentElement);
+    const val = (v, fb) => (cs.getPropertyValue(v) || "").trim() || fb;
+    palette = {
+      clusters: CLUSTER_VARS.map((v, i) => val(v, i % 2 ? "#80CFFF" : "#A7C7FA")),
+      phases: Object.fromEntries(Object.entries(PHASE_VARS).map(([k, v]) => [k, val(v, "#A7C7FA")])),
+      energy: [
+        val("--md-sys-color-cluster-0", "#60A5FA"),
+        val("--md-sys-color-cluster-2", "#2DD4BF"),
+        val("--md-sys-color-cluster-3", "#4ADE80"),
+        val("--md-sys-color-cluster-4", "#FBBF24"),
+        val("--md-sys-color-cluster-7", "#FB7185"),
+      ],
+      primary: val("--md-sys-color-primary", "#A7C7FA"),
+      outline: val("--md-sys-color-outline-variant", "#444746"),
+      surfaceLowest: val("--md-sys-color-surface-container-lowest", "#16161B"),
+      onSurface: val("--md-sys-color-on-surface", "#E8E9EF"),
+      playing: val("--md-sys-color-cluster-2", "#2DD4BF"),
+      queued: val("--md-sys-color-cluster-4", "#FBBF24"),
+      bandAlt: val("--md-sys-color-surface-container", "#1C1C22"),
+      bandActive: val("--md-sys-color-surface-container-high", "#262730"),
+      gridLine: val("--md-sys-color-outline-variant", "#3D404A"),
+      spineGlow: val("--md-sys-color-primary-container", "#0842A1"),
+    };
+  }
+
+  function normLayoutName(lay) {
+    if (lay === "similarity") return "vibe";
+    return lay === "era" ? "era" : "vibe";
+  }
 
   function elSvg(tag, cls) {
     const e = document.createElementNS(NS, tag);
@@ -68,61 +111,117 @@
     return e;
   }
 
-  function esc(s) {
-    return String(s).replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;").replace(/"/g, "&quot;");
-  }
-
   function energyColor(en) {
-    if (en <= 2) return "var(--md-sys-color-on-blue-tonal)";
-    if (en <= 4) return "var(--md-sys-color-on-teal-tonal)";
-    if (en === 5) return "var(--md-sys-color-on-green-tonal)";
-    if (en <= 6) return "var(--md-sys-color-on-yellow-tonal)";
-    return "var(--md-sys-color-on-red-tonal)";
-  }
-
-  function energyBadgeCls(en) {
-    if (en <= 2) return "badge-blue";
-    if (en <= 4) return "badge-teal";
-    if (en === 5) return "badge-green";
-    if (en <= 6) return "badge-amber";
-    return "badge-pink";
+    const e = palette.energy || [];
+    if (en <= 2) return e[0] || palette.primary;
+    if (en <= 4) return e[1] || palette.primary;
+    if (en === 5) return e[2] || palette.primary;
+    if (en <= 6) return e[3] || palette.primary;
+    return e[4] || palette.primary;
   }
 
   function trackColor(t) {
     if (colorMode === "energy") return energyColor(t.energy);
     if (colorMode === "era") {
       const er = erasById.get(t.era);
-      return PHASE_COLORS[er && er.phase] || "var(--md-sys-color-primary)";
+      return (palette.phases && palette.phases[er && er.phase]) || palette.primary;
     }
-    return CLUSTER_COLORS[(t.cluster_idx || 0) % CLUSTER_COLORS.length];
+    const cols = palette.clusters || [];
+    const idx = Number.isFinite(t.cluster_idx) ? t.cluster_idx : 0;
+    return cols[((idx % cols.length) + cols.length) % cols.length] || palette.primary;
   }
 
-  function placeOnScreen(normX, normY) {
-    const w = Math.max(240, vw - PAD * 2);
-    const h = Math.max(200, vh - PAD * 2);
-    return [PAD + normX * w, PAD + normY * h];
+  function nodeBaseRadius(t) {
+    const e = Math.max(1, Math.min(10, Number(t.energy || 4)));
+    if (tracks.length > 220) {
+      return 4.3 + ((e - 1) / 9) * 3.1; // 4.3px .. 7.4px crisp jewel dots for 559-track corpus
+    }
+    return 6.4 + ((e - 1) / 9) * 4.4; // 6.4px .. 10.8px for smaller sets
   }
 
-  function normPosFor(tid, lay) {
+  function isMatch(t) {
+    if (filterSet && !filterSet.has(t.id)) return false;
+    if (starFilter && window.BTMM_PLAYER && !window.BTMM_PLAYER.isStarred(t.id)) return false;
+    if (layout === "vibe" && activeClusterId && t.cluster_id !== activeClusterId) return false;
+    if (layout === "era" && activeEraId && t.era !== activeEraId) return false;
+    return true;
+  }
+
+  function vibeTarget(tid) {
     const coords = trackMap[tid];
-    if (!coords) return [0.5, 0.5];
-    return coords[lay] || coords.similarity || [0.5, 0.5];
+    const norm = (coords && (coords.vibe || coords.similarity)) || [0.5, 0.5];
+    const topPad = vw <= 800 ? 74 : PAD;
+    const sidePad = vw <= 800 ? 22 : PAD;
+    const botPad = vw <= 800 ? 74 : PAD;
+    const w = Math.max(220, vw - sidePad * 2);
+    const h = Math.max(200, vh - topPad - botPad);
+    return [sidePad + norm[0] * w, topPad + norm[1] * h];
   }
 
-  function buildEdges(lay) {
+  function computeTargetPositions() {
+    if (layout === "era" && window.BTMM_TIMELINE_ERA) {
+      eraLayout = window.BTMM_TIMELINE_ERA.computeLayout(tracks, eras, erasById, vw, vh);
+      nodes.forEach((n) => {
+        const c = eraLayout.coords.get(n.id);
+        n.tx = c ? c.x : vw * 0.5;
+        n.ty = c ? c.y : vh * 0.5;
+      });
+    } else {
+      eraLayout = null;
+      nodes.forEach((n) => {
+        const [tx, ty] = vibeTarget(n.id);
+        n.tx = tx;
+        n.ty = ty;
+      });
+    }
+  }
+
+  function buildEdges() {
     const pairs = new Map();
     const keyFor = (a, b) => (a < b ? `${a}|${b}` : `${b}|${a}`);
 
-    if (lay === "similarity") {
+    if (layout === "vibe") {
       tracks.forEach((t) => {
         const list = (trackNear[t.id] || []).slice(0, LINKS);
         list.forEach(([nid, sim]) => {
+          if (!nodeById.has(nid)) return;
           const k = keyFor(t.id, nid);
           if (!pairs.has(k)) pairs.set(k, { a: t.id, b: nid, w: sim, weak: false });
         });
       });
+
+      // Kruskal bridge for detached vibe islands (only when track count <= 800)
+      if (nodes.length <= 800) {
+        const parent = new Map(nodes.map((n) => [n.id, n.id]));
+        const find = (x) => {
+          while (parent.get(x) !== x) {
+            parent.set(x, parent.get(parent.get(x)));
+            x = parent.get(x);
+          }
+          return x;
+        };
+        const unite = (a, b) => {
+          const ra = find(a), rb = find(b);
+          if (ra !== rb) { parent.set(ra, rb); return true; }
+          return false;
+        };
+        pairs.forEach((e) => unite(e.a, e.b));
+
+        const cands = [];
+        for (let i = 0; i < nodes.length; i++) {
+          for (let j = i + 1; j < nodes.length; j++) {
+            const a = nodes[i], b = nodes[j];
+            if (find(a.id) === find(b.id)) continue;
+            cands.push({ a: a.id, b: b.id, d: Math.hypot(a.tx - b.tx, a.ty - b.ty) });
+          }
+        }
+        cands.sort((p, q) => p.d - q.d);
+        for (const c of cands) {
+          if (unite(c.a, c.b)) pairs.set(keyFor(c.a, c.b), { a: c.a, b: c.b, w: 0.25, weak: true });
+        }
+      }
     } else {
-      // Connect members sequentially around each era constellation
+      // Intra-era subtle harmonic arcs (nearest within same era)
       const byEra = new Map();
       tracks.forEach((t) => {
         if (!byEra.has(t.era)) byEra.set(t.era, []);
@@ -130,231 +229,323 @@
       });
       byEra.forEach((list) => {
         for (let i = 0; i < list.length; i++) {
-          const a = list[i].id;
-          const b = list[(i + 1) % list.length].id;
-          if (a !== b) pairs.set(keyFor(a, b), { a, b, w: 0.9, weak: false });
+          const t = list[i];
+          const near = (trackNear[t.id] || []).find(([nid]) => {
+            const nt = byId.get(nid);
+            return nt && nt.era === t.era;
+          });
+          if (near) {
+            const k = keyFor(t.id, near[0]);
+            if (!pairs.has(k)) pairs.set(k, { a: t.id, b: near[0], w: near[1], weak: true });
+          }
         }
       });
     }
-
-    // Kruskal weak bridges so no component sits detached
-    const parent = new Map(nodes.map((n) => [n.id, n.id]));
-    const find = (x) => {
-      while (parent.get(x) !== x) {
-        parent.set(x, parent.get(parent.get(x)));
-        x = parent.get(x);
-      }
-      return x;
-    };
-    const unite = (a, b) => {
-      const ra = find(a), rb = find(b);
-      if (ra !== rb) { parent.set(ra, rb); return true; }
-      return false;
-    };
-    pairs.forEach((e) => unite(e.a, e.b));
-
-    const cands = [];
-    for (let i = 0; i < nodes.length; i++) {
-      for (let j = i + 1; j < nodes.length; j++) {
-        const a = nodes[i], b = nodes[j];
-        if (find(a.id) === find(b.id)) continue;
-        const d = Math.hypot(a.tx - b.tx, a.ty - b.ty);
-        cands.push({ a: a.id, b: b.id, d });
-      }
-    }
-    cands.sort((p, q) => p.d - q.d);
-    for (const c of cands) {
-      if (unite(c.a, c.b)) {
-        pairs.set(keyFor(c.a, c.b), { a: c.a, b: c.b, w: 0.25, weak: true });
-      }
-    }
-
-    edgeG.innerHTML = "";
-    const edges = [...pairs.values()];
-    edges.forEach((e) => {
-      const ln = elSvg("line", "map-edge" + (e.weak ? " is-weak" : ""));
-      edgeG.appendChild(ln);
-      e.el = ln;
-    });
-    return edges;
+    edges = [...pairs.values()];
   }
-
-  let edges = [];
 
   function drawFloatingLabels() {
+    if (!groupG) return;
     groupG.innerHTML = "";
     groupEls = [];
-    if (layout === "similarity") {
-      styleGroups.forEach((g) => {
-        const grp = elSvg("g", "map-group-label" + (activeClusterId === g.id ? " is-active" : ""));
-        const pill = elSvg("rect", "map-group-pill");
-        const label = g.label;
-        const sub = `${g.members.length} tracks`;
-        const w = Math.max(132, label.length * 7.3 + 30);
-        pill.setAttribute("x", (-w / 2).toFixed(1));
-        pill.setAttribute("y", "-18");
-        pill.setAttribute("width", w.toFixed(1));
-        pill.setAttribute("height", "30");
-        pill.setAttribute("rx", "15");
 
-        const txt = elSvg("text", "map-group-txt");
-        txt.setAttribute("y", "-5");
-        txt.textContent = label;
-        const subEl = elSvg("text", "map-group-sub");
-        subEl.setAttribute("y", "7");
-        subEl.textContent = sub;
-
-        grp.append(pill, txt, subEl);
-        grp.addEventListener("click", (ev) => {
-          ev.stopPropagation();
-          setClusterFilter(activeClusterId === g.id ? null : g.id);
-        });
-        groupG.appendChild(grp);
-        groupEls.push({ nx: g.cx, ny: g.cy, w, el: grp });
+    if (layout === "era" && window.BTMM_TIMELINE_ERA && eraLayout) {
+      window.BTMM_TIMELINE_ERA.renderOverlay(groupG, eraLayout, zoom, vw, vh, activeEraId, (eraId) => {
+        activeEraId = activeEraId === eraId ? null : eraId;
+        activeClusterId = null;
+        paint();
       });
-    } else {
-      eraAnchors.forEach((a) => {
-        const er = erasById.get(a.id);
-        if (!er) return;
-        const grp = elSvg("g", "map-group-label" + (activeEraId === a.id ? " is-active" : ""));
-        const pill = elSvg("rect", "map-group-pill");
-        const label = er.label;
-        const sub = er.sublabel;
-        const w = Math.max(106, label.length * 6.9 + 22);
-        pill.setAttribute("x", (-w / 2).toFixed(1));
-        pill.setAttribute("y", "-17");
-        pill.setAttribute("width", w.toFixed(1));
-        pill.setAttribute("height", "28");
-        pill.setAttribute("rx", "14");
-
-        const txt = elSvg("text", "map-group-txt");
-        txt.setAttribute("y", "-4");
-        txt.textContent = label;
-        const subEl = elSvg("text", "map-group-sub");
-        subEl.setAttribute("y", "7");
-        subEl.textContent = sub;
-
-        grp.append(pill, txt, subEl);
-        grp.addEventListener("click", (ev) => {
-          ev.stopPropagation();
-          activeEraId = activeEraId === a.id ? null : a.id;
-          activeClusterId = null;
-          drawFloatingLabels();
-          paint();
-        });
-        groupG.appendChild(grp);
-        groupEls.push({ nx: a.x, ny: a.y, w, el: grp });
-      });
+      return;
     }
-    positionGroupLabels();
-  }
 
-  function positionGroupLabels() {
-    const pts = groupEls.map((g) => {
-      const [sx, sy] = placeOnScreen(g.nx, g.ny);
-      return { g, sx, sy, w: g.w || 132, h: 32 };
+    // Vibe cluster pills positioned cleanly just above each cluster's dot cloud & clamped inside viewport
+    const topPad = vw <= 800 ? 74 : PAD;
+    const sidePad = vw <= 800 ? 22 : PAD;
+    const botPad = vw <= 800 ? 74 : PAD;
+    const w = Math.max(220, vw - sidePad * 2);
+    const h = Math.max(200, vh - topPad - botPad);
+    const compactMob = vw <= 560;
+    const pts = styleGroups.map((g) => {
+      let ax = sidePad + g.cx * w;
+      let ay = topPad + g.cy * h;
+      if (g.members && g.members.length) {
+        let sxSum = 0, minY = Infinity, nCnt = 0;
+        for (let i = 0; i < g.members.length; i++) {
+          const nd = nodeById.get(g.members[i]);
+          if (nd) {
+            sxSum += nd.x;
+            if (nd.y < minY) minY = nd.y;
+            nCnt++;
+          }
+        }
+        if (nCnt > 0) {
+          ax = sxSum / nCnt;
+          ay = minY - 22;
+        }
+      }
+      const sx = ax * zoom.k + zoom.x;
+      const sy = ay * zoom.k + zoom.y;
+      const label = g.label;
+      const count = g.members ? g.members.length : (g.count || 0);
+      const pw = Math.min(vw - 24, Math.max(118, label.length * (compactMob ? 6.6 : 7.3) + 26));
+      return { g, sx, sy, w: pw, sub: `${count} tracks` };
     });
-    const dotPts = layout === "similarity"
-      ? nodes.map((n) => {
-          const [nx, ny] = normPosFor(n.id, layout);
-          const [px, py] = placeOnScreen(nx, ny);
-          return { px, py };
-        })
-      : [];
-    // Separate overlapping floating label pills and push away from track dots across desktop/mobile
-    for (let it = 0; it < 28; it++) {
+
+    // Lightweight screen-space separation + dot avoidance + strict viewport edge clamping
+    const minTop = vw <= 800 ? 76 : 64;
+    const maxBot = vh - 36;
+    for (let it = 0; it < 22; it++) {
       for (let i = 0; i < pts.length; i++) {
         for (let j = i + 1; j < pts.length; j++) {
           const a = pts[i], b = pts[j];
-          const minDx = (a.w + b.w) * 0.5 + 18;
-          const minDy = 46;
+          const minDx = (a.w + b.w) * 0.5 + 10;
+          const minDy = 38;
           const dx = a.sx - b.sx;
           const dy = a.sy - b.sy;
           if (Math.abs(dx) < minDx && Math.abs(dy) < minDy) {
-            const ox = minDx - Math.abs(dx);
             const oy = minDy - Math.abs(dy);
-            if (oy <= ox * 0.85) {
-              const shift = (dy >= 0 ? 1 : -1) * oy * 0.52;
-              a.sy += shift;
-              b.sy -= shift;
-            } else {
-              const shift = (dx >= 0 ? 1 : -1) * ox * 0.45;
-              a.sx += shift;
-              b.sx -= shift;
-            }
+            const shift = (dy >= 0 ? 1 : -1) * oy * 0.48;
+            a.sy += shift;
+            b.sy -= shift;
           }
         }
       }
-      if (dotPts.length) {
-        pts.forEach((p) => {
-          const rx = p.w * 0.5 + 12;
-          const ry = 25;
-          for (let k = 0; k < dotPts.length; k++) {
-            const d = dotPts[k];
-            const dx = p.sx - d.px;
-            const dy = p.sy - d.py;
-            if (Math.abs(dx) < rx && Math.abs(dy) < ry) {
-              p.sy += (dy >= 0 ? 1 : -1) * (ry - Math.abs(dy)) * 0.38;
-            }
-          }
-        });
-      }
-      const minTop = vw <= 520 ? 78 : 26;
       pts.forEach((p) => {
-        const halfW = p.w * 0.5 + 8;
+        const halfW = p.w * 0.5 + 10;
         p.sx = Math.max(halfW, Math.min(vw - halfW, p.sx));
-        p.sy = Math.max(minTop, Math.min(vh - 58, p.sy));
+        p.sy = Math.max(minTop, Math.min(maxBot, p.sy));
       });
     }
+
     pts.forEach((p) => {
-      p.g.el.setAttribute("transform", `translate(${p.sx.toFixed(1)}, ${p.sy.toFixed(1)})`);
+      const grp = elSvg("g", "map-group-label" + (activeClusterId === p.g.id ? " is-active" : ""));
+      const pill = elSvg("rect", "map-group-pill");
+      pill.setAttribute("x", (-p.w / 2).toFixed(1));
+      pill.setAttribute("y", "-18");
+      pill.setAttribute("width", p.w.toFixed(1));
+      pill.setAttribute("height", "30");
+      pill.setAttribute("rx", "15");
+
+      const txt = elSvg("text", "map-group-txt");
+      txt.setAttribute("y", "-5");
+      txt.textContent = p.g.label;
+      const subEl = elSvg("text", "map-group-sub");
+      subEl.setAttribute("y", "7");
+      subEl.textContent = p.sub;
+
+      grp.append(pill, txt, subEl);
+      grp.setAttribute("transform", `translate(${p.sx.toFixed(1)}, ${p.sy.toFixed(1)})`);
+      grp.addEventListener("click", (ev) => {
+        ev.stopPropagation();
+        setClusterFilter(activeClusterId === p.g.id ? null : p.g.id);
+      });
+      groupG.appendChild(grp);
     });
   }
 
-  function sizeTapAreas() {
-    const rScreen = Math.max(HIT_R, Math.min(HIT_R_MAX, HIT_R * Math.pow(zoom.k, 0.25)));
-    const rLocal = rScreen / Math.max(0.25, zoom.k);
-    nodes.forEach((n) => {
-      n.hitEl.setAttribute("r", rLocal.toFixed(2));
-      const lblVis = zoom.k >= 1.5 || n.id === selectedId || n.id === hoverId || n.id === hooks.playing();
-      n.lblEl.style.opacity = lblVis ? "1" : "0";
+  function syncStarHud() {
+    if (starBtn) {
+      starBtn.classList.toggle("is-active", starFilter);
+      starBtn.setAttribute("aria-pressed", String(starFilter));
+    }
+    if (starEmptyEl) {
+      const cnt = window.BTMM_PLAYER ? window.BTMM_PLAYER.starredCount() : 0;
+      starEmptyEl.hidden = !(starFilter && cnt === 0);
+    }
+  }
+
+  function updateHoverPill() {
+    if (!hoverPill) return;
+    const hn = hoverId ? nodeById.get(hoverId) : null;
+    if (!hn || !isMatch(hn.t)) {
+      hoverPill.hidden = true;
+      return;
+    }
+    const sx = hn.x * zoom.k + zoom.x;
+    const sy = hn.y * zoom.k + zoom.y;
+    const r = nodeBaseRadius(hn.t);
+    hoverPill.textContent = hn.t.title;
+    hoverPill.style.left = `${sx.toFixed(1)}px`;
+    hoverPill.style.top = `${Math.max(44, sy - r - 12).toFixed(1)}px`;
+    hoverPill.hidden = false;
+  }
+
+  function paintRings(playId, pendId) {
+    if (!ringG) return;
+    ringG.innerHTML = "";
+
+    // Draw hover 18px soft aura + active/selected/playing crisp SVG rings
+    const targets = [];
+    if (hoverId && hoverId !== selectedId && hoverId !== playId) targets.push({ id: hoverId, kind: "hover" });
+    if (pendId && pendId !== playId) targets.push({ id: pendId, kind: "queued" });
+    if (selectedId) targets.push({ id: selectedId, kind: "selected" });
+    if (playId) targets.push({ id: playId, kind: "playing" });
+
+    targets.forEach((item) => {
+      const n = nodeById.get(item.id);
+      if (!n) return;
+      const sx = n.x * zoom.k + zoom.x;
+      const sy = n.y * zoom.k + zoom.y;
+      const baseR = nodeBaseRadius(n.t);
+
+      if (item.kind === "hover") {
+        const aura = elSvg("circle");
+        aura.setAttribute("cx", sx.toFixed(1));
+        aura.setAttribute("cy", sy.toFixed(1));
+        aura.setAttribute("r", "18");
+        aura.setAttribute("fill", trackColor(n.t));
+        aura.setAttribute("fill-opacity", "0.2");
+        ringG.appendChild(aura);
+      } else {
+        const ring = elSvg("circle");
+        ring.setAttribute("cx", sx.toFixed(1));
+        ring.setAttribute("cy", sy.toFixed(1));
+        ring.setAttribute("r", String((baseR + 5).toFixed(1)));
+        ring.setAttribute("fill", "none");
+        ring.setAttribute("stroke", item.kind === "playing" ? palette.playing : item.kind === "queued" ? palette.queued : palette.primary);
+        ring.setAttribute("stroke-width", item.kind === "playing" ? "2.6" : "2.2");
+        if (item.kind === "playing") ring.setAttribute("stroke-dasharray", "4 2.5");
+        else if (item.kind === "queued") ring.setAttribute("stroke-dasharray", "3 3");
+        ringG.appendChild(ring);
+      }
     });
   }
 
-  function applyPositions() {
-    nodes.forEach((n) => {
-      n.g.setAttribute("transform", `translate(${n.x.toFixed(1)}, ${n.y.toFixed(1)})`);
-    });
+  function paintCanvas() {
+    if (!ctx || !canvas) return;
+    const playId = hooks ? hooks.playing() : null;
+    const pendId = hooks ? hooks.pending() : null;
+    const selTrack = selectedId ? byId.get(selectedId) : null;
+
+    ctx.save();
+    ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+    ctx.clearRect(0, 0, vw, vh);
+
+    if (layout === "era" && window.BTMM_TIMELINE_ERA && eraLayout) {
+      window.BTMM_TIMELINE_ERA.drawCanvasBackground(ctx, eraLayout, zoom, {
+        bandAlt: palette.bandAlt,
+        bandActive: palette.bandActive,
+        gridLine: palette.gridLine,
+        primary: palette.primary,
+        spineGlow: palette.spineGlow,
+      }, activeEraId, selTrack);
+    }
+
+    ctx.translate(zoom.x, zoom.y);
+    ctx.scale(zoom.k, zoom.k);
+
+    const invK = 1 / Math.max(0.55, Math.min(2.2, zoom.k));
+
+    // Batched Edges
     edges.forEach((e) => {
       const a = nodeById.get(e.a);
       const b = nodeById.get(e.b);
       if (!a || !b) return;
-      e.el.setAttribute("x1", a.x.toFixed(1));
-      e.el.setAttribute("y1", a.y.toFixed(1));
-      e.el.setAttribute("x2", b.x.toFixed(1));
-      e.el.setAttribute("y2", b.y.toFixed(1));
+      const lit = selectedId && (e.a === selectedId || e.b === selectedId);
+      const aMatch = isMatch(a.t);
+      const bMatch = isMatch(b.t);
+      if (starFilter && (!aMatch || !bMatch) && !lit) return;
+
+      ctx.beginPath();
+      if (layout === "era") {
+        const mx = (a.x + b.x) * 0.5;
+        const arcOff = -Math.min(34, Math.abs(b.x - a.x) * 0.25 + 14);
+        ctx.moveTo(a.x, a.y);
+        ctx.quadraticCurveTo(mx, (a.y + b.y) * 0.5 + arcOff, b.x, b.y);
+      } else {
+        ctx.moveTo(a.x, a.y);
+        ctx.lineTo(b.x, b.y);
+      }
+
+      if (lit) {
+        ctx.strokeStyle = palette.primary;
+        ctx.globalAlpha = 0.85;
+        ctx.lineWidth = 2.0 * invK;
+        ctx.setLineDash([]);
+      } else {
+        ctx.strokeStyle = palette.outline;
+        ctx.globalAlpha = (!aMatch && !bMatch) ? 0.05 : (layout === "era" ? 0.16 : (e.weak ? 0.18 : 0.34));
+        ctx.lineWidth = 1.15 * invK;
+        if (e.weak && layout === "vibe") ctx.setLineDash([4 * invK, 5 * invK]);
+        else ctx.setLineDash([]);
+      }
+      ctx.stroke();
     });
+    ctx.setLineDash([]);
+
+    // Batched Nodes (dimmed drawn first, active/visible drawn on top)
+    const drawPass = (wantMatch) => {
+      nodes.forEach((n) => {
+        const match = isMatch(n.t);
+        if (match !== wantMatch) return;
+        if (starFilter && !match) return;
+        const isPlay = n.id === playId;
+        const isSel = n.id === selectedId;
+        const isHov = n.id === hoverId;
+        let r = nodeBaseRadius(n.t);
+        if (isPlay) r += 2.2;
+        else if (isSel || isHov) r += 1.4;
+        const drawR = r * Math.pow(invK, 0.45);
+
+        ctx.beginPath();
+        ctx.arc(n.x, n.y, drawR, 0, Math.PI * 2);
+        ctx.fillStyle = trackColor(n.t);
+        ctx.globalAlpha = match ? 0.94 : 0.12;
+        ctx.fill();
+
+        if (isSel || isPlay || isHov) {
+          ctx.lineWidth = 1.6 * invK;
+          ctx.strokeStyle = palette.surfaceLowest;
+          ctx.globalAlpha = 1;
+          ctx.stroke();
+        } else if (match && tracks.length > 220) {
+          ctx.lineWidth = 0.85 * invK;
+          ctx.strokeStyle = palette.surfaceLowest;
+          ctx.globalAlpha = 0.52;
+          ctx.stroke();
+        }
+      });
+    };
+    drawPass(false);
+    drawPass(true);
+
+    // Draw zoomed track labels directly on canvas when zoomed in >= 1.45x
+    if (zoom.k >= 1.45) {
+      ctx.font = `500 ${(11 * invK).toFixed(1)}px Inter, sans-serif`;
+      ctx.textAlign = "center";
+      ctx.textBaseline = "top";
+      nodes.forEach((n) => {
+        if (!isMatch(n.t)) return;
+        const drawR = nodeBaseRadius(n.t) * Math.pow(invK, 0.45);
+        const lbl = n.t.shortTitle || n.t.title;
+        ctx.globalAlpha = 0.88;
+        ctx.lineWidth = 3 * invK;
+        ctx.strokeStyle = palette.surfaceLowest;
+        ctx.strokeText(lbl, n.x, n.y + drawR + 4 * invK);
+        ctx.fillStyle = palette.onSurface;
+        ctx.fillText(lbl, n.x, n.y + drawR + 4 * invK);
+      });
+    }
+
+    ctx.restore();
+    paintRings(playId, pendId);
+    updateHoverPill();
   }
 
-  function applyTransform() {
-    vp.setAttribute("transform", `translate(${zoom.x.toFixed(1)}, ${zoom.y.toFixed(1)}) scale(${zoom.k.toFixed(4)})`);
-    sizeTapAreas();
+  function paint() {
+    syncStarHud();
+    paintCanvas();
+    drawFloatingLabels();
+    if (window.BTMM_PLAYER) window.BTMM_PLAYER.render();
   }
 
   function tweenToTargets(animate) {
     if (tweenRaf && typeof cancelAnimationFrame !== "undefined") cancelAnimationFrame(tweenRaf);
-    nodes.forEach((n) => {
-      const [nx, ny] = normPosFor(n.id, layout);
-      const [tx, ty] = placeOnScreen(nx, ny);
-      n.sx = n.x;
-      n.sy = n.y;
-      n.tx = tx;
-      n.ty = ty;
-    });
-    if (!animate || typeof requestAnimationFrame === "undefined") {
+    nodes.forEach((n) => { n.sx = n.x; n.sy = n.y; });
+    const allowMorph = animate && nodes.length <= 400 && typeof requestAnimationFrame !== "undefined";
+    if (!allowMorph) {
       nodes.forEach((n) => { n.x = n.tx; n.y = n.ty; });
-      applyPositions();
-      positionGroupLabels();
+      paint();
       return;
     }
     const t0 = performance.now();
@@ -365,231 +556,159 @@
         n.x = n.sx + (n.tx - n.sx) * ease;
         n.y = n.sy + (n.ty - n.sy) * ease;
       });
-      applyPositions();
+      paintCanvas();
       if (u < 1) tweenRaf = requestAnimationFrame(step);
-      else tweenRaf = 0;
+      else { tweenRaf = 0; drawFloatingLabels(); }
     }
     tweenRaf = requestAnimationFrame(step);
   }
 
-  function isMatch(t) {
-    if (filterSet && !filterSet.has(t.id)) return false;
-    if (layout === "similarity" && activeClusterId && t.cluster_id !== activeClusterId) return false;
-    if (layout === "era" && activeEraId && t.era !== activeEraId) return false;
-    return true;
-  }
-
-  function paint() {
-    const playId = hooks ? hooks.playing() : null;
-    const pendId = hooks ? hooks.pending() : null;
-    nodes.forEach((n) => {
-      const col = trackColor(n.t);
-      const match = isMatch(n.t);
-      n.dotEl.setAttribute("fill", col);
-      n.dotEl.setAttribute("r", n.id === playId ? "10" : n.id === selectedId ? "9.5" : String(NODE_R));
-      n.g.classList.toggle("is-dim", !match);
-      n.g.classList.toggle("is-selected", n.id === selectedId);
-      n.g.classList.toggle("is-playing", n.id === playId);
-      n.g.classList.toggle("is-queued", n.id === pendId && n.id !== playId);
-    });
-
-    edges.forEach((e) => {
-      const lit = selectedId && (e.a === selectedId || e.b === selectedId);
-      const aNode = nodeById.get(e.a);
-      const bNode = nodeById.get(e.b);
-      const bothDim = (!aNode || !isMatch(aNode.t)) && (!bNode || !isMatch(bNode.t));
-      e.el.classList.toggle("is-lit", Boolean(lit));
-      e.el.classList.toggle("is-dim", Boolean(bothDim && !lit));
-    });
-
-    sizeTapAreas();
-    renderPanel();
-    renderClusterChips();
-  }
-
-  function renderClusterChips() {
-    if (!legendEl) return;
-    if (layout !== "similarity") {
-      legendEl.innerHTML = `<button type="button" class="cluster-chip ${!activeEraId ? "is-active" : ""}" data-reset-era="1">All 16 eras (${tracks.length} tracks)</button>` +
-        (activeEraId && erasById.get(activeEraId)
-          ? `<button type="button" class="cluster-chip is-active" data-reset-era="1">${esc(erasById.get(activeEraId).label)} ×</button>`
-          : "");
-      return;
+  function findNearestVisibleNode(px, py, maxDist) {
+    let best = null;
+    let bestDist = maxDist;
+    for (let i = 0; i < nodes.length; i++) {
+      const n = nodes[i];
+      if (!isMatch(n.t)) continue;
+      const sx = n.x * zoom.k + zoom.x;
+      const sy = n.y * zoom.k + zoom.y;
+      const d = Math.hypot(px - sx, py - sy);
+      if (d <= bestDist) {
+        bestDist = d;
+        best = n;
+      }
     }
-    legendEl.innerHTML = styleGroups.map((g, i) => {
-      const act = activeClusterId === g.id;
-      const col = CLUSTER_COLORS[i % CLUSTER_COLORS.length];
-      return `<button type="button" class="cluster-chip ${act ? "is-active" : ""}" data-cluster="${esc(g.id)}"><span class="cluster-dot" style="background:${col}"></span><span>${esc(g.label)}</span></button>`;
-    }).join("");
+    return best;
   }
 
-  function meterHtml(label, val, col) {
-    const v = Math.round(Number(val) || 0);
-    return `
-      <div>
-        <div class="mp-meter-lbl"><span>${esc(label)}</span><strong>${v}</strong></div>
-        <div class="mp-meter-track"><div class="mp-meter-fill" style="width:${Math.min(100, v)}%;background:${col}"></div></div>
-      </div>`;
+  function pointerLocalXY(ev) {
+    const rect = mapWrap.getBoundingClientRect();
+    return [ev.clientX - rect.left, ev.clientY - rect.top];
   }
 
-  function renderPanel() {
-    if (!panel || !hooks) return;
-    if (!selectedId || !byId.has(selectedId)) {
-      panel.hidden = true;
-      return;
-    }
-    const t = byId.get(selectedId);
-    const er = erasById.get(t.era);
-    const isPlaying = hooks.playing() === t.id;
-    const isPend = hooks.pending() === t.id;
-    const near = (trackNear[t.id] || []).slice(0, 4);
-
-    let beats = "";
-    for (let i = 0; i < 16; i++) {
-      beats += `<div class="mp-beat${i % 4 === 0 ? " down" : ""}" data-beat="${i}"></div>`;
-    }
-
-    const nearHtml = near.map(([nid, sim]) => {
-      const nt = byId.get(nid);
-      if (!nt) return "";
-      const ner = erasById.get(nt.era);
-      return `
-        <button type="button" class="mp-near-item" data-jump-track="${esc(nt.id)}">
-          <span><strong>${esc(nt.title)}</strong> <span class="muted">· ${esc(ner ? ner.shortLabel : nt.era)} · E${nt.energy}</span></span>
-          <span class="mp-near-sim">${Math.round(sim * 100)}%</span>
-        </button>`;
-    }).join("");
-
-    panel.innerHTML = `
-      <div class="mp-head">
-        <button type="button" class="btn-tonal mp-play ${isPlaying ? "is-playing" : ""}" data-panel-play="${esc(t.id)}" aria-label="${isPlaying ? "Stop" : "Play"}" title="${isPlaying ? "Stop playback" : "Play 8-bar loop"}">
-          <span class="ms filled">${isPlaying ? "stop" : isPend ? "hourglass_top" : "play_arrow"}</span>
-        </button>
-        <div class="mp-titles">
-          <div class="mp-name" title="${esc(t.title)}">${esc(t.title)}</div>
-          <div class="mp-meta">${esc(er ? `${er.label} (${er.sublabel})` : t.era)} · ${esc(t.cluster_label)}</div>
-        </div>
-        <button type="button" class="icon-btn" id="mp-close" aria-label="Close track panel" title="Close">
-          <span class="ms">close</span>
-        </button>
-      </div>
-      <div class="mp-badges">
-        <span class="badge ${energyBadgeCls(t.energy)}" title="Mixed In Key energy level (1–10)">Energy E${t.energy}/10</span>
-        <span class="badge badge-purple">${esc(t.key_label)}</span>
-        <span class="badge badge-blue">${Math.round(t.bpm)} BPM</span>
-        <span class="badge badge-cyan">${t.clip_bars || 8} bars</span>
-      </div>
-      <div class="mp-beats" id="mp-beats">${beats}</div>
-      <div class="mp-meters">
-        ${meterHtml("Harmonic complexity", t.harmonic_complexity, "var(--c5)")}
-        ${meterHtml("Chord richness", t.chord_richness, "var(--c1)")}
-        ${meterHtml("Harmonic motion", t.harmonic_motion, "var(--c2)")}
-        ${meterHtml("Drum complexity", t.drum_complexity, "var(--c3)")}
-      </div>
-      <div class="mp-tags">
-        <span class="badge">${esc(t.harmony_tag)}</span>
-        <span class="badge ${t.groove_style === "breakbeat" ? "badge-purple" : t.groove_style === "four_on_floor" ? "badge-blue" : ""}">${esc(t.rhythm_tag)}</span>
-        ${t.groove_style === "breakbeat" ? `<span class="badge badge-purple">Breakbeat ${Math.round(t.breakbeat_score || 0)}%</span>` : t.groove_style === "four_on_floor" ? `<span class="badge badge-blue">4/4 Pulse ${Math.round(t.four_on_floor || 0)}%</span>` : ""}
-        <span class="badge">Darkness ${Math.round(t.modal_darkness)}%</span>
-      </div>
-      <div class="mp-near">
-        <div class="mp-near-head">Most similar tracks</div>
-        ${nearHtml}
-      </div>`;
-    panel.hidden = false;
+  function isTouchEvent(ev) {
+    if (ev && ev.pointerType === "touch") return true;
+    return typeof window !== "undefined" && window.matchMedia && window.matchMedia("(pointer: coarse)").matches;
   }
 
   function bindEvents() {
     let dragging = false;
     let moved = false;
+    let activePointerType = "mouse";
     let sx = 0, sy = 0, zx = 0, zy = 0;
 
-    svg.addEventListener("pointerdown", (ev) => {
+    mapWrap.addEventListener("pointerdown", (ev) => {
+      if (ev.target.closest("#map-floating-hud")) return;
+      if (ev.target.closest(".map-group-label") || ev.target.closest(".era-spine-hit")) return;
       if (ev.button !== 0 && ev.pointerType === "mouse") return;
       dragging = true;
       moved = false;
+      activePointerType = ev.pointerType || "mouse";
       sx = ev.clientX;
       sy = ev.clientY;
       zx = zoom.x;
       zy = zoom.y;
     });
+
     window.addEventListener("pointermove", (ev) => {
-      if (!dragging) return;
-      const dx = ev.clientX - sx;
-      const dy = ev.clientY - sy;
-      if (!moved && Math.hypot(dx, dy) > 4) moved = true;
-      if (moved) {
-        zoom.x = zx + dx;
-        zoom.y = zy + dy;
-        applyTransform();
+      if (dragging) {
+        const dx = ev.clientX - sx;
+        const dy = ev.clientY - sy;
+        const thresh = activePointerType === "touch" ? DRAG_TOUCH_PX : DRAG_MOUSE_PX;
+        if (!moved && Math.hypot(dx, dy) > thresh) {
+          moved = true;
+          mapWrap.classList.add("is-dragging");
+        }
+        if (moved) {
+          zoom.x = zx + dx;
+          zoom.y = zy + dy;
+          paintCanvas();
+          drawFloatingLabels();
+        }
+        return;
       }
-    });
-    window.addEventListener("pointerup", () => {
-      if (dragging && !moved) {
-        // Click empty map canvas clears track selection
+      // Hover detection when inside mapWrap
+      if (mapWrap.hidden || !ev.target || !mapWrap.contains(ev.target) || ev.target.closest("#map-floating-hud")) {
+        if (hoverId !== null) {
+          hoverId = null;
+          mapWrap.classList.remove("has-hover");
+          paintCanvas();
+        }
+        return;
       }
-      dragging = false;
+      const [px, py] = pointerLocalXY(ev);
+      const hitMax = isTouchEvent(ev) ? HIT_TOUCH_PX : HIT_MOUSE_PX;
+      const hit = findNearestVisibleNode(px, py, hitMax);
+      const nextHov = hit ? hit.id : null;
+      if (nextHov !== hoverId) {
+        hoverId = nextHov;
+        mapWrap.classList.toggle("has-hover", Boolean(hoverId));
+        paintCanvas();
+      }
     });
 
-    svg.addEventListener("click", (ev) => {
+    window.addEventListener("pointerup", () => {
+      dragging = false;
+      mapWrap.classList.remove("is-dragging");
+    });
+
+    mapWrap.addEventListener("pointerleave", () => {
+      if (hoverId !== null) {
+        hoverId = null;
+        mapWrap.classList.remove("has-hover");
+        paintCanvas();
+      }
+    });
+
+    mapWrap.addEventListener("click", (ev) => {
       if (moved) return;
-      if (ev.target === svg) {
+      if (ev.target.closest("#map-floating-hud")) return;
+      if (ev.target.closest(".map-group-label") || ev.target.closest(".era-spine-hit")) return;
+
+      const [px, py] = pointerLocalXY(ev);
+      const hitMax = isTouchEvent(ev) ? HIT_TOUCH_PX : HIT_MOUSE_PX;
+      const hit = findNearestVisibleNode(px, py, hitMax);
+      if (hit) {
+        selectedId = hit.id;
+        if (window.BTMM_PLAYER) window.BTMM_PLAYER.select(hit.id, { silent: true });
+        if (hooks && hooks.onTap) hooks.onTap(hit.id);
+        paint();
+      } else {
         selectedId = null;
+        if (window.BTMM_PLAYER) window.BTMM_PLAYER.select(null, { silent: true });
         if (activeClusterId || activeEraId) {
           activeClusterId = null;
           activeEraId = null;
-          drawFloatingLabels();
         }
         paint();
       }
     });
 
-    svg.addEventListener("wheel", (ev) => {
+    mapWrap.addEventListener("wheel", (ev) => {
       ev.preventDefault();
-      const rect = svg.getBoundingClientRect();
-      const px = ev.clientX - rect.left;
-      const py = ev.clientY - rect.top;
+      const [px, py] = pointerLocalXY(ev);
+      if (layout === "era" && Math.abs(ev.deltaX) > Math.abs(ev.deltaY)) {
+        zoom.x -= ev.deltaX;
+        paintCanvas();
+        drawFloatingLabels();
+        return;
+      }
       const factor = ev.deltaY < 0 ? 1.14 : 1 / 1.14;
-      const nextK = Math.max(0.75, Math.min(5.0, zoom.k * factor));
+      const nextK = Math.max(0.38, Math.min(5.0, zoom.k * factor));
       const ratio = nextK / zoom.k;
       zoom.x = px - (px - zoom.x) * ratio;
       zoom.y = py - (py - zoom.y) * ratio;
       zoom.k = nextK;
-      applyTransform();
+      paintCanvas();
+      drawFloatingLabels();
     }, { passive: false });
 
-    panel.addEventListener("click", (ev) => {
-      if (ev.target.closest("#mp-close")) {
-        selectedId = null;
+    if (starBtn) {
+      starBtn.addEventListener("click", (ev) => {
+        ev.stopPropagation();
+        starFilter = !starFilter;
         paint();
-        return;
-      }
-      const pBtn = ev.target.closest("[data-panel-play]");
-      if (pBtn) {
-        hooks.onTap(pBtn.getAttribute("data-panel-play"));
-        return;
-      }
-      const jBtn = ev.target.closest("[data-jump-track]");
-      if (jBtn) {
-        const nid = jBtn.getAttribute("data-jump-track");
-        focus(nid);
-        hooks.onTap(nid);
-      }
-    });
-
-    legendEl.addEventListener("click", (ev) => {
-      const cBtn = ev.target.closest("[data-cluster]");
-      if (cBtn) {
-        const cid = cBtn.getAttribute("data-cluster");
-        setClusterFilter(activeClusterId === cid ? null : cid);
-        return;
-      }
-      if (ev.target.closest("[data-reset-era]")) {
-        activeEraId = null;
-        drawFloatingLabels();
-        paint();
-      }
-    });
+      });
+    }
 
     if (typeof ResizeObserver !== "undefined") {
       const ro = new ResizeObserver((entries) => {
@@ -598,51 +717,75 @@
         if (resizeRaf) cancelAnimationFrame(resizeRaf);
         resizeRaf = requestAnimationFrame(() => {
           resizeRaf = 0;
-          vw = Math.floor(cr.width);
-          vh = Math.floor(cr.height);
-          svg.setAttribute("viewBox", `0 0 ${vw} ${vh}`);
-          tweenToTargets(false);
-          positionGroupLabels();
+          relayout(false);
         });
       });
-      const mapWrapEl = document.getElementById("map");
-      if (mapWrapEl) ro.observe(mapWrapEl);
+      ro.observe(mapWrap);
     }
+  }
+
+  function resizeCanvas() {
+    if (!mapWrap || !canvas || !svg) return;
+    vw = Math.max(320, mapWrap.clientWidth || 1000);
+    vh = Math.max(300, mapWrap.clientHeight || 680);
+    dpr = typeof window !== "undefined" ? Math.min(2, window.devicePixelRatio || 1) : 1;
+    canvas.width = Math.floor(vw * dpr);
+    canvas.height = Math.floor(vh * dpr);
+    canvas.style.width = `${vw}px`;
+    canvas.style.height = `${vh}px`;
+    svg.setAttribute("viewBox", `0 0 ${vw} ${vh}`);
+  }
+
+  function relayout(animate = false) {
+    resizeCanvas();
+    computeTargetPositions();
+    if (layout === "era" && eraLayout) zoom = { ...eraLayout.defaultZoom };
+    tweenToTargets(animate);
+    drawFloatingLabels();
   }
 
   function focus(tid) {
     if (!byId.has(tid)) return;
     selectedId = tid;
+    if (window.BTMM_PLAYER) window.BTMM_PLAYER.select(tid, { silent: true });
     paint();
   }
 
   function setLayout(nextLay, animate = true) {
-    if (nextLay !== "similarity" && nextLay !== "era") return;
-    layout = nextLay;
+    const norm = normLayoutName(nextLay);
+    layout = norm;
     activeClusterId = null;
     activeEraId = null;
-    nodes.forEach((n) => {
-      const [nx, ny] = normPosFor(n.id, layout);
-      const [tx, ty] = placeOnScreen(nx, ny);
-      n.tx = tx;
-      n.ty = ty;
-    });
-    edges = buildEdges(layout);
-    drawFloatingLabels();
+    resizeCanvas();
+    computeTargetPositions();
+    if (layout === "era" && eraLayout) {
+      zoom = { ...eraLayout.defaultZoom };
+    } else {
+      zoom = { k: 1, x: 0, y: 0 };
+    }
+    buildEdges();
     tweenToTargets(animate);
+    drawFloatingLabels();
     paint();
     if (hooks && hooks.onLayoutChange) hooks.onLayoutChange(layout);
   }
 
   function setClusterFilter(cid) {
     activeClusterId = cid;
-    drawFloatingLabels();
     paint();
+  }
+
+  function firstVisibleTrackId() {
+    for (let i = 0; i < nodes.length; i++) {
+      if (isMatch(nodes[i].t)) return nodes[i].id;
+    }
+    return tracks[0] ? tracks[0].id : null;
   }
 
   function init(cfg) {
     hooks = cfg;
     tracks = cfg.tracks || [];
+    eras = cfg.eras || [];
     byId = cfg.byId;
     erasById = cfg.erasById;
     styleGroups = cfg.styleGroups || [];
@@ -650,58 +793,32 @@
     trackMap = cfg.trackMap || {};
     trackNear = cfg.trackNear || {};
 
+    mapWrap = document.getElementById("map");
+    canvas = document.getElementById("map-canvas");
     svg = document.getElementById("map-svg");
-    panel = document.getElementById("map-panel");
-    legendEl = document.getElementById("map-legend");
-    if (!svg || !panel) return;
+    hoverPill = document.getElementById("map-hover-pill");
+    starBtn = document.getElementById("star-filter-btn");
+    starEmptyEl = document.getElementById("star-empty-msg");
+    if (!mapWrap || !canvas || !svg) return;
 
-    const mapWrap = document.getElementById("map");
-    vw = Math.max(320, (mapWrap && mapWrap.clientWidth) || 1000);
-    vh = Math.max(300, (mapWrap && mapWrap.clientHeight) || 680);
-    svg.setAttribute("viewBox", `0 0 ${vw} ${vh}`);
+    ctx = canvas.getContext("2d");
+    samplePalette();
+    resizeCanvas();
+
     svg.innerHTML = "";
-
-    vp = elSvg("g", "map-vp");
-    edgeG = elSvg("g", "map-edges");
-    nodeG = elSvg("g", "map-nodes");
     groupG = elSvg("g", "map-groups");
-    vp.append(edgeG, nodeG, groupG);
-    svg.appendChild(vp);
+    ringG = elSvg("g", "map-rings");
+    svg.append(ringG, groupG);
 
     nodes = tracks.map((t) => {
-      const [nx, ny] = normPosFor(t.id, layout);
-      const [x, y] = placeOnScreen(nx, ny);
-      const g = elSvg("g", "map-node");
-      const hitEl = elSvg("circle", "map-hit");
-      const ringEl = elSvg("circle", "map-ring");
-      ringEl.setAttribute("r", String(NODE_R + 4.5));
-      const dotEl = elSvg("circle", "map-dot");
-      dotEl.setAttribute("r", String(NODE_R));
-      const lblEl = elSvg("text", "map-lbl");
-      lblEl.setAttribute("x", "0");
-      lblEl.setAttribute("y", String(NODE_R + 13));
-      lblEl.setAttribute("text-anchor", "middle");
-      lblEl.textContent = t.shortTitle || t.title;
-      g.append(hitEl, ringEl, dotEl, lblEl);
-
-      const n = { id: t.id, t, g, hitEl, ringEl, dotEl, lblEl, x, y, sx: x, sy: y, tx: x, ty: y };
-      g.addEventListener("pointerenter", () => { hoverId = t.id; sizeTapAreas(); });
-      g.addEventListener("pointerleave", () => { hoverId = null; sizeTapAreas(); });
-      g.addEventListener("click", (ev) => {
-        ev.stopPropagation();
-        selectedId = t.id;
-        hooks.onTap(t.id);
-        paint();
-      });
-      nodeG.appendChild(g);
-      return n;
+      const [x, y] = vibeTarget(t.id);
+      return { id: t.id, t, x, y, sx: x, sy: y, tx: x, ty: y };
     });
     nodeById = new Map(nodes.map((n) => [n.id, n]));
 
-    edges = buildEdges(layout);
-    drawFloatingLabels();
-    applyPositions();
-    applyTransform();
+    computeTargetPositions();
+    nodes.forEach((n) => { n.x = n.tx; n.y = n.ty; });
+    buildEdges();
     bindEvents();
     paint();
   }
@@ -713,23 +830,13 @@
     setLayout,
     getLayout: () => layout,
     selected: () => selectedId,
+    setSelectedSilent(tid) { selectedId = tid; paint(); },
+    firstVisibleTrackId,
     setFilter(setOrNull) { filterSet = setOrNull; paint(); },
     setClusterFilter,
     setColorMode(mode) { colorMode = mode; paint(); },
     getColorMode: () => colorMode,
-    stepBeat(tid, beatIdx) {
-      if (!panel || panel.hidden || tid !== selectedId) return;
-      const beats = panel.querySelectorAll(".mp-beat");
-      beats.forEach((b, i) => b.classList.toggle("on", i === beatIdx));
-    },
-    relayout() {
-      const mapWrap = document.getElementById("map");
-      if (!mapWrap || !svg) return;
-      vw = Math.max(320, mapWrap.clientWidth || vw);
-      vh = Math.max(300, mapWrap.clientHeight || vh);
-      svg.setAttribute("viewBox", `0 0 ${vw} ${vh}`);
-      tweenToTargets(false);
-      positionGroupLabels();
-    },
+    refreshTheme() { samplePalette(); paint(); },
+    relayout,
   };
 })();

@@ -1,24 +1,20 @@
 # Bill Tribble Music Map
 
-Interactive static web application visualizing how Bill's music-making evolved from 2013 to 2026 across **229 unique projects** (`1,543` deduplicated MIDI clips and `448` FFT-YIN pitched audio parts).
+Interactive static web application visualizing Bill Tribble's solo and collaborative music catalog from 2001 to 2026 across 8 Vibe clusters, an artistic Energy-Wave Era timeline, and harmonic/groove analytics.
 
-- **Live site:** https://billtribble.github.io/music-map/
-- **Stack:** Vanilla HTML / CSS / SVG / WebAudio (`data.js` built from corpus JSON distributions using pure Python 3 stdlib; zero external CDNs).
+- **Live site:** [https://billtribble.github.io/music-map/](https://billtribble.github.io/music-map/)
+- **Audio hosting:** Lightweight Git repository (`< 2 MB`) backed by GitHub Releases (`audio-previews-v1` for 8-bar beat-aligned previews and `archive-downloads-v1` for pre-2015 full-length 320 kbps MP3 & lossless FLAC downloads).
+- **Stack:** Vanilla HTML / CSS / Canvas + SVG / WebAudio (`js/data.js` generated from 559 deduplicated catalog tracks & MIDI analysis; zero framework dependencies).
 
 ## Interactive Views
 
-### Harmony & Microtonal Deep-Dive
-1. **Timeline Animator (`#timeline-player`)** — Animated, sortable, drag/swipeable comparator pairing a side-by-side 8-axis radar + 10 color scale-degree butterfly SVG with Circle-of-Fifths root gravity, synced to a 4-bar quantized WebAudio deck playing 24 bar-aligned groove clips (`8–16` bars, `audio/*.mp3`) cleanly on Beat 1 bar boundaries.
-2. **Chord & Dyad Spectrum (`#chord-quality`)** — Separates dyads (`P5`, `P4`, `3rd/6th`, `2nd/b7`, `b2/M7`, `tritone`) from tertian, suspended, seventh (`maj7`, `min7`, `dom7`), extended (`9th/11th`), and quartal/cluster voicings across all 12 eras.
-3. **Root Motion & Wheel (`#root-motion`)** — Tracks harmonic progression intervals (`±1` Phrygian slides, `±2` whole-step planing, `±3`/`±4` mediants, `±5` fourths/fifths, `0 st` pedal repeat) alongside an interactive 12-semitone transition wheel.
-4. **12-Degree Modal Heatmap (`#modal-heatmap`)** — Compares tonic, color degrees (`b2`, `2`, `b3`, `3`, `6`, `b7`, `7`), and audio-vs-MIDI modality across eras.
-5. **Voicing Spread & Keyboard (`#voicing-spread`)** — Plots chord pitch ranges (`low_p25–high_p75`, `low_p50–high_p50`) and semitone spans (`p10–p90`) over a `C1–C6` keyboard staff.
-6. **JI & Gamelan Tunings (`#ji-gamelan`)** — Surfaces Garage-era microtonal (`Retune for Live`, `Retune microtonal simple JI`, `AfroDJMac Tuned 808 JI`, `Imposcar micro 6th chord`) and Balinese *Semaradana* / Gamelan usage, acoustic cent deviations from 12-TET (`36,761` audio notes), and an interactive `0–1200¢` WebAudio octave cent-ruler.
-7. **Era-vs-Era Comparator (`#era-compare`)** — Combined 8-axis harmonic radar + 10 color scale-degree butterfly SVG alongside Circle-of-Fifths root-gravity comparison.
+### Maps
+1. **Vibe Map (`#vibe` / `#similarity`)** — 8-cluster sonic similarity atlas with Euclidean nearest-node hit-testing, Starred track filter (`★`), floating cluster pills, and collapsible persistent audio preview card.
+2. **Era Timeline (`#era`)** — Artistic Energy-Wave timeline mapping chronological eras (`2001–2026`) against sonic energy & groove intensity (horizontal on desktop, vertical on mobile).
 
-### Track & Sound Evolution
-8. **Workflow (`#workflow`)** — MIDI vs. audio pitched notes and track balance.
-9. **Groove & Tempo (`#groove`)** — Drum/bass/pitched quantization rates, tempo IQR bands, and syncopation.
-10. **Melody & Space (`#melody`)** — Stepwise motion, leap-then-step gap-fill, register shifts, and rest space.
-11. **Audio Expressiveness (`#audio`)** — Acoustic audio source mix, legato phrasing, and pitch vibrato/bend depth.
-12. **Synths & FX (`#palette`)** — Signature instruments and effects per era/phase.
+### Harmony & Evolution Analysis
+3. **Macro Harmony & Energy (`#macro-harmony`)** — Harmonic complexity, drum complexity, modal darkness, and Mixed In Key energy across eras and phases.
+4. **Timeline Animator (`#timeline-player`)** — Bar-quantized audio deck synced to an animated 8-axis sonic radar and Circle of Fifths key gravity wheel.
+5. **Era Comparator (`#era-compare`)** — Side-by-side comparison of any two eras or phases.
+6. **Chord & Dyad Spectrum (`#chord-quality`)**, **Root Motion & Wheel (`#root-motion`)**, **12-Degree Modal Heatmap (`#modal-heatmap`)**, **Voicing Spread (`#voicing-spread`)**, and **JI & Gamelan Tunings (`#ji-gamelan`)**.
+7. **Workflow (`#workflow`)**, **Groove & Tempo (`#groove`)**, **Melody & Space (`#melody`)**, **Audio Expressiveness (`#audio`)**, and **Synths & FX Palette (`#palette`)**.

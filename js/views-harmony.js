@@ -326,7 +326,7 @@
               <div class="track-mini-title">${esc(t.title)}</div>
               <div class="track-mini-sub">${esc(t.key_label)} · ${Math.round(t.bpm)} BPM</div>
             </div>
-            <button type="button" class="badge badge-amber" data-focus-map="${esc(t.id)}" title="Inspect on Similarity Map">E${t.energy}/10</button>
+            <button type="button" class="badge badge-amber" data-focus-map="${esc(t.id)}" title="Inspect on ${(window.BTMM_MODE_LABELS && window.BTMM_MODE_LABELS.vibe) || "Vibe"} Map">E${t.energy}/10</button>
           </div>
           <div class="track-mini-bars">
             <div class="tbar-row"><span>Harmonic</span><div class="tbar-track"><div class="tbar-fill" style="width:${t.harmonic_complexity}%;background:var(--c5)"></div></div><strong>${Math.round(t.harmonic_complexity)}</strong></div>
@@ -354,7 +354,7 @@
         <div id="mh-stage-wrap" class="svg-stage"><svg viewBox="0 0 ${W} ${H}" width="${W}" height="${H}">${svg}</svg></div>
       </div>
       <div class="subpanel">
-        <div class="subpanel-title"><span>Tracks in ${esc(d.label)}</span><span class="muted">Click any E-badge to jump to the Similarity Map</span></div>
+        <div class="subpanel-title"><span>Tracks in ${esc(d.label)}</span><span class="muted">Click any E-badge to jump to the ${(window.BTMM_MODE_LABELS && window.BTMM_MODE_LABELS.vibe) || "Vibe"} Map</span></div>
         <div class="track-card-grid">${trackCards}</div>
       </div>`;
   }

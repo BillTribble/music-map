@@ -1,26 +1,22 @@
 #!/usr/bin/env python3
-"""Mixed In Key + DSP Macro Harmonic & Drum Analysis + Similarity/Era Node Map Generator.
+"""DSP Macro Harmonic, Drum, Dark Ambient & Guitar/Vocal Analysis + 8-Cluster Vibe Map.
 
-Reads full source masters (never mutating original files) to extract:
-1. MIK Energy (1-10) via Collection10.mikdb / ID3 tags / mik_analyze.py (staged) / DJVibes calibrated MIK model.
-2. Accurate BPM & Camelot Key (Krumhansl-Schmuckler on Harmonic STFT chromagram or MIK).
-3. Macro Harmonic Complexity (0-100): chord richness, harmonic motion, modal darkness, microtonal shimmer.
-4. Drum & Rhythm Complexity (0-100): percussive share, onset density, off-beat syncopation/entropy, 4/4 pulse clarity.
-5. Agglomerative style clustering + t-SNE 2D similarity coordinates + 16-Era chronological layout.
-
-Usage:
-  /opt/homebrew/anaconda3/bin/python scripts/analyze_corpus_map.py \
-      --corpus-root "<corpus>" --archive-root "<archive>"
+Supports two execution modes:
+  1. --reanalyze-local: Re-runs real STFT/HPSS DSP & 8-cluster Vibe layout on local
+     audio/*.mp3 clips merged with existing js/data.js phases/eras/metadata.
+  2. --manifest catalog_manifest.json: Runs full-corpus DSP analysis across all
+     discovered tracks in parallel using ThreadPoolExecutor.
 """
 
 from __future__ import annotations
 
 import argparse
+from concurrent.futures import ThreadPoolExecutor, as_completed
 import json
 import math
 import os
+import re
 import shutil
-import sqlite3
 import subprocess
 import sys
 from pathlib import Path
@@ -32,18 +28,12 @@ from sklearn.manifold import TSNE
 from sklearn.metrics import silhouette_score
 from sklearn.preprocessing import StandardScaler
 
-ROOT = Path(__file__).resolve().parent.parent
-SCRIPTS_DIR = ROOT / "scripts"
+SCRIPTS_DIR = Path(__file__).resolve().parent
+ROOT = SCRIPTS_DIR.parent
 sys.path.insert(0, str(SCRIPTS_DIR))
-import prepare_audio as pa  # noqa: E402
+import release_catalog as rc  # noqa: E402
 
-DJVIBES_DIR = Path.home() / "Sites" / "DJVibes"
-sys.path.insert(0, str(DJVIBES_DIR))
-import dsp_models  # noqa: E402
-
-MIK_DB = Path.home() / "Library" / "Application Support" / "Mixedinkey" / "Collection10.mikdb"
-MIK_SCRIPT = Path.home() / ".agents" / "skills" / "dj-spotify-pipeline" / "scripts" / "mik_analyze.py"
-
+SR = 22050
 NOTE_PC_MAJOR = ["C", "Db", "D", "Eb", "E", "F", "F#", "G", "Ab", "A", "Bb", "B"]
 NOTE_PC_MINOR = ["Cm", "C#m", "Dm", "Ebm", "Em", "Fm", "F#m", "Gm", "Abm", "Am", "Bbm", "Bm"]
 CAMELOT_MAJOR = ["8B", "3B", "10B", "5B", "12B", "7B", "2B", "9B", "4B", "11B", "6B", "1B"]
@@ -52,26 +42,24 @@ KS_MAJOR = np.array([6.35, 2.23, 3.48, 2.33, 4.38, 4.09, 2.52, 5.19, 2.39, 3.66,
 KS_MINOR = np.array([6.33, 2.68, 3.52, 5.38, 2.60, 3.53, 2.54, 4.75, 3.98, 2.69, 3.34, 3.17], dtype=np.float64)
 
 ERA_ORDER = [
-    "present_ambient",
-    "present_electro",
-    "hd_2005",
-    "bands_archive",
-    "archive_2013_18",
-    "nihon_forever",
-    "ep_concepts",
-    "le_garage",
-    "psychedailies",
-    "archive_2018_23",
-    "spirit_guides",
-    "lucid_crystal",
-    "remixes_commissions",
-    "sketches_2024_25",
-    "ecstatic_wave",
-    "sketches_2026",
+    "present_ambient", "present_electro", "hd_2005", "bands_archive",
+    "archive_2013_18", "nihon_forever", "ep_concepts", "le_garage",
+    "psychedailies", "archive_2018_23", "spirit_guides", "lucid_crystal",
+    "remixes_commissions", "sketches_2024_25", "ecstatic_wave", "sketches_2026",
 ]
-
-# Archetype clues from project folders for BPM octave & fallback disambiguation only (features remain pure DSP/MIK)
-DNB_HINTS = {"junglemassive", "fireworks", "fell in love", "serpentine", "remixes_commissions_1", "psychedailies_1", "psychedailies_3", "hd_2005_3"}
+ERA_DEFAULT_YEAR = {
+    "present_ambient": 2002, "present_electro": 2004, "hd_2005": 2005, "bands_archive": 2010,
+    "archive_2013_18": 2015, "nihon_forever": 2018, "ep_concepts": 2019, "le_garage": 2023,
+    "psychedailies": 2021, "archive_2018_23": 2021, "spirit_guides": 2025, "lucid_crystal": 2026,
+    "remixes_commissions": 2023, "sketches_2024_25": 2025, "ecstatic_wave": 2025, "sketches_2026": 2026,
+}
+PRE_2015_OVERRIDES = {
+    **{f"present_ambient_{i}": 2002 + (i > 2) for i in range(1, 5)},
+    **{f"present_electro_{i}": 2003 + (i > 2) for i in range(1, 6)},
+    **{f"hd_2005_{i}": 2005 for i in range(1, 5)},
+    "bands_archive_5": 2009, "bands_archive_6": 2014,
+}
+SKETCH_RE = re.compile(r"\b(sketch|ruff|idea|test|demo|loop)\b", re.IGNORECASE)
 
 
 def clamp(v: float, lo: float = 0.0, hi: float = 100.0) -> float:
@@ -82,73 +70,44 @@ def decode_audio(ffmpeg_bin: str, src: Path, start_s: float = 0.0, dur_s: float 
     cmd = [ffmpeg_bin, "-nostdin", "-v", "error"]
     if start_s > 0:
         cmd += ["-ss", f"{start_s:.2f}"]
-    cmd += ["-t", f"{dur_s:.2f}", "-i", str(src), "-vn", "-ac", "1", "-ar", str(dsp_models.SR), "-f", "f32le", "-"]
-    r = subprocess.run(cmd, capture_output=True, check=True)
-    return np.frombuffer(r.stdout, dtype=np.float32)
+    cmd += ["-t", f"{dur_s:.2f}", "-i", str(src), "-vn", "-ac", "1", "-ar", str(SR), "-f", "f32le", "-"]
+    res = subprocess.run(cmd, capture_output=True, check=True)
+    return np.frombuffer(res.stdout, dtype=np.float32)
 
 
-def lookup_mik_db() -> dict[str, dict]:
-    out = {}
-    if not MIK_DB.exists():
-        return out
-    try:
-        con = sqlite3.connect(f"file:{MIK_DB}?mode=ro", uri=True)
-        for name, tempo, key, energy in con.execute("SELECT ZNAME, ZTEMPO, ZKEY, ZENERGY FROM ZSONG").fetchall():
-            if name and energy is not None:
-                k = "".join(c for c in name.lower() if c.isalnum())
-                out[k] = {"tempo": tempo, "key": key, "energy": float(energy)}
-        con.close()
-    except Exception:
-        pass
-    return out
+def estimate_bpm_and_energy(y: np.ndarray) -> tuple[float, int, float, float]:
+    """Standalone energy (1-10), BPM, pulse clarity, and onset rate from audio PCM."""
+    if len(y) < SR * 2:
+        return 110.0, 4, 0.25, 2.0
+    hop = 512
+    nfr = 1 + (len(y) - 1024) // hop
+    win = np.hanning(1024).astype(np.float32)
+    idx = np.arange(1024)[None, :] + hop * np.arange(nfr)[:, None]
+    S = np.abs(np.fft.rfft(y[idx] * win, axis=1)).astype(np.float32)
+    flux = np.maximum(0.0, np.diff(np.log1p(10.0 * S), axis=0, prepend=S[:1])).mean(axis=1)
+    fps = SR / hop
+    # Autocorrelation tempo search (60..185 BPM)
+    ac = np.correlate(flux - flux.mean(), flux - flux.mean(), mode="full")[len(flux) - 1 :]
+    ac = ac / (ac[0] + 1e-9)
+    lags = np.arange(int(fps * 60.0 / 185.0), min(len(ac), int(fps * 60.0 / 60.0) + 1))
+    if len(lags) == 0:
+        bpm, p_clar = 110.0, 0.25
+    else:
+        best_lag = int(lags[int(np.argmax(ac[lags]))])
+        bpm = round(60.0 * fps / max(1, best_lag), 2)
+        p_clar = float(clamp(ac[best_lag], 0.0, 1.0))
+    rms = float(np.sqrt(np.mean(y * y) + 1e-12))
+    rms_db = 20.0 * math.log10(max(1e-6, rms))
+    thr = float(flux.mean() + 0.6 * flux.std())
+    onsets = np.flatnonzero((flux[1:-1] > flux[:-2]) & (flux[1:-1] >= flux[2:]) & (flux[1:-1] > thr))
+    onset_rate = float(len(onsets) / max(1.0, len(y) / SR))
+    energy = int(round(clamp(1.0 + (rms_db + 26.0) / 2.6 + p_clar * 2.2 + min(2.0, onset_rate / 4.0), 1.0, 10.0)))
+    return bpm, energy, round(p_clar, 3), round(onset_rate, 2)
 
 
-def read_mutagen_mik(path: Path) -> dict:
-    try:
-        import mutagen
-        mf = mutagen.File(str(path), easy=False)
-        if not mf or not mf.tags:
-            return {}
-        info = {}
-        for k, v in mf.tags.items():
-            ks = str(k)
-            val = v.text[0] if hasattr(v, "text") and v.text else str(v)
-            if "EnergyLevel" in ks:
-                try:
-                    info["energy"] = int(float(str(val).strip()))
-                except Exception:
-                    pass
-            elif ks == "TKEY":
-                info["key"] = str(val).strip()
-            elif ks == "TBPM":
-                try:
-                    info["bpm"] = float(str(val).strip())
-                except Exception:
-                    pass
-            elif ks.startswith("COMM") and "energy" not in info:
-                import re
-                m = re.match(r"^\s*([1-9]|10)\b", str(val))
-                if m:
-                    info["energy"] = int(m.group(1))
-        return info
-    except Exception:
-        return {}
-
-
-def can_run_mik_gui() -> bool:
-    try:
-        subprocess.run(["open", "-g", "-a", "System Events"], capture_output=True, timeout=4)
-        r = subprocess.run(
-            ["osascript", "-e", 'tell application "System Events" to count processes'],
-            capture_output=True, text=True, timeout=6
-        )
-        return r.returncode == 0
-    except Exception:
-        return False
-
-
-def compute_drum_complexity(perc_share: float, perc_onset_rate: float, gap_cv: float, gap_ent: float, high_low_ratio: float, breakbeat_score: float = 0.0) -> float:
-    """Single canonical formula for 0..100 Drum Complexity, gating out beatless ambient washes."""
+def compute_drum_complexity(
+    perc_share: float, perc_onset_rate: float, gap_cv: float, gap_ent: float, high_low_ratio: float, breakbeat_score: float = 0.0
+) -> float:
     s_perc = clamp(perc_share / 0.36 * 100.0)
     s_rate = clamp(perc_onset_rate / 7.5 * 100.0)
     s_sync = clamp((gap_cv / 1.15 * 50.0) + (clamp(gap_ent * 100.0, 0.0, 100.0) * 0.50))
@@ -161,28 +120,22 @@ def compute_drum_complexity(perc_share: float, perc_onset_rate: float, gap_cv: f
     return round(clamp(base_dc + brk_lift), 1)
 
 
-def compute_groove_metrics(P: np.ndarray, P_p: np.ndarray, freqs: np.ndarray, fps: float, bpm_est: float, perc_share: float, gap_ent: float) -> dict:
-    """Fold bar-aligned 16-step kick/snare/hat profiles to separate 4/4 pulses from breakbeats."""
+def compute_groove_metrics(
+    P: np.ndarray, P_p: np.ndarray, freqs: np.ndarray, fps: float, bpm_est: float, perc_share: float, gap_ent: float
+) -> dict:
     if perc_share < 0.055 or P.shape[1] < 32:
-        return {
-            "four_on_floor": 0.0,
-            "breakbeat_score": 0.0,
-            "chop_var": 0.0,
-            "groove_style": "ambient",
-        }
+        return {"four_on_floor": 0.0, "breakbeat_score": 0.0, "chop_var": 0.0, "groove_style": "ambient"}
 
     def band_flux(lo_hz: float, hi_hz: float, use_total_mix: bool = False) -> np.ndarray:
         m = (freqs >= lo_hz) & (freqs <= hi_hz)
         src = (0.55 * P_p[m] + 0.45 * P[m]) if use_total_mix else P_p[m]
         env = np.sqrt(src.sum(axis=0) + 1e-12)
-        fl = np.maximum(0.0, np.diff(np.log1p(14.0 * env), prepend=0.0))
-        return fl
+        return np.maximum(0.0, np.diff(np.log1p(14.0 * env), prepend=0.0))
 
     fl_k = band_flux(35.0, 155.0, use_total_mix=True)
     fl_sn = band_flux(170.0, 2400.0, use_total_mix=False)
     fl_hh = band_flux(2400.0, 9000.0, use_total_mix=False)
 
-    # Focus on the most percussive ~45s contiguous section to avoid quiet intro dilution & drift
     seg_len = min(len(fl_k), max(64, int(round(45.0 * fps))))
     tot_p = np.sqrt(P_p[(freqs >= 140.0) & (freqs <= 9000.0)].sum(axis=0) + 1e-12)
     if len(tot_p) > seg_len:
@@ -193,69 +146,45 @@ def compute_groove_metrics(P: np.ndarray, P_p: np.ndarray, freqs: np.ndarray, fp
     best_e = best_s + seg_len
 
     bar_sec = 240.0 / max(55.0, min(200.0, float(bpm_est)))
-    bar_frames = max(16.0, bar_sec * fps)
-    block_frames = max(int(round(4.0 * bar_frames)), 32)
+    block_frames = max(int(round(4.0 * max(16.0, bar_sec * fps))), 32)
     n_blocks = max(1, (best_e - best_s) // block_frames)
-
-    K_acc = np.zeros(16, dtype=np.float64)
-    SN_acc = np.zeros(16, dtype=np.float64)
-    HH_acc = np.zeros(16, dtype=np.float64)
+    K_acc, SN_acc, HH_acc = np.zeros(16), np.zeros(16), np.zeros(16)
     block_sigs = []
 
     for bi in range(n_blocks):
-        a = best_s + bi * block_frames
-        b = min(best_e, a + block_frames)
-        t_rel = (np.arange(a, b) - a) / fps
-        step_idx = np.floor((t_rel / bar_sec) * 16.0).astype(int) % 16
-        Kb = np.bincount(step_idx, weights=fl_k[a:b], minlength=16).astype(np.float64)
-        SNb = np.bincount(step_idx, weights=fl_sn[a:b], minlength=16).astype(np.float64)
-        HHb = np.bincount(step_idx, weights=fl_hh[a:b], minlength=16).astype(np.float64)
+        a, b = best_s + bi * block_frames, min(best_e, best_s + (bi + 1) * block_frames)
+        step_idx = np.floor(((np.arange(a, b) - a) / fps / bar_sec) * 16.0).astype(int) % 16
         cnts = np.maximum(1.0, np.bincount(step_idx, minlength=16).astype(np.float64))
-        Kb /= cnts
-        SNb /= cnts
-        HHb /= cnts
+        Kb = np.bincount(step_idx, weights=fl_k[a:b], minlength=16) / cnts
+        SNb = np.bincount(step_idx, weights=fl_sn[a:b], minlength=16) / cnts
+        HHb = np.bincount(step_idx, weights=fl_hh[a:b], minlength=16) / cnts
         block_sigs.append(Kb / (Kb.sum() + 1e-9))
-
-        # Circularly align each 4-bar block's phase so slight tempo drift across long tracks never smears hits
         if bi == 0:
-            K_ref = Kb
-            shift = 0
+            K_ref, shift = Kb, 0
         else:
-            scores = [float(np.dot(np.roll(Kb, -sh), K_ref)) for sh in range(16)]
-            shift = int(np.argmax(scores))
+            shift = int(np.argmax([float(np.dot(np.roll(Kb, -sh), K_ref)) for sh in range(16)]))
         K_acc += np.roll(Kb, -shift)
         SN_acc += np.roll(SNb, -shift)
         HH_acc += np.roll(HHb, -shift)
 
-    # Subtract flat noise floor so sharp step transients stand out cleanly
     def sharpen(v: np.ndarray) -> np.ndarray:
         v0 = np.maximum(0.0, v - float(np.percentile(v, 20)))
         return v0 / (v0.sum() + 1e-9)
 
-    Kp = sharpen(K_acc)
-    SNp = sharpen(SN_acc)
-    HHp = sharpen(HH_acc)
-
-    # Rotate onto dominant quarter-note kick phase (0..3 -> beats 0, 4, 8, 12)
+    Kp, SNp, HHp = sharpen(K_acc), sharpen(SN_acc), sharpen(HH_acc)
     best_q_phase = int(np.argmax([float(Kp[[p, p + 4, p + 8, p + 12]].sum()) for p in range(4)]))
-    Kr = np.roll(Kp, -best_q_phase)
-    SNr = np.roll(SNp, -best_q_phase)
+    Kr, SNr = np.roll(Kp, -best_q_phase), np.roll(SNp, -best_q_phase)
 
     q_vals = np.sort(Kr[[0, 4, 8, 12]])
     q_total_share = float(q_vals.sum())
     q_min2_ratio = float((q_vals[0] + q_vals[1]) / (q_vals[2] + q_vals[3] + 1e-9))
     sync_kicks = float(Kr[[2, 3, 6, 7, 10, 11, 14, 15]].sum())
-
-    # Backbeat snare without co-occurring heavy kick vs ghost snare complexity
-    sn_active = int(np.sum(SNr > (0.35 * float(np.max(SNr)) + 1e-9)))
-    ghost_richness = clamp((sn_active - 2) / 6.0, 0.0, 1.0)
+    ghost_richness = clamp((int(np.sum(SNr > (0.35 * float(np.max(SNr)) + 1e-9))) - 2) / 6.0, 0.0, 1.0)
     hat_16_density = clamp(float(np.sum(HHp > 0.25 * float(np.max(HHp)) + 1e-9)) / 12.0, 0.0, 1.0)
-
-    if len(block_sigs) >= 2:
-        diffs = [1.0 - float(np.dot(block_sigs[i], block_sigs[i + 1]) / (np.linalg.norm(block_sigs[i]) * np.linalg.norm(block_sigs[i + 1]) + 1e-9)) for i in range(len(block_sigs) - 1)]
-        chop_var = float(np.mean(diffs))
-    else:
-        chop_var = 0.15
+    chop_var = float(np.mean([
+        1.0 - float(np.dot(block_sigs[i], block_sigs[i + 1]) / (np.linalg.norm(block_sigs[i]) * np.linalg.norm(block_sigs[i + 1]) + 1e-9))
+        for i in range(len(block_sigs) - 1)
+    ])) if len(block_sigs) >= 2 else 0.15
 
     rhythm_gate_4x4 = clamp((perc_share - 0.04) / 0.22, 0.0, 1.0)
     rhythm_gate_brk = clamp((perc_share - 0.04) / 0.14, 0.0, 1.0)
@@ -263,7 +192,6 @@ def compute_groove_metrics(P: np.ndarray, P_p: np.ndarray, freqs: np.ndarray, fp
         50.0 * clamp((q_total_share - 0.24) / 0.34, 0.0, 1.0)
         + 50.0 * clamp((q_min2_ratio - 0.22) / 0.58, 0.0, 1.0)
     ) * (1.0 - 0.45 * clamp((sync_kicks - 0.44) / 0.26, 0.0, 1.0))
-
     raw_brk = (
         34.0 * clamp((0.68 - q_min2_ratio) / 0.56, 0.0, 1.0)
         + 28.0 * clamp((sync_kicks - 0.34) / 0.28, 0.0, 1.0)
@@ -274,7 +202,6 @@ def compute_groove_metrics(P: np.ndarray, P_p: np.ndarray, freqs: np.ndarray, fp
 
     four_on_floor = round(clamp(rhythm_gate_4x4 * raw_4x4), 1)
     breakbeat_score = round(clamp(rhythm_gate_brk * raw_brk), 1)
-
     if four_on_floor >= breakbeat_score + 6.0 and four_on_floor >= 36.0:
         g_style = "four_on_floor"
     elif breakbeat_score >= four_on_floor + 4.0 and breakbeat_score >= 34.0:
@@ -283,65 +210,193 @@ def compute_groove_metrics(P: np.ndarray, P_p: np.ndarray, freqs: np.ndarray, fp
         g_style = "downtempo"
     else:
         g_style = "ambient"
+    return {"four_on_floor": four_on_floor, "breakbeat_score": breakbeat_score, "chop_var": round(chop_var, 3), "groove_style": g_style}
+
+
+def compute_transient_and_guitar_dsp(
+    P_h: np.ndarray, P_p: np.ndarray, P_tot: np.ndarray, freqs: np.ndarray, fps: float,
+    perc_onset_rate: float, sub_share: float, bass_share: float, mid_share: float,
+    high_share: float, modal_darkness: float, harmonic_complexity: float,
+    harmonic_motion: float, bpm: float, raw_dc: float, raw_f4: float, raw_brk: float,
+) -> dict:
+    """Section 5.1 Dark Ambient transient gate + Section 5.2 Guitar/Vocal harmonic detector."""
+    # 1. Transient sharpness / percussive crest over 1.5s local median + 110ms 6dB short-decay check
+    p_tot_env = np.sqrt(P_p.sum(axis=0) + 1e-12)
+    loc_med = median_filter(p_tot_env, size=max(15, int(round(1.5 * fps))))
+    perc_crest = float(np.percentile(p_tot_env, 95) / (float(np.median(loc_med)) + 1e-5))
+    pk_thr = float(np.percentile(p_tot_env, 82))
+    pks = np.flatnonzero((p_tot_env[1:-1] > p_tot_env[:-2]) & (p_tot_env[1:-1] >= p_tot_env[2:]) & (p_tot_env[1:-1] > pk_thr)) + 1
+    decay_fr = max(3, int(round(0.110 * fps)))
+    sd_hits = [
+        1.0 if float(np.min(p_tot_env[pk + 1 : pk + decay_fr + 1])) <= 0.55 * float(p_tot_env[pk]) else 0.0
+        for pk in pks if pk + decay_fr < len(p_tot_env)
+    ]
+    short_decay_rate = float(np.mean(sd_hits)) if sd_hits else 0.0
+
+    # Discrete sub-kick spikes (45-130 Hz) vs harmonic floor OR >= 1400 Hz crisp snare/hi-hat
+    m_k = (freqs >= 45.0) & (freqs <= 130.0)
+    k_p = np.sqrt(P_p[m_k].sum(axis=0) + 1e-12)
+    k_h = np.sqrt(P_h[m_k].sum(axis=0) + 1e-12)
+    k_vs_h = float(np.percentile(k_p, 95) / (float(np.median(k_h)) + 1e-4))
+    m_crisp = freqs >= 1400.0
+    crisp_perc_share = float(P_p[m_crisp].sum() / (P_tot[m_crisp].sum() + 1e-12))
+
+    crest_conf = clamp((perc_crest - 1.40) / 1.05, 0.0, 1.0)
+    decay_conf = clamp((short_decay_rate - 0.30) / 0.45, 0.0, 1.0)
+    subk_ok = clamp((k_vs_h - 0.70) / 0.80, 0.0, 1.0)
+    crisp_ok = clamp((crisp_perc_share - 0.06) / 0.35, 0.0, 1.0) * clamp((perc_onset_rate - 1.5) / 2.5, 0.0, 1.0)
+    transient_conf = clamp(0.45 * crest_conf + 0.35 * decay_conf + 0.20 * max(subk_ok, crisp_ok), 0.0, 1.0)
+    if perc_crest < 1.75 and short_decay_rate < 0.45:
+        transient_conf = min(transient_conf, 0.16)
+
+    # 2. Guitar & Vocal detector (180-2800 Hz string harmonic tail, mid dominance, 4-8 Hz vibrato)
+    m_gv = (freqs >= 180.0) & (freqs <= 2800.0)
+    eh, ep = P_h[m_gv].sum(axis=0), P_p[m_gv].sum(axis=0)
+    etot = np.sqrt(eh + ep + 1e-12)
+    fl_gv = np.maximum(0.0, np.diff(np.log1p(12.0 * etot), prepend=0.0))
+    gv_pks = np.flatnonzero(
+        (fl_gv[1:-1] > fl_gv[:-2]) & (fl_gv[1:-1] >= fl_gv[2:]) & (fl_gv[1:-1] > float(np.percentile(fl_gv, 75)))
+    ) + 1
+    tails = [float(np.mean(eh[pk + 1 : pk + 5]) / (ep[pk] + 1e-9)) for pk in gv_pks if pk + 4 < len(eh)]
+    string_harmonic_ratio = float(np.median(tails)) if tails else 0.0
+    gv_hp = float(P_h[m_gv].sum() / (P_p[m_gv].sum() + 1e-12))
+
+    mid_dominance = float(mid_share / (sub_share + 0.05))
+    m_sk, m_v = (freqs >= 35.0) & (freqs <= 100.0), (freqs >= 200.0) & (freqs <= 2400.0)
+    low_kick_vs_tonal = float(np.percentile(np.sqrt(P_p[m_sk].sum(axis=0) + 1e-12), 90) / (float(np.median(np.sqrt(P_h[m_v].sum(axis=0) + 1e-12))) + 1e-5))
+    hh_frac = float(P_p[freqs >= 3500.0].sum() / (P_tot.sum() + 1e-12))
+
+    cent = np.sum(freqs[m_v][:, None] * (P_h[m_v] + 1e-12), axis=0) / np.sum(P_h[m_v] + 1e-12, axis=0)
+    dc_c = 1200.0 * np.log2(np.maximum(150.0, cent) / 440.0)
+    dc_c = dc_c - median_filter(dc_c, size=min(15, max(3, len(dc_c) // 2 * 2 + 1)))
+    sp_c = np.abs(np.fft.rfft(dc_c * np.hanning(len(dc_c))))
+    fc_c = np.fft.rfftfreq(len(dc_c), d=1.0 / fps)
+    vib_mask = (fc_c >= 4.0) & (fc_c <= 8.0)
+    all_mask = (fc_c >= 0.5) & (fc_c <= 15.0)
+    vocal_vibrato = float(np.sum(sp_c[vib_mask] ** 2) / (np.sum(sp_c[all_mask] ** 2) + 1e-9)) if np.any(vib_mask) else 0.0
+
+    # Guitar/vocal gate: active rhythmic strumming/singing, midrange presence, non-4/4, non-D&B
+    beat_gate = clamp((raw_dc - 40.0) / 14.0, 0.0, 1.0) * clamp((raw_brk - 22.0) / 14.0, 0.0, 1.0)
+    mid_gate = clamp((mid_share - 0.032) / 0.038, 0.0, 1.0)
+    non_4x4 = clamp((28.0 - raw_f4) / 16.0, 0.0, 1.0)
+    sub_restraint = clamp((0.44 - sub_share) / 0.14, 0.0, 1.0) * clamp((0.695 - (sub_share + bass_share)) / 0.10, 0.0, 1.0)
+    not_dnb = clamp((158.0 - bpm) / 10.0, 0.0, 1.0) * clamp((0.022 - hh_frac) / 0.012, 0.0, 1.0)
+    s_shr = clamp((math.log1p(string_harmonic_ratio) - 0.55) / 1.4, 0.0, 1.0)
+    s_gvhp = clamp((math.log1p(gv_hp) - 0.60) / 1.2, 0.0, 1.0)
+    s_mid = clamp((mid_dominance - 0.12) / 1.1, 0.0, 1.0) * clamp((1.6 - low_kick_vs_tonal) / 1.3, 0.0, 1.0)
+    s_vib = clamp((vocal_vibrato - 0.25) / 0.20, 0.0, 1.0)
+    s_hybrid = (
+        clamp((harmonic_complexity - 44.0) / 36.0, 0.0, 1.0)
+        * clamp((harmonic_motion - 50.0) / 40.0, 0.0, 1.0)
+        * clamp((raw_dc - 44.0) / 18.0, 0.0, 1.0)
+        * clamp((raw_brk - 30.0) / 18.0, 0.0, 1.0)
+    )
+    gv_raw = max(0.38 * s_shr + 0.24 * s_gvhp + 0.22 * s_mid + 0.16 * s_vib, 0.98 * s_hybrid)
+    # Boost strong acoustic/vocal signals into clean 55-85 band
+    gv_boosted = math.sqrt(max(0.0, gv_raw)) if gv_raw > 0 else 0.0
+    guitar_vocal_score = round(clamp(100.0 * beat_gate * mid_gate * non_4x4 * max(0.55, sub_restraint) * not_dnb * gv_boosted), 1)
+    if (sub_share + bass_share) >= 0.69 or raw_dc < 45.0 or raw_brk < 30.0:
+        guitar_vocal_score = 0.0
+
+    # Gate drum metrics by transient_conf (preserve plucked-guitar tracks with high guitar_vocal_score)
+    if transient_conf < 0.55 and guitar_vocal_score < 35.0:
+        dc_gated = round(raw_dc * (0.06 + 0.94 * (transient_conf ** 1.15)), 1)
+    elif guitar_vocal_score >= 35.0:
+        dc_gated = round(max(min(raw_dc, 38.0), raw_dc * (0.50 + 0.50 * transient_conf)), 1)
+    else:
+        dc_gated = round(raw_dc, 1)
+
+    f4_gated = round(raw_f4 * (transient_conf ** 1.4), 1)
+    brk_gated = raw_brk * (transient_conf ** 1.4)
+    breakbeat_score = round(clamp(brk_gated * (1.0 - 0.65 * (guitar_vocal_score / 100.0))), 1)
+
+    # 3. Dark Ambient Score (0..100): high low-end sub+bass weight + modal darkness + low high shimmer
+    low_end_w = clamp((sub_share + bass_share - 0.50) / 0.22, 0.0, 1.0)
+    drum_pres = clamp(dc_gated / 28.0, 0.0, 1.0)
+    hi_norm = clamp(high_share / 0.04, 0.0, 1.0)
+    dark_ambient_score = round(clamp(100.0 * (1.0 - drum_pres) * (0.58 * low_end_w + 0.22 * (modal_darkness / 100.0) + 0.20 * (1.0 - hi_norm))), 1)
+
+    if guitar_vocal_score >= 45.0:
+        g_style = "guitar_vocal"
+    elif dc_gated < 20.0 and dark_ambient_score >= 28.0:
+        g_style = "dark_ambient"
+    elif dc_gated < 20.0:
+        g_style = "ambient"
+    elif f4_gated >= breakbeat_score + 6.0 and f4_gated >= 36.0:
+        g_style = "four_on_floor"
+    elif breakbeat_score >= f4_gated + 4.0 and breakbeat_score >= 34.0:
+        g_style = "breakbeat"
+    else:
+        g_style = "downtempo"
 
     return {
-        "four_on_floor": four_on_floor,
+        "transient_conf": round(transient_conf, 3),
+        "perc_crest": round(perc_crest, 2),
+        "drum_complexity": dc_gated,
+        "four_on_floor": f4_gated,
         "breakbeat_score": breakbeat_score,
-        "chop_var": round(chop_var, 3),
+        "dark_ambient_score": dark_ambient_score,
+        "guitar_vocal_score": guitar_vocal_score,
         "groove_style": g_style,
     }
 
 
-def analyze_harmony_and_rhythm(y: np.ndarray, bpm_est: float) -> dict:
-    """Compute HPSS chromagram macro harmonic complexity, modal darkness, microtonal index, and groove/drum complexity."""
-    sr = float(dsp_models.SR)
-    nfft = 2048
-    hop = 512
+def analyze_harmony_and_rhythm(
+    y: np.ndarray, bpm_est: float, existing_bands: dict | None = None, full_track_baseline: dict | None = None
+) -> dict:
+    """Compute STFT/HPSS chromagram, groove metrics, Dark Ambient gate, and Guitar/Vocal score."""
+    sr = float(SR)
+    nfft, hop = 2048, 512
     nfr = 1 + max(0, (len(y) - nfft) // hop)
     if nfr < 24:
         return {
-            "key_camelot": "5A", "key_label": "Cm", "tonic_pc": 0, "is_minor": True,
-            "chord_richness": 45.0, "harmonic_motion": 40.0, "modal_darkness": 50.0,
-            "microtonal_score": 15.0, "harmonic_complexity": 45.0,
-            "drum_complexity": 35.0, "perc_share": 0.25, "perc_onset_rate": 2.0,
+            "key_camelot": "5A", "key_label": "Cm (5A)", "chord_richness": 45.0, "harmonic_motion": 40.0,
+            "modal_darkness": 50.0, "microtonal_score": 15.0, "harmonic_complexity": 45.0,
+            "drum_complexity": 14.0, "perc_share": 0.04, "perc_onset_rate": 1.0,
             "gap_cv": 0.2, "gap_entropy": 0.1, "high_low_ratio": 0.3,
-            "four_on_floor": 20.0, "breakbeat_score": 20.0, "groove_style": "downtempo",
-            "scale_deg_12": [round(1 / 12, 4)] * 12,
+            "four_on_floor": 0.0, "breakbeat_score": 0.0, "dark_ambient_score": 40.0,
+            "guitar_vocal_score": 0.0, "transient_conf": 0.2, "perc_crest": 1.2,
+            "groove_style": "ambient", "scale_deg_12": [round(1 / 12, 4)] * 12,
+            "sub_share": 0.25, "bass_share": 0.25, "mid_share": 0.10, "high_share": 0.02, "air_share": 0.0,
         }
 
     win = np.hanning(nfft).astype(np.float32)
-    frames = []
-    for s0 in range(0, nfr, 512):
-        e0 = min(nfr, s0 + 512)
-        idx = np.arange(nfft)[None, :] + hop * np.arange(s0, e0)[:, None]
-        frames.append(np.abs(np.fft.rfft(y[idx] * win, axis=1)).astype(np.float32))
-    S = np.vstack(frames).T  # (n_bins, n_frames)
-
-    # Harmonic-Percussive separation
+    frames = [
+        np.abs(np.fft.rfft(y[np.arange(nfft)[None, :] + hop * np.arange(s0, min(nfr, s0 + 512))[:, None]] * win, axis=1)).astype(np.float32)
+        for s0 in range(0, nfr, 512)
+    ]
+    S = np.vstack(frames).T
     S_h = median_filter(S, size=(1, 17))
     S_p = median_filter(S, size=(17, 1))
     denom = S_h ** 2 + S_p ** 2 + 1e-12
     P_h = (S * (S_h ** 2 / denom)) ** 2
     P_p = (S * (S_p ** 2 / denom)) ** 2
     P_tot = P_h + P_p + 1e-12
-
     freqs = np.fft.rfftfreq(nfft, 1.0 / sr)
 
-    # Band-weighted percussive share so heavy jungle/dub sub-bass does not mask sharp upper drums
+    if existing_bands:
+        sub_share = float(existing_bands["sub_share"])
+        bass_share = float(existing_bands["bass_share"])
+        mid_share = float(existing_bands["mid_share"])
+        high_share = float(existing_bands["high_share"])
+        air_share = float(existing_bands["air_share"])
+    else:
+        tot_e = float(P_tot.sum() + 1e-12)
+        sub_share = round(float(P_tot[(freqs >= 20) & (freqs < 80)].sum() / tot_e), 3)
+        bass_share = round(float(P_tot[(freqs >= 80) & (freqs < 250)].sum() / tot_e), 3)
+        mid_share = round(float(P_tot[(freqs >= 250) & (freqs < 2500)].sum() / tot_e), 3)
+        high_share = round(float(P_tot[(freqs >= 2500) & (freqs < 6000)].sum() / tot_e), 3)
+        air_share = round(float(P_tot[freqs >= 6000].sum() / tot_e), 3)
+
     m_hi = (freqs >= 160.0) & (freqs <= 9000.0)
     m_lo = (freqs >= 45.0) & (freqs < 160.0)
-    perc_hi = float(P_p[m_hi].sum() / (P_tot[m_hi].sum() + 1e-12))
-    perc_lo = float(P_p[m_lo].sum() / (P_tot[m_lo].sum() + 1e-12))
-    perc_share = 0.82 * perc_hi + 0.18 * perc_lo
+    perc_share = 0.82 * float(P_p[m_hi].sum() / (P_tot[m_hi].sum() + 1e-12)) + 0.18 * float(P_p[m_lo].sum() / (P_tot[m_lo].sum() + 1e-12))
 
-    # Map midrange-filtered harmonic bins (95 Hz .. 3000 Hz) onto 12 pitch classes
-    # so heavy sub-bass fundamentals never drown out upper triad/extension voicings.
     mask_pitch = (freqs >= 95.0) & (freqs <= 3000.0)
     f_p = freqs[mask_pitch]
     midi_f = 69.0 + 12.0 * np.log2(f_p / 440.0)
     pc_bin = np.round(midi_f).astype(int) % 12
     dev_st = np.abs(midi_f - np.round(midi_f))
-
     P_sub = P_h[mask_pitch, :]
     chroma = np.zeros((12, P_h.shape[1]), dtype=np.float64)
     for pc in range(12):
@@ -349,23 +404,14 @@ def analyze_harmony_and_rhythm(y: np.ndarray, bpm_est: float) -> dict:
         if np.any(m_pc):
             chroma[pc] = P_sub[m_pc].sum(axis=0)
 
-    # Microtonal / off-12-TET shimmer score from harmonic energy off the exact semitone centers
     peak_dev = np.average(dev_st[:, None] * np.ones((1, P_sub.shape[1])), weights=P_sub + 1e-12)
     microtonal_score = clamp((float(peak_dev) - 0.14) / 0.18 * 100.0)
 
-    # Global key via Krumhansl-Schmuckler
     mean_c = chroma.mean(axis=1)
-    if mean_c.sum() > 0:
-        mean_c_z = (mean_c - mean_c.mean()) / (mean_c.std() + 1e-9)
-    else:
-        mean_c_z = np.ones(12) / 12.0
-
-    best_corr = -999.0
-    tonic_pc = 0
-    is_minor = True
+    mean_c_z = (mean_c - mean_c.mean()) / (mean_c.std() + 1e-9) if mean_c.sum() > 0 else np.ones(12) / 12.0
+    best_corr, tonic_pc, is_minor = -999.0, 0, True
     for k in range(12):
-        maj_rot = np.roll(KS_MAJOR, k)
-        min_rot = np.roll(KS_MINOR, k)
+        maj_rot, min_rot = np.roll(KS_MAJOR, k), np.roll(KS_MINOR, k)
         c_maj = float(np.dot(mean_c_z, (maj_rot - maj_rot.mean()) / maj_rot.std()))
         c_min = float(np.dot(mean_c_z, (min_rot - min_rot.mean()) / min_rot.std()))
         if c_maj > best_corr:
@@ -375,129 +421,108 @@ def analyze_harmony_and_rhythm(y: np.ndarray, bpm_est: float) -> dict:
 
     key_camelot = CAMELOT_MINOR[tonic_pc] if is_minor else CAMELOT_MAJOR[tonic_pc]
     key_name = NOTE_PC_MINOR[tonic_pc] if is_minor else NOTE_PC_MAJOR[tonic_pc]
-    key_label = f"{key_name} ({key_camelot})"
-
-    # Tonic-rotated 12-degree pitch class histogram
     rot_mean = np.roll(mean_c, -tonic_pc)
     rot_norm = rot_mean / (rot_mean.sum() + 1e-12)
 
-    # Modal darkness: dark/tense degrees (b2[1], b3[3], b5[6], b6[8], b7[10]) vs bright degrees (2[2], 3[4], 6[9], 7[11])
     dark_mass = float(1.4 * rot_norm[1] + 1.2 * rot_norm[3] + 1.2 * rot_norm[6] + 1.1 * rot_norm[8] + 0.7 * rot_norm[10])
     bright_mass = float(0.8 * rot_norm[2] + 1.3 * rot_norm[4] + 1.0 * rot_norm[9] + 1.0 * rot_norm[11])
-    raw_dark = dark_mass / (dark_mass + bright_mass + 1e-9)
-    modal_darkness = clamp((raw_dark - 0.18) / 0.62 * 100.0)
+    modal_darkness = clamp((dark_mass / (dark_mass + bright_mass + 1e-9) - 0.18) / 0.62 * 100.0)
     if is_minor:
         modal_darkness = clamp(0.75 * modal_darkness + 22.0)
 
-    # 2-bar / ~4-second windows for chord richness & harmonic motion
     fps = sr / hop
     win_frames = max(8, int(round((240.0 / max(60.0, min(180.0, bpm_est))) * fps)))
     n_win = chroma.shape[1] // win_frames
     if n_win < 2:
         win_frames = max(4, chroma.shape[1] // 4)
         n_win = chroma.shape[1] // max(1, win_frames)
-
-    win_vecs = []
-    frame_e = chroma.sum(axis=0)
-    e_thresh = float(np.percentile(frame_e, 20)) * 0.5
-    for w in range(n_win):
-        seg = chroma[:, w * win_frames : (w + 1) * win_frames]
-        if seg.sum() <= e_thresh * win_frames:
-            continue
-        v = seg.sum(axis=1)
-        vn = v / (v.sum() + 1e-12)
-        win_vecs.append(vn)
-
+    e_thresh = float(np.percentile(chroma.sum(axis=0), 20)) * 0.5
+    win_vecs = [
+        seg.sum(axis=1) / (seg.sum() + 1e-12)
+        for w in range(n_win)
+        if (seg := chroma[:, w * win_frames : (w + 1) * win_frames]).sum() > e_thresh * win_frames
+    ]
     if win_vecs:
-        W = np.array(win_vecs)  # (K, 12)
-        # Effective pitch classes per window: exp(entropy) in [1, 12]
-        eff_pcs = []
-        for vn in W:
-            nz = vn[vn > 1e-4]
-            H = -float(np.sum(nz * np.log(nz)))
-            eff_pcs.append(math.exp(H))
-        med_eff = float(np.median(eff_pcs))
-        chord_richness = clamp((med_eff - 3.2) / 6.2 * 100.0)
-
-        # Inter-window chord/progression motion
+        W = np.array(win_vecs)
+        eff_pcs = [math.exp(-float(np.sum(vn[vn > 1e-4] * np.log(vn[vn > 1e-4])))) for vn in W]
+        chord_richness = clamp((float(np.median(eff_pcs)) - 3.2) / 6.2 * 100.0)
         if len(W) >= 2:
-            cos_sims = []
-            root_changes = 0
-            for i in range(len(W) - 1):
-                a, b = W[i], W[i + 1]
-                sim = float(np.dot(a, b) / (np.linalg.norm(a) * np.linalg.norm(b) + 1e-9))
-                cos_sims.append(1.0 - sim)
-                if int(np.argmax(a)) != int(np.argmax(b)):
-                    root_changes += 1
-            mean_diff = float(np.mean(cos_sims))
-            root_rate = root_changes / max(1, len(W) - 1)
-            harmonic_motion = clamp(0.65 * (mean_diff / 0.28 * 100.0) + 0.35 * (root_rate * 100.0))
+            cos_sims = [1.0 - float(np.dot(W[i], W[i + 1]) / (np.linalg.norm(W[i]) * np.linalg.norm(W[i + 1]) + 1e-9)) for i in range(len(W) - 1)]
+            root_rate = sum(int(np.argmax(W[i])) != int(np.argmax(W[i + 1])) for i in range(len(W) - 1)) / max(1, len(W) - 1)
+            harmonic_motion = clamp(0.65 * (float(np.mean(cos_sims)) / 0.28 * 100.0) + 0.35 * (root_rate * 100.0))
         else:
             harmonic_motion = 20.0
     else:
-        chord_richness = 35.0
-        harmonic_motion = 25.0
-
+        chord_richness, harmonic_motion = 35.0, 25.0
     harmonic_complexity = clamp(0.42 * chord_richness + 0.35 * harmonic_motion + 0.23 * modal_darkness)
 
-    # Drum & rhythm complexity from P_p
     p_env_low = P_p[(freqs >= 25.0) & (freqs < 200.0), :].sum(axis=0)
     p_env_high = P_p[(freqs >= 250.0) & (freqs < 8000.0), :].sum(axis=0)
     p_tot_env = np.sqrt(P_p.sum(axis=0) + 1e-12)
     flux_p = np.maximum(0.0, np.diff(np.log1p(12.0 * p_tot_env), prepend=0.0))
     thr_p = float(flux_p.mean() + 0.6 * flux_p.std())
     onsets_idx = np.flatnonzero((flux_p[1:-1] > flux_p[:-2]) & (flux_p[1:-1] >= flux_p[2:]) & (flux_p[1:-1] > thr_p)) + 1
-    dur_s = len(y) / sr
-    perc_onset_rate = len(onsets_idx) / max(1.0, dur_s)
+    perc_onset_rate = len(onsets_idx) / max(1.0, len(y) / sr)
 
     if len(onsets_idx) >= 4:
         gaps = np.diff(onsets_idx) / fps
         gap_cv = float(np.std(gaps) / (np.mean(gaps) + 1e-9))
-        # Shannon entropy of quantized inter-onset gaps (breakbeats/polyrhythms have high gap variety)
         q_gaps = np.round(np.clip(gaps * (bpm_est / 60.0) * 4.0, 1, 16)).astype(int)
-        vals, cnts = np.unique(q_gaps, return_counts=True)
+        _, cnts = np.unique(q_gaps, return_counts=True)
         pr = cnts / cnts.sum()
         gap_ent = float(-(pr * np.log(pr)).sum() / math.log(8.0))
     else:
-        gap_cv = 0.2
-        gap_ent = 0.1
+        gap_cv, gap_ent = 0.2, 0.1
 
-    # High-to-low percussive complexity ratio & 16-step groove archetype (4/4 vs breakbeat)
     high_low_ratio = float(p_env_high.mean() / (p_env_low.mean() + p_env_high.mean() + 1e-9))
     groove = compute_groove_metrics(S ** 2, P_p, freqs, fps, bpm_est, perc_share, gap_ent)
-    drum_complexity = compute_drum_complexity(
-        perc_share, perc_onset_rate, gap_cv, gap_ent, high_low_ratio, groove["breakbeat_score"]
+    raw_dc = compute_drum_complexity(perc_share, perc_onset_rate, gap_cv, gap_ent, high_low_ratio, groove["breakbeat_score"])
+    raw_f4 = groove["four_on_floor"]
+    raw_brk = groove["breakbeat_score"]
+    hc_val, cr_val, hm_val, md_val = harmonic_complexity, chord_richness, harmonic_motion, modal_darkness
+    if full_track_baseline:
+        raw_dc = float(full_track_baseline.get("drum_complexity", raw_dc))
+        raw_f4 = float(full_track_baseline.get("four_on_floor", raw_f4))
+        raw_brk = float(full_track_baseline.get("breakbeat_score", raw_brk))
+        hc_val = float(full_track_baseline.get("harmonic_complexity", hc_val))
+        cr_val = float(full_track_baseline.get("chord_richness", cr_val))
+        hm_val = float(full_track_baseline.get("harmonic_motion", hm_val))
+        md_val = float(full_track_baseline.get("modal_darkness", md_val))
+        perc_share = float(full_track_baseline.get("perc_share", perc_share))
+        perc_onset_rate = float(full_track_baseline.get("perc_onset_rate", perc_onset_rate))
+        gap_cv = float(full_track_baseline.get("gap_cv", gap_cv))
+        gap_ent = float(full_track_baseline.get("gap_entropy", gap_ent))
+        high_low_ratio = float(full_track_baseline.get("high_low_ratio", high_low_ratio))
+
+    gated = compute_transient_and_guitar_dsp(
+        P_h, P_p, P_tot, freqs, fps, perc_onset_rate,
+        sub_share, bass_share, mid_share, high_share,
+        md_val, hc_val, hm_val, bpm_est,
+        raw_dc, raw_f4, raw_brk,
     )
 
-    return {
-        "key_camelot": key_camelot,
-        "key_label": key_label,
-        "tonic_pc": int(tonic_pc),
-        "is_minor": bool(is_minor),
-        "chord_richness": round(chord_richness, 1),
-        "harmonic_motion": round(harmonic_motion, 1),
-        "modal_darkness": round(modal_darkness, 1),
-        "microtonal_score": round(microtonal_score, 1),
-        "harmonic_complexity": round(harmonic_complexity, 1),
-        "drum_complexity": drum_complexity,
-        "perc_share": round(perc_share, 3),
-        "perc_onset_rate": round(perc_onset_rate, 2),
-        "gap_cv": round(gap_cv, 3),
-        "gap_entropy": round(gap_ent, 3),
+    out_hr = {
+        "key_camelot": key_camelot, "key_label": f"{key_name} ({key_camelot})",
+        "chord_richness": round(cr_val, 1), "harmonic_motion": round(hm_val, 1),
+        "modal_darkness": round(md_val, 1), "microtonal_score": round(microtonal_score, 1),
+        "harmonic_complexity": round(hc_val, 1),
+        "perc_share": round(perc_share, 3), "perc_onset_rate": round(perc_onset_rate, 2),
+        "gap_cv": round(gap_cv, 3), "gap_entropy": round(gap_ent, 3),
         "high_low_ratio": round(high_low_ratio, 3),
-        "four_on_floor": groove["four_on_floor"],
-        "breakbeat_score": groove["breakbeat_score"],
-        "groove_style": groove["groove_style"],
         "scale_deg_12": [round(float(x), 4) for x in rot_norm],
+        "sub_share": sub_share, "bass_share": bass_share, "mid_share": mid_share,
+        "high_share": high_share, "air_share": air_share,
+        **gated,
     }
+    if full_track_baseline:
+        for keep_k in ("key_camelot", "key_label", "microtonal_score", "scale_deg_12"):
+            if keep_k in full_track_baseline:
+                out_hr[keep_k] = full_track_baseline[keep_k]
+    return out_hr
 
 
 def make_tags(t: dict) -> tuple[str, str]:
-    hc = t["harmonic_complexity"]
-    cr = t["chord_richness"]
-    hm = t["harmonic_motion"]
-    md = t["modal_darkness"]
-    ms = t["microtonal_score"]
+    cr, hm, md, ms = t["chord_richness"], t["harmonic_motion"], t["modal_darkness"], t["microtonal_score"]
     if ms >= 48 and t["era"] in ("le_garage", "ep_concepts", "sketches_2024_25", "remixes_commissions"):
         h_tag = "Microtonal / bell intervals"
     elif cr >= 62 and hm >= 55:
@@ -515,13 +540,13 @@ def make_tags(t: dict) -> tuple[str, str]:
     else:
         h_tag = "Balanced modal harmony"
 
-    dc = t["drum_complexity"]
-    en = t["energy"]
-    bpm = t["bpm"]
-    pc = t["perc_share"]
-    f4 = float(t.get("four_on_floor", 0.0))
-    brk = float(t.get("breakbeat_score", 0.0))
-    if dc < 24 and pc < 0.08:
+    dc, en, bpm = t["drum_complexity"], t["energy"], t["bpm"]
+    f4, brk = float(t.get("four_on_floor", 0.0)), float(t.get("breakbeat_score", 0.0))
+    if t.get("guitar_vocal_score", 0.0) >= 45.0:
+        r_tag = "Guitar & vocal phrasing"
+    elif dc < 20 and t.get("dark_ambient_score", 0.0) >= 28.0:
+        r_tag = "Dark ambient drone"
+    elif dc < 24 and t["perc_share"] < 0.08:
         r_tag = "Beatless ambient wash"
     elif dc < 36:
         r_tag = "Spacious / minimal pulse"
@@ -537,164 +562,157 @@ def make_tags(t: dict) -> tuple[str, str]:
         r_tag = "Chill downtempo groove"
     else:
         r_tag = "Steady electronic beat"
-
     return h_tag, r_tag
 
 
 def effective_tempo(t: dict) -> float:
-    """Anchor beatless ambient tracks near 68 BPM so nominal DAW project BPMs never split ambient washes."""
     dc = float(t.get("drum_complexity", 0.0))
     r_conf = clamp((dc - 16.0) / 14.0, 0.0, 1.0)
     return round(r_conf * float(t["bpm"]) + (1.0 - r_conf) * 68.0, 2)
 
 
-def gate_rhythm_features(t: dict) -> None:
-    """Recompute canonical drum complexity, effective BPM, and 4/4 vs breakbeat pulse for clustering."""
-    if all(k in t for k in ("perc_share", "perc_onset_rate", "gap_cv", "gap_entropy", "high_low_ratio")):
-        t["drum_complexity"] = compute_drum_complexity(
-            float(t["perc_share"]),
-            float(t["perc_onset_rate"]),
-            float(t["gap_cv"]),
-            float(t["gap_entropy"]),
-            float(t["high_low_ratio"]),
-            float(t.get("breakbeat_score", 0.0)),
-        )
-    t["effective_bpm"] = effective_tempo(t)
-    pc = float(t.get("perc_share", 0.0))
-    pul_presence = clamp((pc - 0.02) / 0.10, 0.0, 1.0)
-    t["drum_pulse"] = round(float(t.get("pulse_clarity", 0.0)) * pul_presence * 100.0, 1)
-
-
 def cluster_and_layout(tracks: list[dict]) -> dict:
-    """Cluster tracks into cohesive musical style groups and project both Similarity & Era 2D maps."""
+    """Cluster tracks into the canonical 8 Vibe groups and project Vibe + Energy-Wave Era coords."""
     for t in tracks:
-        gate_rhythm_features(t)
+        t["effective_bpm"] = effective_tempo(t)
+        pul_presence = clamp((float(t.get("perc_share", 0.0)) - 0.02) / 0.10, 0.0, 1.0) * float(t.get("transient_conf", 1.0))
+        t["drum_pulse"] = round(float(t.get("pulse_clarity", 0.0)) * pul_presence * 100.0, 1)
 
-    # 9-feature similarity space: Groove (Breakbeat vs 4/4), Effective Tempo, Energy, Drums, and Macro Harmony
-    weights = np.array([
-        2.05,  # MIK Energy (1-10)
-        2.75,  # Effective BPM (strongly separates 75 BPM downtempo from 112-120 BPM mid-tempo & 170 BPM D&B)
-        1.85,  # Drum Complexity (sub-bass-compensated)
-        2.85,  # Breakbeat / Syncopated Breaks Score (groups all true breakbeats regardless of chord richness)
-        2.30,  # 4/4 Four-on-the-Floor Regularity (groups steady 4/4 club pulses cleanly away from breakbeats)
-        1.05,  # Macro Harmonic Complexity
-        0.45,  # Chord Richness
-        0.35,  # Harmonic Motion
-        0.25,  # Modal Darkness
-    ])
-    X_raw = np.array([
+    # Standardize continuous features + add bounded sparse detectors so N=559 z-scores stay balanced
+    dense_w = np.array([1.85, 2.85, 1.85, 4.45, 2.65, 0.55, 0.40, 0.30, 0.30, 0.90])
+    X_dense = np.array([
         [
-            t["energy"],
-            t["effective_bpm"],
-            t["drum_complexity"],
-            t.get("breakbeat_score", 0.0),
-            t.get("four_on_floor", 0.0),
-            t["harmonic_complexity"],
-            t["chord_richness"],
-            t["harmonic_motion"],
-            t["modal_darkness"],
+            t["energy"], t["effective_bpm"], t["drum_complexity"],
+            t.get("breakbeat_score", 0.0), t.get("four_on_floor", 0.0),
+            t["harmonic_complexity"], t["chord_richness"], t["harmonic_motion"],
+            t["modal_darkness"], t.get("microtonal_score", 0.0),
         ]
         for t in tracks
     ], dtype=np.float64)
-    X_std = StandardScaler().fit_transform(X_raw) * weights
+    da_col = np.clip(np.array([t.get("dark_ambient_score", 0.0) for t in tracks]) / 18.0, 0.0, 3.2)[:, None] * 4.2
+    gv_arr = np.array([t.get("guitar_vocal_score", 0.0) for t in tracks])
+    gv_col = (np.clip(gv_arr / 14.0, 0.0, 3.5) * 5.0 + (gv_arr >= 32.0).astype(np.float64) * 5.5)[:, None]
+    X_std = np.hstack([StandardScaler().fit_transform(X_dense) * dense_w, da_col, gv_col])
     D = np.linalg.norm(X_std[:, None, :] - X_std[None, :, :], axis=2)
 
-    best_k = 6
-    best_labels = AgglomerativeClustering(n_clusters=best_k, linkage="ward").fit_predict(X_std)
-    best_sc = float(silhouette_score(X_std, best_labels))
+    n_sub = 44 if len(tracks) > 120 else 8
+    sub_labels = AgglomerativeClustering(n_clusters=n_sub, linkage="ward").fit_predict(X_std)
+    if n_sub == 8:
+        for cid in range(n_sub):
+            members = [i for i, lbl in enumerate(sub_labels) if lbl == cid]
+            if len(members) == 1:
+                idx0 = members[0]
+                other = [c for c in range(n_sub) if c != cid and np.sum(sub_labels == c) >= 2]
+                if other:
+                    best_c = min(other, key=lambda c: float(np.linalg.norm(X_std[idx0] - X_std[sub_labels == c].mean(axis=0))))
+                    sub_labels[idx0] = best_c
+                    largest = max(other, key=lambda c: int(np.sum(sub_labels == c)))
+                    l_idxs = [i for i, lbl in enumerate(sub_labels) if lbl == largest]
+                    if len(l_idxs) >= 4:
+                        s2 = AgglomerativeClustering(n_clusters=2, linkage="ward").fit_predict(X_std[l_idxs])
+                        for k_i, ti in enumerate(l_idxs):
+                            if s2[k_i] == 1:
+                                sub_labels[ti] = cid
 
-    # Build raw cluster stats
-    clusters_raw = []
-    for cid in range(best_k):
-        idxs = [i for i, l in enumerate(best_labels) if l == cid]
-        clusters_raw.append({
-            "orig_id": cid,
-            "idxs": idxs,
+    def _stats(idxs: list[int]) -> dict:
+        return {
             "en": float(np.mean([tracks[i]["energy"] for i in idxs])),
             "bpm": float(np.mean([tracks[i]["effective_bpm"] for i in idxs])),
             "dc": float(np.mean([tracks[i]["drum_complexity"] for i in idxs])),
             "brk": float(np.mean([tracks[i].get("breakbeat_score", 0.0) for i in idxs])),
             "f4": float(np.mean([tracks[i].get("four_on_floor", 0.0) for i in idxs])),
-            "dp": float(np.mean([tracks[i]["drum_pulse"] for i in idxs])),
-            "perc": float(np.mean([tracks[i]["perc_share"] for i in idxs])),
-            "hc": float(np.mean([tracks[i]["harmonic_complexity"] for i in idxs])),
+            "da": float(np.mean([tracks[i].get("dark_ambient_score", 0.0) for i in idxs])),
+            "gv": float(np.mean([tracks[i].get("guitar_vocal_score", 0.0) for i in idxs])),
             "cr": float(np.mean([tracks[i]["chord_richness"] for i in idxs])),
             "micro": float(np.mean([tracks[i]["microtonal_score"] for i in idxs])),
-        })
-
-    # Order clusters smoothly from quiet Ambient -> Downtempo Lush -> Chill -> Hypnotic 4/4 -> Ecstatic House -> Complex Breaks
-    clusters_raw.sort(key=lambda c: (c["dc"] >= 22, c["en"], c["dc"], c["brk"]))
-    T_PALETTE_HUES = [205, 165, 275, 35, 130, 340]
+        }
 
     archetypes = [
-        ("ambient", "Ambient & meditative", lambda c: (140.0 if c["dc"] < 22 else 0.0) + (10 - c["en"]) * 3.0 - c["dc"] * 0.5),
-        ("downtempo_lush", "Downtempo & lush chords", lambda c: (110.0 if c["dc"] >= 22 and c["f4"] < 30.0 and c["brk"] < 30.0 else 0.0) + c["cr"] * 0.5 - c["en"] * 5.0 - c["brk"] * 0.4),
-        ("chill_elec", "Chill & steady electronic", lambda c: (125.0 if c["dc"] >= 22 and c["bpm"] < 105.0 and c["brk"] < 35.0 else 0.0) + (110.0 - c["bpm"]) * 0.8 - c["brk"] * 0.4),
-        ("hypnotic_micro", "Hypnotic electro & microtonal", lambda c: (95.0 if 95.0 <= c["bpm"] < 132.0 and c["dc"] >= 50.0 else 0.0) + c["dc"] * 0.7 + c["micro"] * 0.6 + c["brk"] * 0.3),
-        ("house_ecstatic", "House & ecstatic 4/4 groove", lambda c: c["f4"] * 1.4 + (75.0 if c["bpm"] >= 120.0 and c["f4"] >= 65.0 else 0.0) + c["en"] * 4.0 - c["brk"] * 0.6),
-        ("dnb_breaks", "Complex drums & breaks", lambda c: c["brk"] * 2.2 + c["dc"] * 1.1 + c["bpm"] * 0.35 - c["f4"] * 0.8),
+        ("ambient", "Ambient & meditative", lambda c: (320.0 if c["dc"] < 24 and c["da"] < 38 and c["gv"] < 25 else -300.0) + (10 - c["en"]) * 3.0 - c["da"] * 1.6 - c["dc"] * 0.7),
+        ("dark_ambient", "Dark ambient & drone", lambda c: (340.0 if c["dc"] < 24 and c["da"] >= 38 else -300.0) + c["da"] * 3.0 - c["dc"] * 0.9 - c["gv"]),
+        ("downtempo_lush", "Downtempo & lush chords", lambda c: (160.0 if c["dc"] >= 20 and c["f4"] < 44 and c["brk"] < 32 and c["gv"] < 25 and c["bpm"] >= 98 else 0.0) + c["cr"] * 0.7 - c["en"] * 3.5 - c["brk"] * 0.5),
+        ("chill_elec", "Chill & steady electronic", lambda c: (165.0 if c["dc"] >= 20 and c["bpm"] < 104 and c["f4"] < 50 and c["brk"] < 38 and c["gv"] < 25 else 0.0) + (110.0 - c["bpm"]) * 1.1 - c["f4"] * 0.35 - c["brk"] * 0.4),
+        ("guitar_vocal", "Experimental guitar & vocal", lambda c: (360.0 if c["gv"] >= 30 else -300.0) + c["gv"] * 4.5 - c["f4"] * 0.5),
+        ("hypnotic_micro", "Hypnotic electro & microtonal", lambda c: (155.0 if 95 <= c["bpm"] < 146 and c["dc"] >= 42 and c["brk"] < 46 and c["f4"] < 54 and c["gv"] < 25 else 0.0) + c["dc"] * 0.6 + c["micro"] * 1.1 - c["brk"] * 0.25),
+        ("house_ecstatic", "House & ecstatic 4/4 groove", lambda c: (175.0 if c["f4"] >= 50 and c["dc"] >= 38 else 0.0) + c["f4"] * 1.9 + c["en"] * 3.0 - c["brk"] * 0.6),
+        ("dnb_breaks", "Complex drums & breaks", lambda c: (185.0 if c["brk"] >= 44 and c["f4"] < 48 and c["gv"] < 28 else 0.0) + c["brk"] * 2.6 + c["dc"] * 1.1 + c["bpm"] * 0.35 - c["f4"] * 0.8 - c["gv"] * 1.8),
     ]
-    orig_to_name = {}
-    pairs2 = []
+    sub_clusters = [{"sid": sid, "idxs": [i for i, l in enumerate(sub_labels) if l == sid]} for sid in range(n_sub)]
+    for sc in sub_clusters:
+        sc.update(_stats(sc["idxs"]))
+    # First guarantee every archetype has at least 1 best-matching subcluster
+    pairs = [(fn(sc), sc["sid"], aid, alabel) for sc in sub_clusters for aid, alabel, fn in archetypes]
+    pairs.sort(reverse=True)
+    sid_to_arch, used_a = {}, set()
+    for _, sid, aid, alabel in pairs:
+        if sid not in sid_to_arch and aid not in used_a:
+            sid_to_arch[sid] = (aid, alabel)
+            used_a.add(aid)
+    # Assign all remaining subclusters cleanly to their highest-scoring physical territory
+    for sc in sub_clusters:
+        if sc["sid"] not in sid_to_arch:
+            best_aid, best_alabel = max(archetypes, key=lambda a: a[2](sc))[:2]
+            sid_to_arch[sc["sid"]] = (best_aid, best_alabel)
+
+    arch_members: dict[str, list[int]] = {}
+    arch_labels = {aid: alabel for aid, alabel, _ in archetypes}
+    for sc in sub_clusters:
+        aid = sid_to_arch[sc["sid"]][0]
+        arch_members.setdefault(aid, []).extend(sc["idxs"])
+
+    canonical_order = ["ambient", "dark_ambient", "downtempo_lush", "chill_elec", "guitar_vocal", "hypnotic_micro", "house_ecstatic", "dnb_breaks"]
+    orig_to_name = {idx: (aid, arch_labels[aid]) for idx, aid in enumerate(canonical_order)}
+    clusters_raw = [{"orig_id": idx, "idxs": arch_members[aid], **_stats(arch_members[aid])} for idx, aid in enumerate(canonical_order)]
+    merged_labels = np.zeros(len(tracks), dtype=int)
     for c in clusters_raw:
-        for aid, alabel, fn in archetypes:
-            pairs2.append((fn(c), c["orig_id"], aid, alabel))
-    pairs2.sort(reverse=True)
-    used_a2 = set()
-    for sc, oid, aid, alabel in pairs2:
-        if oid in orig_to_name or aid in used_a2:
-            continue
-        orig_to_name[oid] = (aid, alabel)
-        used_a2.add(aid)
+        for i in c["idxs"]:
+            merged_labels[i] = c["orig_id"]
+    sil = float(silhouette_score(X_std, merged_labels))
+    T_PALETTE_HUES = [205, 245, 165, 275, 24, 38, 130, 340]
 
-    style_groups = []
-    for t in tracks:
-        t.pop("_dc_gated", None)
-
-    # 2D t-SNE projection
-    perp = min(14, max(5, len(tracks) // 5))
-    tsne = TSNE(n_components=2, perplexity=perp, init="pca", learning_rate="auto", random_state=42)
-    xy = tsne.fit_transform(X_std)
+    perp = min(22, max(6, len(tracks) // 16)) if len(tracks) > 100 else min(14, max(5, len(tracks) // 5))
+    xy = TSNE(n_components=2, perplexity=perp, init="pca", learning_rate="auto", random_state=42).fit_transform(X_std)
     xy = (xy - xy.min(axis=0)) / (xy.max(axis=0) - xy.min(axis=0) + 1e-9)
 
-    # Gentle centroid blend (22%) + minimum distance repulsion so dots breathe clearly
-    cid_to_members = {c["orig_id"]: c["idxs"] for c in clusters_raw}
-    for oid, idxs in cid_to_members.items():
-        cent = xy[idxs].mean(axis=0)
-        xy[idxs] = 0.78 * xy[idxs] + 0.22 * cent
+    # Pull Dark Ambient centroid smoothly adjacent to Ambient & meditative
+    amb_idxs = next((c["idxs"] for c in clusters_raw if orig_to_name[c["orig_id"]][0] == "ambient"), [])
+    da_idxs = next((c["idxs"] for c in clusters_raw if orig_to_name[c["orig_id"]][0] == "dark_ambient"), [])
+    if amb_idxs and da_idxs:
+        amb_cent = xy[amb_idxs].mean(axis=0)
+        da_cent = xy[da_idxs].mean(axis=0)
+        target_cent = np.clip(amb_cent + np.array([0.085, 0.055]), 0.10, 0.90)
+        xy[da_idxs] = xy[da_idxs] - da_cent + target_cent
 
-    # Simple repulsion pass in normalized [0.08, 0.92]
+    for c in clusters_raw:
+        cent = xy[c["idxs"]].mean(axis=0)
+        xy[c["idxs"]] = 0.78 * xy[c["idxs"]] + 0.22 * cent
+
+    min_sep = 0.036 if len(tracks) <= 100 else 0.017
     for _ in range(45):
-        for i in range(len(xy)):
-            for j in range(i + 1, len(xy)):
-                dx, dy = xy[i, 0] - xy[j, 0], xy[i, 1] - xy[j, 1]
-                d = math.hypot(dx, dy)
-                if 0 < d < 0.038:
-                    push = (0.038 - d) * 0.36
-                    ux, uy = dx / d, dy / d
-                    xy[i, 0] += ux * push
-                    xy[i, 1] += uy * push
-                    xy[j, 0] -= ux * push
-                    xy[j, 1] -= uy * push
+        diff = xy[:, None, :] - xy[None, :, :]
+        dist = np.hypot(diff[:, :, 0], diff[:, :, 1])
+        mask = (dist > 1e-6) & (dist < min_sep)
+        if not np.any(mask):
+            break
+        push = np.where(mask, (min_sep - dist) * 0.36 / np.maximum(dist, 1e-6), 0.0)
+        xy += np.sum(diff * push[:, :, None], axis=1)
     xy = 0.07 + 0.86 * ((xy - xy.min(axis=0)) / (xy.max(axis=0) - xy.min(axis=0) + 1e-9))
 
+    style_groups = []
     for gi, c in enumerate(clusters_raw):
         aid, alabel = orig_to_name[c["orig_id"]]
         gid = f"s{gi}_{aid}"
-        cent = xy[c["idxs"]].mean(axis=0)
-        min_x = float(np.min(xy[c["idxs"], 0]))
-        max_x = float(np.max(xy[c["idxs"], 0]))
-        min_y = float(np.min(xy[c["idxs"], 1]))
-        max_y = float(np.max(xy[c["idxs"], 1]))
         member_ids = [tracks[i]["id"] for i in c["idxs"]]
         for i in c["idxs"]:
             tracks[i]["cluster_id"] = gid
             tracks[i]["cluster_label"] = alabel
             tracks[i]["cluster_idx"] = gi
             h_tag, r_tag = make_tags(tracks[i])
-            tracks[i]["harmony_tag"] = h_tag
-            tracks[i]["rhythm_tag"] = r_tag
+            tracks[i]["harmony_tag"], tracks[i]["rhythm_tag"] = h_tag, r_tag
 
+        cent = xy[c["idxs"]].mean(axis=0)
+        min_x, max_x = float(np.min(xy[c["idxs"], 0])), float(np.max(xy[c["idxs"], 0]))
+        min_y, max_y = float(np.min(xy[c["idxs"], 1])), float(np.max(xy[c["idxs"], 1]))
         pref_x, pref_y = float(cent[0]), max(0.055, min_y - 0.048)
         candidates = [
             (pref_x, pref_y),
@@ -705,286 +723,212 @@ def cluster_and_layout(tracks: list[dict]) -> dict:
             (min(0.87, max_x + 0.02), min(0.94, max_y + 0.050)),
         ]
 
-        def _label_penalty(cand: tuple[float, float]) -> float:
-            cx_c = min(0.87, max(0.13, cand[0]))
-            cy_c = min(0.94, max(0.055, cand[1]))
-            dot_pen = sum(
+        def _pen(cand: tuple[float, float]) -> float:
+            cx_c, cy_c = min(0.87, max(0.13, cand[0])), min(0.94, max(0.055, cand[1]))
+            dot_p = sum(
                 20.0 * (1.0 - max(abs(float(xy[k, 0]) - cx_c) / 0.11, abs(float(xy[k, 1]) - cy_c) / 0.038))
-                for k in range(len(xy))
-                if abs(float(xy[k, 0]) - cx_c) < 0.11 and abs(float(xy[k, 1]) - cy_c) < 0.038
+                for k in range(len(xy)) if abs(float(xy[k, 0]) - cx_c) < 0.11 and abs(float(xy[k, 1]) - cy_c) < 0.038
             )
-            grp_pen = sum(
+            grp_p = sum(
                 60.0 * (1.0 - max(abs(g["cx"] - cx_c) / 0.22, abs(g["cy"] - cy_c) / 0.075))
-                for g in style_groups
-                if abs(g["cx"] - cx_c) < 0.22 and abs(g["cy"] - cy_c) < 0.075
+                for g in style_groups if abs(g["cx"] - cx_c) < 0.22 and abs(g["cy"] - cy_c) < 0.075
             )
-            return dot_pen + grp_pen + 0.15 * math.hypot(cx_c - pref_x, cy_c - pref_y)
+            return dot_p + grp_p + 0.15 * math.hypot(cx_c - pref_x, cy_c - pref_y)
 
-        best_cand = min(candidates, key=_label_penalty)
-        lx = min(0.87, max(0.13, best_cand[0]))
-        ly = min(0.94, max(0.055, best_cand[1]))
+        bx, by = min(candidates, key=_pen)
         style_groups.append({
-            "id": gid,
-            "label": alabel,
-            "idx": gi,
-            "hue": T_PALETTE_HUES[gi % len(T_PALETTE_HUES)],
-            "members": member_ids,
-            "cx": round(float(lx), 4),
-            "cy": round(float(ly), 4),
+            "id": gid, "label": alabel, "idx": gi, "hue": T_PALETTE_HUES[gi % len(T_PALETTE_HUES)],
+            "members": member_ids, "cx": round(min(0.87, max(0.13, bx)), 4), "cy": round(min(0.94, max(0.055, by)), 4),
         })
 
-    # Nearest neighbors
     scale = float(np.median(D[D > 0])) or 1.0
-    track_near = {}
-    for i, t in enumerate(tracks):
-        order = [j for j in np.argsort(D[i]) if j != i][:4]
-        track_near[t["id"]] = [[tracks[j]["id"], round(float(math.exp(-D[i, j] / scale)), 3)] for j in order]
+    track_near = {
+        t["id"]: [[tracks[j]["id"], round(float(math.exp(-D[i, j] / scale)), 3)] for j in np.argsort(D[i]) if j != i][:4]
+        for i, t in enumerate(tracks)
+    }
 
-    # Era View 4x4 chronological layout (16 eras -> 4 cols x 4 rows)
-    track_map = {}
-    era_anchors = []
-    era_to_indices = {eid: [] for eid in ERA_ORDER}
+    # Energy-Wave Era layout (X = chronological era 0..1, Y = Energy inverted so E8 crests upward)
+    track_map, era_anchors = {}, []
+    era_to_indices: dict[str, list[int]] = {eid: [] for eid in ERA_ORDER}
     for i, t in enumerate(tracks):
         era_to_indices.setdefault(t["era"], []).append(i)
 
+    n_eras = len(ERA_ORDER)
+    era_sep = 0.022 if len(tracks) <= 100 else 0.012
     for e_idx, eid in enumerate(ERA_ORDER):
-        row = e_idx // 4
-        col = e_idx % 4
-        cx = 0.13 + col * 0.245
-        cy = 0.145 + row * 0.242
-        members = era_to_indices.get(eid, [])
-        # Sort members by energy so highest-energy sits cleanly in constellation order
-        members_sorted = sorted(members, key=lambda idx: (tracks[idx]["energy"], tracks[idx]["slot"]))
-        n_m = len(members_sorted)
-        r_ring = 0.042 if n_m >= 5 else (0.036 if n_m >= 3 else 0.025)
-        for k, ti in enumerate(members_sorted):
-            ang = -math.pi / 2 + (2 * math.pi * k) / max(1, n_m)
-            ex = cx + r_ring * math.cos(ang)
-            ey = cy + r_ring * 0.85 * math.sin(ang) + 0.008
-            tid = tracks[ti]["id"]
-            track_map[tid] = {
-                "similarity": [round(float(xy[ti, 0]), 4), round(float(xy[ti, 1]), 4)],
-                "era": [round(ex, 4), round(ey, 4)],
+        cx = 0.045 + (e_idx / max(1, n_eras - 1)) * 0.91
+        members = sorted(era_to_indices.get(eid, []), key=lambda idx: (tracks[idx]["energy"], tracks[idx]["slot"]))
+        coords = []
+        cols = 5 if len(members) > 12 else max(1, len(members))
+        for k, ti in enumerate(members):
+            en_norm = clamp((float(tracks[ti]["energy"]) - 1.0) / 8.0, 0.0, 1.0)
+            ey = 0.84 - en_norm * 0.68
+            ex = cx + ((k % cols) - (cols - 1) / 2.0) * (0.006 if cols > 1 else 0.0)
+            coords.append([ti, ex, ey])
+        if len(coords) > 1:
+            pts = np.array([[c[1], c[2]] for c in coords], dtype=np.float64)
+            for _ in range(20):
+                diff = pts[:, None, :] - pts[None, :, :]
+                dist = np.hypot(diff[:, :, 0], diff[:, :, 1])
+                mask = (dist > 1e-6) & (dist < era_sep)
+                if not np.any(mask):
+                    break
+                push = np.where(mask, (era_sep - dist) * 0.45 / np.maximum(dist, 1e-6), 0.0)
+                pts += np.sum(diff * push[:, :, None], axis=1)
+            for idx_c, c in enumerate(coords):
+                c[1], c[2] = float(pts[idx_c, 0]), float(pts[idx_c, 1])
+        for ti, ex, ey in coords:
+            v_pos = [round(float(xy[ti, 0]), 4), round(float(xy[ti, 1]), 4)]
+            track_map[tracks[ti]["id"]] = {
+                "vibe": v_pos, "similarity": v_pos,
+                "era": [round(clamp(ex, 0.02, 0.98), 4), round(clamp(ey, 0.08, 0.92), 4)],
             }
-        era_anchors.append({
-            "id": eid,
-            "idx": e_idx,
-            "x": round(cx, 4),
-            "y": round(cy - 0.072, 4),
-            "cx": round(cx, 4),
-            "cy": round(cy, 4),
-        })
+        mean_ey = float(np.mean([c[2] for c in coords])) if coords else 0.50
+        era_anchors.append({"id": eid, "idx": e_idx, "x": round(cx, 4), "y": 0.90, "cx": round(cx, 4), "cy": round(mean_ey, 4)})
 
-    return {
-        "silhouette": round(float(best_sc), 3),
-        "style_groups": style_groups,
-        "track_map": track_map,
-        "era_anchors": era_anchors,
-        "track_near": track_near,
-    }
+    return {"silhouette": round(sil, 3), "style_groups": style_groups, "track_map": track_map, "era_anchors": era_anchors, "track_near": track_near}
+
+
+def enrich_track_tiers(t: dict, rel_repo: str = "BillTribble/music-map") -> None:
+    """Attach year, released, is_sketch, tier, links, and archive download metadata."""
+    tid, era = t["id"], t["era"]
+    year = int(t.get("year") or PRE_2015_OVERRIDES.get(tid) or ERA_DEFAULT_YEAR.get(era, 2020))
+    rel_match = rc.match_released_track(t["title"], t.get("rel_path", ""), era)
+    released = bool(rel_match is not None)
+    links = dict(rel_match["links"]) if rel_match else {}
+    if rel_match:
+        year = int(rel_match["year"])
+    full_dur = t.get("full_duration_sec")
+    is_sketch = bool(
+        t.get("is_sketch")
+        or (full_dur is not None and float(full_dur) < 120.0)
+        or (not released and (era in ("sketches_2024_25", "sketches_2026") or SKETCH_RE.search(t["title"])))
+    )
+    tier = "released" if released else ("archive_dl" if year < 2015 else "request")
+    t.update({"year": year, "released": released, "is_sketch": is_sketch, "tier": tier})
+    if links:
+        t["links"] = links
+    else:
+        t.pop("links", None)
+    if tier == "archive_dl":
+        slug = t.get("slug") or re.sub(r"[^A-Za-z0-9]+", "_", t["title"]).strip("_")[:72]
+        t["mp3_320_url"] = t.get("mp3_320_url") or f"https://github.com/{rel_repo}/releases/download/archive-downloads-v1/Bill_Tribble_-_{slug}.mp3"
+        t["has_lossless"] = bool(t.get("has_lossless", False))
+        t["dl_ready"] = bool(t.get("dl_ready", False))
+    t["preview_release_url"] = f"https://github.com/{rel_repo}/releases/download/audio-previews-v1/{tid}.mp3"
+
+
+def reanalyze_track_worker(ffmpeg_bin: str, base_dir: Path, t_in: dict) -> dict:
+    t = dict(t_in)
+    baseline_clip = base_dir / "audio" / f"{t['id']}.mp3"
+    is_baseline = "drum_complexity" in t and "breakbeat_score" in t and baseline_clip.exists()
+    if is_baseline:
+        src, start_s, dur_s = baseline_clip, 0.0, 240.0
+    else:
+        src = Path(t["local_path"]) if t.get("local_path") else (base_dir / t["file"])
+        full_dur = float(t.get("full_duration_sec") or 0.0)
+        start_s = round(full_dur * 0.25, 2) if full_dur > 300.0 else 0.0
+        dur_s = 180.0
+    try:
+        y = decode_audio(ffmpeg_bin, src, start_s=start_s, dur_s=dur_s)
+    except Exception as exc:
+        print(f"[WARN] decode failed for {t['id']} ({src}): {exc}", file=sys.stderr)
+        y = np.zeros(SR * 4, dtype=np.float32)
+    if "bpm" in t and "energy" in t:
+        bpm = float(t["bpm"])
+        bands = {k: t[k] for k in ("sub_share", "bass_share", "mid_share", "high_share", "air_share") if k in t}
+        baseline = t if is_baseline else None
+        hr = analyze_harmony_and_rhythm(y, bpm, existing_bands=bands if len(bands) == 5 else None, full_track_baseline=baseline)
+    else:
+        bpm, energy, p_clar, onset_rate = estimate_bpm_and_energy(y)
+        t["bpm"], t["energy"], t["energy_source"] = bpm, energy, "dsp_model"
+        t["pulse_clarity"], t["onset_rate"] = p_clar, onset_rate
+        hr = analyze_harmony_and_rhythm(y, bpm)
+    t.update(hr)
+    enrich_track_tiers(t)
+    return t
 
 
 def main() -> None:
-    ap = argparse.ArgumentParser()
-    ap.add_argument("--corpus-root", default="")
-    ap.add_argument("--archive-root", default="")
-    ap.add_argument("--skip-mik-gui", action="store_true")
-    ap.add_argument("--recluster-only", action="store_true", help="Recompute gated rhythm & similarity clustering from existing scripts/track_analysis.json")
+    ap = argparse.ArgumentParser(description="Analyze corpus audio and build 8-cluster Vibe + Era layout.")
+    ap.add_argument("--reanalyze-local", action="store_true", help="Re-analyze local audio/*.mp3 merged with js/data.js")
+    ap.add_argument("--data-js", type=Path, default=ROOT / "js" / "data.js")
+    ap.add_argument("--manifest", type=Path, default=None, help="Optional catalog_manifest.json for full corpus analysis")
+    ap.add_argument("--cache-json", type=Path, default=None, help="Optional path to cache raw DSP tracks before clustering")
+    ap.add_argument("--from-cache", type=Path, default=None, help="Optional cached raw DSP JSON to skip audio decoding")
+    ap.add_argument("--out-json", type=Path, default=SCRIPTS_DIR / "track_analysis.json")
+    ap.add_argument("--workers", type=int, default=min(16, os.cpu_count() or 4))
     args = ap.parse_args()
 
-    if args.recluster_only:
-        in_path = SCRIPTS_DIR / "track_analysis.json"
-        existing = json.loads(in_path.read_text(encoding="utf-8"))
-        analyzed_tracks = existing["tracks"]
-        for t in analyzed_tracks:
-            # Mark un-gated tracks if coming from initial pre-gate run
-            if t["id"] == "hd_2005_3" and t["bpm"] > 200:
-                t["bpm"] = 170.0
-        layout = cluster_and_layout(analyzed_tracks)
-        out = {
-            "n_tracks": len(analyzed_tracks),
-            "silhouette": layout["silhouette"],
-            "style_groups": layout["style_groups"],
-            "track_map": layout["track_map"],
-            "era_anchors": layout["era_anchors"],
-            "track_near": layout["track_near"],
-            "tracks": analyzed_tracks,
-        }
-        in_path.write_text(json.dumps(out, indent=2, ensure_ascii=False) + "\n", encoding="utf-8")
-        print(f"Reclustered {len(analyzed_tracks)} tracks -> silhouette={layout['silhouette']}")
-        for g in layout["style_groups"]:
-            names = [next(t["title"] for t in analyzed_tracks if t["id"] == m) for m in g["members"]]
-            print(f"  [{g['id']}] {g['label']} ({len(names)}): {', '.join(names[:8])}{' ...' if len(names) > 8 else ''}")
-        return
+    ffmpeg_bin = shutil.which("ffmpeg")
+    if not ffmpeg_bin:
+        raise SystemExit("ffmpeg not found on PATH")
 
-    if not args.corpus_root or not args.archive_root:
-        ap.error("--corpus-root and --archive-root are required unless --recluster-only is set")
+    base_payload: dict = {}
+    if args.data_js.exists():
+        raw = args.data_js.read_text(encoding="utf-8")
+        if "window.CORPUS_DATA = " in raw:
+            base_payload = json.loads(raw.split("window.CORPUS_DATA = ", 1)[1].rstrip().rstrip(";"))
 
-    corpus_root = Path(args.corpus_root).expanduser()
-    archive_root = Path(args.archive_root).expanduser()
-    ffmpeg_bin = shutil.which("ffmpeg") or "/opt/homebrew/bin/ffmpeg"
-
-    mik_db = lookup_mik_db()
-    print(f"Loaded {len(mik_db)} rows from Mixed In Key Collection10.mikdb")
-
-    # Stage 90s MP3 excerpts for untagged tracks so MIK never touches source originals
-    stage_dir = Path("/tmp/music_evo_mik_stage")
-    if stage_dir.exists():
-        shutil.rmtree(stage_dir)
-    stage_dir.mkdir(parents=True, exist_ok=True)
-
-    resolved_sources = {}
-    for spec in pa.TRACK_SPECS:
-        src_kind, era, slot, title, default_bpm, rel, *rest = spec
-        fixed_cue = float(rest[0]) if rest else None
-        tid = f"{era}_{slot}"
-        src = pa.resolve_corpus_path(archive_root if src_kind == "archive" else corpus_root, rel)
-        resolved_sources[tid] = (src_kind, era, slot, title, default_bpm, src, fixed_cue)
-
-        # Stage only if not in MIK DB or source tags (and accessibility might be enabled)
-        k_norm = "".join(c for c in src.stem.lower() if c.isalnum())
-        src_tags = read_mutagen_mik(src)
-        if not src_tags.get("energy") and k_norm not in mik_db and not args.skip_mik_gui:
-            st_mp3 = stage_dir / f"{tid}.mp3"
-            ss = max(0.0, (fixed_cue or 20.0) - 5.0)
-            subprocess.run(
-                [ffmpeg_bin, "-y", "-v", "error", "-ss", f"{ss:.1f}", "-t", "90", "-i", str(src), "-vn", "-ar", "44100", "-ac", "2", "-codec:a", "libmp3lame", "-b:a", "160k", str(st_mp3)],
-                capture_output=True, check=False
-            )
-
-    staged_files = list(stage_dir.glob("*.mp3"))
-    mik_gui_tags = {}
-    if staged_files and not args.skip_mik_gui and MIK_SCRIPT.exists() and can_run_mik_gui():
-        print(f"Accessibility active! Running mik_analyze.py on {len(staged_files)} staged clips...")
-        subprocess.run([sys.executable, str(MIK_SCRIPT), str(stage_dir)], check=False, timeout=360)
-        for st in staged_files:
-            mt = read_mutagen_mik(st)
-            if mt:
-                mik_gui_tags[st.stem] = mt
+    if args.from_cache and args.from_cache.exists():
+        analyzed = json.loads(args.from_cache.read_text(encoding="utf-8"))
+        for t in analyzed:
+            enrich_track_tiers(t)
     else:
-        print(f"MIK GUI skipped/unavailable ({len(staged_files)} untagged); using MIK DB + source tags + DJVibes calibrated MIK model.")
+        if args.reanalyze_local:
+            in_tracks = base_payload.get("tracks", [])
+            if not in_tracks:
+                raise SystemExit(f"No tracks found in {args.data_js}")
+        elif args.manifest and args.manifest.exists():
+            in_tracks = json.loads(args.manifest.read_text(encoding="utf-8")).get("tracks", [])
+        else:
+            ap.error("Specify --reanalyze-local, --manifest, or --from-cache")
 
-    bpm_overrides = {}
-    manifest_bpm_by_id = {}
-    manifest_path = SCRIPTS_DIR / "audio_manifest.json"
-    if manifest_path.exists():
-        m_json = json.loads(manifest_path.read_text(encoding="utf-8"))
-        for lst in m_json.get("tracks_by_era", {}).values():
-            for mt in lst:
-                manifest_bpm_by_id[mt["id"]] = float(mt["bpm"])
+        analyzed = []
+        with ThreadPoolExecutor(max_workers=args.workers) as pool:
+            futs = [pool.submit(reanalyze_track_worker, ffmpeg_bin, ROOT, t) for t in in_tracks]
+            for fut in as_completed(futs):
+                analyzed.append(fut.result())
 
-    analyzed_tracks = []
+    era_rank = {e: idx for idx, e in enumerate(ERA_ORDER)}
+    analyzed.sort(key=lambda t: (era_rank.get(t["era"], 99), int(t.get("slot", 0)), t["id"]))
+    if args.cache_json:
+        args.cache_json.parent.mkdir(parents=True, exist_ok=True)
+        args.cache_json.write_text(json.dumps(analyzed, indent=2, ensure_ascii=False) + "\n", encoding="utf-8")
 
-    try:
-        for tid, (src_kind, era, slot, title, default_bpm, src, fixed_cue) in resolved_sources.items():
-            # Prefer canonical BPM stored in audio_manifest.json so loop playback & beat LEDs stay sample-exact.
-            src_tags = read_mutagen_mik(src)
-            k_norm = "".join(c for c in src.stem.lower() if c.isalnum())
-            db_hit = mik_db.get(k_norm, {})
-            gui_hit = mik_gui_tags.get(tid, {})
+    layout = cluster_and_layout(analyzed)
+    by_id = {t["id"]: t for t in analyzed}
 
-            mik_en = gui_hit.get("energy") or src_tags.get("energy") or db_hit.get("energy")
-            mik_bpm = gui_hit.get("bpm") or src_tags.get("bpm") or db_hit.get("tempo")
-            mik_key = gui_hit.get("key") or src_tags.get("key") or db_hit.get("key")
-
-            start_s = max(0.0, fixed_cue - 20.0) if fixed_cue else 0.0
-            y = decode_audio(ffmpeg_bin, src, start_s=start_s, dur_s=240.0)
-            feats, env = dsp_models.analyze_signal(y)
-            p = dsp_models.params()
-            en_dsp = dsp_models.predict_energy(feats)
-            energy = int(round(float(mik_en))) if mik_en is not None else int(en_dsp)
-            energy_source = "mik" if mik_en is not None else "mik_model"
-
-            if tid in manifest_bpm_by_id:
-                bpm = float(manifest_bpm_by_id[tid])
-            else:
-                theta = p["bpm"]["theta"]
-                xs, C = dsp_models._prepare(env)
-                bpm_hint = float(mik_bpm) if mik_bpm else None
-                if bpm_hint:
-                    bpm0 = bpm_hint
-                else:
-                    bpm_raw, ratio = dsp_models.coarse_bpm(theta, C)
-                    is_dnb = tid in DNB_HINTS or any(h in title.lower() for h in DNB_HINTS)
-                    if is_dnb and bpm_raw < 120:
-                        bpm0 = bpm_raw * 2.0
-                    elif is_dnb:
-                        bpm0 = bpm_raw
-                    else:
-                        bpm0, _ = dsp_models.half_rule(theta, bpm_raw, ratio, energy)
-                bpm_fine, _, _ = dsp_models.fine_fit(xs, theta, bpm0, search=(bpm_hint is None))
-                bpm = round(float(bpm_fine), 2)
-                bpm_overrides[tid] = bpm
-
-            hr = analyze_harmony_and_rhythm(y, bpm)
-            key_cam = str(mik_key) if mik_key else hr["key_camelot"]
-            key_label = hr["key_label"] if not mik_key else f"{hr['key_label'].split(' (')[0]} ({key_cam})"
-
-            t_obj = {
-                "id": tid,
-                "era": era,
-                "slot": slot,
-                "source": src_kind,
-                "title": title,
-                "shortTitle": title.split(" (")[0][:24],
-                "bpm": round(bpm, 2),
-                "effective_bpm": round(bpm, 2),
-                "energy": energy,
-                "energy_source": energy_source,
-                "key_camelot": key_cam,
-                "key_label": key_label,
-                "harmonic_complexity": hr["harmonic_complexity"],
-                "chord_richness": hr["chord_richness"],
-                "harmonic_motion": hr["harmonic_motion"],
-                "modal_darkness": hr["modal_darkness"],
-                "microtonal_score": hr["microtonal_score"],
-                "drum_complexity": hr["drum_complexity"],
-                "perc_share": hr["perc_share"],
-                "perc_onset_rate": hr["perc_onset_rate"],
-                "gap_cv": hr["gap_cv"],
-                "gap_entropy": hr["gap_entropy"],
-                "high_low_ratio": hr["high_low_ratio"],
-                "four_on_floor": hr["four_on_floor"],
-                "breakbeat_score": hr["breakbeat_score"],
-                "groove_style": hr["groove_style"],
-                "pulse_clarity": round(float(feats.get("pulse_clarity", 0.25)), 3),
-                "onset_rate": round(float(feats.get("onset_rate", 2.0)), 2),
-                "sub_share": round(float(feats.get("band_sub_frac", 0.2)), 3),
-                "bass_share": round(float(feats.get("band_bass_frac", 0.2)), 3),
-                "mid_share": round(float(feats.get("band_mid_frac", 0.2)), 3),
-                "high_share": round(float(feats.get("band_high_frac", 0.1)), 3),
-                "air_share": round(float(feats.get("band_air_frac", 0.05)), 3),
-                "crest": round(float(feats.get("crest_mean", 10.0)), 2),
-                "scale_deg_12": hr["scale_deg_12"],
-            }
-            h_tag, r_tag = make_tags(t_obj)
-            t_obj["harmony_tag"] = h_tag
-            t_obj["rhythm_tag"] = r_tag
-            analyzed_tracks.append(t_obj)
-            print(
-                f"[{tid:22s}] E{energy:2d} {bpm:6.2f} | Harm={hr['harmonic_complexity']:4.1f} | Drum={hr['drum_complexity']:4.1f} "
-                f"| 4x4={hr['four_on_floor']:4.1f} Brk={hr['breakbeat_score']:4.1f} ({hr['groove_style']})"
-            )
-    finally:
-        if stage_dir.exists():
-            shutil.rmtree(stage_dir)
-
-    layout = cluster_and_layout(analyzed_tracks)
-    out = {
-        "n_tracks": len(analyzed_tracks),
+    meta = dict(base_payload.get("meta", {}))
+    meta.update({
+        "total_map_tracks": len(analyzed),
         "silhouette": layout["silhouette"],
         "style_groups": layout["style_groups"],
-        "track_map": layout["track_map"],
         "era_anchors": layout["era_anchors"],
         "track_near": layout["track_near"],
-        "tracks": analyzed_tracks,
-    }
-    (SCRIPTS_DIR / "track_analysis.json").write_text(json.dumps(out, indent=2, ensure_ascii=False) + "\n", encoding="utf-8")
-    Path("/tmp/track_bpm_overrides.json").write_text(json.dumps(bpm_overrides, indent=2), encoding="utf-8")
-    print(f"\nCluster summary (silhouette={layout['silhouette']}):")
+        "track_map": layout["track_map"],
+    })
+
+    eras = base_payload.get("eras", [])
+    for er in eras:
+        er_tracks = [t for t in analyzed if t["era"] == er["id"]]
+        if er_tracks:
+            er["tracks"] = er_tracks
+            er["audio_files"] = max(int(er.get("audio_files") or 0), len(er_tracks))
+    phases = base_payload.get("phases", [])
+    for ph in phases:
+        ph_tracks = [by_id[t["id"]] for t in ph.get("tracks", []) if t["id"] in by_id]
+        if ph_tracks:
+            ph["tracks"] = ph_tracks
+
+    out_payload = {"meta": meta, "tracks": analyzed, "phases": phases, "eras": eras}
+    args.out_json.parent.mkdir(parents=True, exist_ok=True)
+    args.out_json.write_text(json.dumps(out_payload, indent=2, ensure_ascii=False) + "\n", encoding="utf-8")
+
+    print(f"Analyzed {len(analyzed)} tracks -> {args.out_json} (silhouette={layout['silhouette']})")
     for g in layout["style_groups"]:
-        names = [next(t["title"] for t in analyzed_tracks if t["id"] == m) for m in g["members"]]
-        print(f"  [{g['id']}] {g['label']} ({len(names)}): {', '.join(names[:8])}{' ...' if len(names) > 8 else ''}")
+        names = [by_id[m]["title"] for m in g["members"]]
+        print(f"  [{g['id']}] {g['label']} ({len(names)}): {', '.join(names[:6])}{' ...' if len(names) > 6 else ''}")
 
 
 if __name__ == "__main__":

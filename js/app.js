@@ -1,13 +1,18 @@
-// Main Application Coordinator, Side Nav, Theme Sync, Timeline Loop & Settings
+// Main Application Coordinator, Side Nav, Theme Sync, Global Spacebar, Timeline Loop & Settings
 (function () {
   "use strict";
 
   const DATA = window.CORPUS_DATA;
   if (!DATA) return;
 
+  const MODE_LABELS = (window.BTMM_MODE_LABELS = window.BTMM_MODE_LABELS || {
+    vibe: "Vibe",
+    era: "Era",
+  });
+
   const VIEWS = [
-    { id: "similarity", section: "Maps", icon: "hub", label: "Similarity map", isMap: true },
-    { id: "era", section: "Maps", icon: "auto_awesome_mosaic", label: "Era map", isMap: true },
+    { id: "vibe", section: "Maps", icon: "hub", label: `${MODE_LABELS.vibe} map`, isMap: true },
+    { id: "era", section: "Maps", icon: "waves", label: `${MODE_LABELS.era} timeline`, isMap: true },
     { id: "macro-harmony", section: "Overview", icon: "insights", label: "Macro harmony & energy" },
     { id: "timeline-player", section: "Overview", icon: "slideshow", label: "Timeline animator" },
     { id: "era-compare", section: "Overview", icon: "compare_arrows", label: "Era comparator" },
@@ -23,16 +28,25 @@
     { id: "palette", section: "Evolution & groove", icon: "equalizer", label: "Synths & FX palette" },
   ];
 
-  const byId = new Map((DATA.tracks || []).map((t) => [t.id, t]));
-  const erasById = new Map((DATA.eras || []).map((e) => [e.id, e]));
+  const THEME_KEY = "btmm.theme";
+  const LEGACY_THEME_KEY = "me.theme";
+
+  const tracks = DATA.tracks || [];
+  const eras = DATA.eras || [];
+  const phases = DATA.phases || [];
+  const meta = DATA.meta || {};
+  const mapBlob = DATA.map || {};
+
+  const byId = new Map(tracks.map((t) => [t.id, t]));
+  const erasById = new Map(eras.map((e) => [e.id, e]));
 
   const state = {
     themeMode: "auto", // auto | light | dark
     resolvedTheme: "dark",
-    tab: "similarity",
+    tab: "vibe",
     granularity: "eras", // eras (16) | phases (5)
-    pinnedEraIdx: Math.max(0, (DATA.eras || []).length - 2), // Ecstatic Wave default on secondary tabs
-    pinnedPhaseIdx: Math.max(0, (DATA.phases || []).length - 1),
+    pinnedEraIdx: Math.max(0, eras.length - 2),
+    pinnedPhaseIdx: Math.max(0, phases.length - 1),
     hoverIdx: null,
     navExpanded: false,
     mobileNavOpen: false,
@@ -42,8 +56,8 @@
     heatmapSpotlight: true,
     voicingMode: "keyboard",
     tuningScaleId: "semeradana",
-    compareAIdx: 1, // Present Electro
-    compareBIdx: Math.max(0, (DATA.eras || []).length - 2), // Ecstatic Wave
+    compareAIdx: Math.min(1, Math.max(0, eras.length - 1)),
+    compareBIdx: Math.max(0, eras.length - 2),
     animPlaying: false,
     animPos: 0,
     animLoop: true,
@@ -55,7 +69,6 @@
   };
 
   let animRafId = null;
-  let glideRafId = null;
   let animLastTs = 0;
   let isScrubbing = false;
   let scrubHoldTimer = null;
@@ -74,7 +87,7 @@
     input.style.setProperty("--pct", `${Math.max(0, Math.min(100, pct)).toFixed(2)}%`);
   }
 
-  // ---- Theme System (Auto / Light / Dark + Helix live sync) ----
+  // ---- Theme System (Auto / Light / Dark + Top-Right Toggle + Helix Live Sync) ----
   function resolveHostTheme() {
     if (typeof window === "undefined" || typeof document === "undefined") return "dark";
     try {
@@ -93,21 +106,36 @@
     return "dark";
   }
 
+  function syncThemeToggleIcon() {
+    if (typeof document === "undefined") return;
+    const btn = document.getElementById("theme-toggle");
+    if (!btn) return;
+    const isDark = state.resolvedTheme === "dark";
+    const iconEl = btn.querySelector(".ms");
+    if (iconEl) iconEl.textContent = isDark ? "light_mode" : "dark_mode";
+    btn.title = isDark ? "Switch to light theme" : "Switch to dark theme";
+    btn.setAttribute("aria-label", btn.title);
+  }
+
   function applyTheme(mode) {
     state.themeMode = mode;
-    try { localStorage.setItem("me.theme", mode); } catch (_) {}
+    try { localStorage.setItem(THEME_KEY, mode); } catch (_) {}
     const eff = mode === "auto" ? resolveHostTheme() : mode;
     state.resolvedTheme = eff;
     if (typeof document !== "undefined") {
       document.documentElement.setAttribute("data-theme", eff);
       document.documentElement.style.colorScheme = eff;
     }
+    syncThemeToggleIcon();
     syncSettingsUi();
+    if (window.ME_NODEMAP && window.ME_NODEMAP.refreshTheme) {
+      window.ME_NODEMAP.refreshTheme();
+    }
   }
 
   function initTheme() {
     let saved = "auto";
-    try { saved = localStorage.getItem("me.theme") || "auto"; } catch (_) {}
+    try { saved = localStorage.getItem(THEME_KEY) || localStorage.getItem(LEGACY_THEME_KEY) || "auto"; } catch (_) {}
     applyTheme(saved);
     if (typeof window !== "undefined" && window.matchMedia) {
       const mq = window.matchMedia("(prefers-color-scheme: light)");
@@ -124,7 +152,7 @@
 
   // ---- Navigation & URL Hash ----
   function currentItems() {
-    return state.granularity === "phases" ? DATA.phases : DATA.eras;
+    return state.granularity === "phases" ? phases : eras;
   }
 
   function getPinnedIdx() {
@@ -141,7 +169,7 @@
   }
 
   function isMapTab(tabId = state.tab) {
-    return tabId === "similarity" || tabId === "era";
+    return tabId === "vibe" || tabId === "similarity" || tabId === "era";
   }
 
   function buildSideNav() {
@@ -174,22 +202,20 @@
     }
   }
 
-  function renderTopSwitch() {
-    const topSw = document.getElementById("top-switch");
-    const mobSw = document.getElementById("map-mobile-toggle");
-    if (isMapTab()) {
-      const simAct = state.tab === "similarity";
-      const btns = `
-        <button type="button" class="m3-pill-tab ${simAct ? "is-active" : ""}" data-map-layout="similarity" aria-pressed="${simAct}">Similarity</button>
-        <button type="button" class="m3-pill-tab ${!simAct ? "is-active" : ""}" data-map-layout="era" aria-pressed="${!simAct}">Era</button>`;
-      if (topSw) { topSw.hidden = false; topSw.innerHTML = btns; }
-      if (mobSw) { mobSw.innerHTML = btns; }
-    } else {
+  function renderModeSwitchers() {
+    const mapTabsEl = document.getElementById("map-mode-tabs");
+    if (mapTabsEl) {
+      const vibeAct = state.tab === "vibe" || state.tab === "similarity";
+      mapTabsEl.innerHTML = `
+        <button type="button" class="m3-pill-tab ${vibeAct ? "is-active" : ""}" data-map-layout="vibe" aria-pressed="${vibeAct}">${esc(MODE_LABELS.vibe)}</button>
+        <button type="button" class="m3-pill-tab ${!vibeAct ? "is-active" : ""}" data-map-layout="era" aria-pressed="${!vibeAct}">${esc(MODE_LABELS.era)}</button>`;
+    }
+    const granEl = document.getElementById("analysis-granularity");
+    if (granEl) {
       const eraAct = state.granularity === "eras";
-      const btns = `
-        <button type="button" class="m3-pill-tab ${eraAct ? "is-active" : ""}" data-granularity="eras" aria-pressed="${eraAct}">16 eras</button>
-        <button type="button" class="m3-pill-tab ${!eraAct ? "is-active" : ""}" data-granularity="phases" aria-pressed="${!eraAct}">5 phases</button>`;
-      if (topSw) { topSw.hidden = false; topSw.innerHTML = btns; }
+      granEl.innerHTML = `
+        <button type="button" class="m3-pill-tab ${eraAct ? "is-active" : ""}" data-granularity="eras" aria-pressed="${eraAct}">${eras.length} eras</button>
+        <button type="button" class="m3-pill-tab ${!eraAct ? "is-active" : ""}" data-granularity="phases" aria-pressed="${!eraAct}">${phases.length} phases</button>`;
     }
   }
 
@@ -234,7 +260,8 @@
     if (!infoEl || !ledsEl) return;
     const active = window.ME_AUDIO.activeVoice();
     const pend = window.ME_AUDIO.pendingVoice();
-    const tr = (active && active.track) || (pend && pend.track) || (currentItems()[getPinnedIdx()].tracks || [])[0];
+    const cur = currentItems()[getPinnedIdx()];
+    const tr = (active && active.track) || (pend && pend.track) || (cur && cur.tracks && cur.tracks[0]);
     if (tr) {
       const er = erasById.get(tr.era);
       infoEl.innerHTML = `
@@ -297,9 +324,7 @@
   function stopAnimPlayback() {
     state.animPlaying = false;
     if (animRafId !== null && typeof cancelAnimationFrame !== "undefined") cancelAnimationFrame(animRafId);
-    if (glideRafId !== null && typeof cancelAnimationFrame !== "undefined") cancelAnimationFrame(glideRafId);
     animRafId = null;
-    glideRafId = null;
     window.ME_AUDIO.stop();
     updateTimelineFrame();
   }
@@ -312,7 +337,7 @@
     const nowCtx = window.ME_AUDIO.ctxTime();
 
     if (!isScrubbing) {
-      if (state.audioEnabled && active && active.scheduled && state.barsPerEra > 0) {
+      if (state.audioEnabled && active && active.scheduled && !active.isHtmlFallback && state.barsPerEra > 0) {
         const barDur = Math.max(0.25, active.barDurSec);
         const slotDur = state.barsPerEra * barDur;
         const elapsed = Math.max(0, nowCtx - active.slotStartCtxTime);
@@ -374,7 +399,7 @@
   // ---- Main Render Coordinator ----
   function renderView() {
     buildSideNav();
-    renderTopSwitch();
+    renderModeSwitchers();
 
     const mapEl = document.getElementById("map");
     const anaEl = document.getElementById("analysis-shell");
@@ -383,7 +408,6 @@
       if (mapEl) mapEl.hidden = false;
       if (anaEl) anaEl.hidden = true;
       window.ME_NODEMAP.setLayout(state.tab, true);
-      window.ME_NODEMAP.relayout();
       return;
     }
 
@@ -412,7 +436,7 @@
     }
 
     const stageEl = document.getElementById("view-stage");
-    if (stageEl) {
+    if (stageEl && d) {
       if (state.tab === "macro-harmony") stageEl.innerHTML = VH.renderMacroHarmony(items, d, selIdx, state, playId);
       else if (state.tab === "timeline-player") stageEl.innerHTML = VH.renderTimelinePlayer(getSortedTimelineItems(), state);
       else if (state.tab === "chord-quality") stageEl.innerHTML = VH.renderChordQuality(items, d, selIdx, state);
@@ -429,7 +453,7 @@
     }
 
     const inspEl = document.getElementById("era-inspector");
-    if (inspEl) {
+    if (inspEl && d) {
       inspEl.hidden = state.tab === "macro-harmony" || state.tab === "timeline-player";
       if (!inspEl.hidden) inspEl.innerHTML = VE.renderEraInspector(d, playId);
     }
@@ -438,14 +462,15 @@
       updateTimelineFrame();
       document.querySelectorAll('input[type="range"].gm3-slider').forEach(syncSliderPct);
     }
+    if (window.BTMM_PLAYER) window.BTMM_PLAYER.render();
   }
 
   function setTab(nextTab) {
-    if (!VIEWS.some((v) => v.id === nextTab)) nextTab = "similarity";
-    state.tab = nextTab;
+    const normalized = nextTab === "similarity" ? "vibe" : nextTab;
+    state.tab = VIEWS.some((v) => v.id === normalized) ? normalized : "vibe";
     state.hoverIdx = null;
     if (typeof window !== "undefined" && window.history && window.history.replaceState) {
-      try { window.history.replaceState(null, "", `#${nextTab}`); } catch (_) {}
+      try { window.history.replaceState(null, "", `#${state.tab}`); } catch (_) {}
     }
     renderView();
   }
@@ -464,15 +489,6 @@
     });
   }
 
-  function syncPlayingChip() {
-    const chip = document.getElementById("now-playing-chip");
-    const nameEl = document.getElementById("now-playing-name");
-    const pid = window.ME_AUDIO.playing();
-    const tr = pid ? byId.get(pid) : null;
-    if (chip) chip.hidden = !tr;
-    if (nameEl && tr) nameEl.textContent = tr.shortTitle || tr.title;
-  }
-
   function applySearchFilter(q) {
     state.searchQuery = q;
     const ql = q.trim().toLowerCase();
@@ -480,9 +496,14 @@
       window.ME_NODEMAP.setFilter(null);
     } else {
       const hits = new Set();
-      DATA.tracks.forEach((t) => {
+      tracks.forEach((t) => {
         const er = erasById.get(t.era);
-        if (t.title.toLowerCase().includes(ql) || (er && er.label.toLowerCase().includes(ql)) || t.cluster_label.toLowerCase().includes(ql) || t.key_label.toLowerCase().includes(ql)) {
+        if (
+          (t.title || "").toLowerCase().includes(ql) ||
+          (er && (er.label || "").toLowerCase().includes(ql)) ||
+          (t.cluster_label || "").toLowerCase().includes(ql) ||
+          (t.key_label || "").toLowerCase().includes(ql)
+        ) {
           hits.add(t.id);
         }
       });
@@ -491,11 +512,41 @@
     if (!isMapTab()) renderView();
   }
 
+  function selectAndPlayTrack(tid) {
+    if (!tid || !byId.has(tid)) return;
+    if (window.ME_NODEMAP) window.ME_NODEMAP.setSelectedSilent(tid);
+    if (window.BTMM_PLAYER) window.BTMM_PLAYER.select(tid, { silent: true });
+    window.ME_AUDIO.toggleTrack(tid);
+  }
+
+  function resolveSpacebarTargetTrack() {
+    const playingId = window.ME_AUDIO.playing() || window.ME_AUDIO.pending();
+    if (playingId) return playingId;
+    if (window.BTMM_PLAYER && window.BTMM_PLAYER.selected()) return window.BTMM_PLAYER.selected();
+    if (window.ME_NODEMAP && window.ME_NODEMAP.selected()) return window.ME_NODEMAP.selected();
+    if (!isMapTab()) {
+      const cur = currentItems()[getPinnedIdx()];
+      if (cur && cur.tracks && cur.tracks[0]) return cur.tracks[0].id;
+    }
+    if (window.ME_NODEMAP && window.ME_NODEMAP.firstVisibleTrackId) {
+      return window.ME_NODEMAP.firstVisibleTrackId();
+    }
+    return tracks[0] ? tracks[0].id : null;
+  }
+
+  function isTextEditingTarget(el) {
+    if (!el) return false;
+    if (el.isContentEditable) return true;
+    const tag = (el.tagName || "").toUpperCase();
+    return tag === "INPUT" || tag === "TEXTAREA" || tag === "SELECT";
+  }
+
   function bindGlobalUi() {
     const searchWrap = document.getElementById("search-wrap");
     const searchOpen = document.getElementById("search-open");
     const searchInput = document.getElementById("search-input");
     const searchClose = document.getElementById("search-close");
+    const themeToggleBtn = document.getElementById("theme-toggle");
     const settingsBtn = document.getElementById("settings-open");
     const settingsPop = document.getElementById("settings-popover");
 
@@ -512,12 +563,18 @@
     if (searchClose) searchClose.addEventListener("click", closeSearch);
     if (searchInput) searchInput.addEventListener("input", () => applySearchFilter(searchInput.value));
 
+    if (themeToggleBtn) {
+      themeToggleBtn.addEventListener("click", () => {
+        applyTheme(state.resolvedTheme === "dark" ? "light" : "dark");
+      });
+    }
+
     document.getElementById("menu-toggle").addEventListener("click", () => {
       const mobile = window.innerWidth <= 840;
       if (mobile) state.mobileNavOpen = !state.mobileNavOpen;
       else state.navExpanded = !state.navExpanded;
       buildSideNav();
-      if (!mobile) setTimeout(() => window.ME_NODEMAP.relayout(), 220);
+      if (!mobile) setTimeout(() => window.ME_NODEMAP.relayout(false), 220);
     });
 
     document.getElementById("nav-scrim").addEventListener("click", () => {
@@ -554,14 +611,14 @@
 
       const playBtn = ev.target.closest("[data-track-play]");
       if (playBtn) {
-        window.ME_AUDIO.toggleTrack(playBtn.getAttribute("data-track-play"));
+        selectAndPlayTrack(playBtn.getAttribute("data-track-play"));
         return;
       }
 
       const focusBtn = ev.target.closest("[data-focus-map]");
       if (focusBtn) {
         const tid = focusBtn.getAttribute("data-focus-map");
-        setTab("similarity");
+        setTab("vibe");
         window.ME_NODEMAP.focus(tid);
         return;
       }
@@ -595,7 +652,7 @@
       const stopBtn = ev.target.closest("[data-anim-stop]");
       if (stopBtn) { glideToStop(Number(stopBtn.getAttribute("data-anim-stop"))); return; }
       if (ev.target.closest("#btn-audio-mute")) { state.audioEnabled = !state.audioEnabled; window.ME_AUDIO.setEnabled(state.audioEnabled); syncSettingsUi(); renderView(); return; }
-      if (ev.target.closest("#btn-play-scale")) { window.ME_AUDIO.auditionScale(DATA.meta.tuning_scales[state.tuningScaleId]); return; }
+      if (ev.target.closest("#btn-play-scale")) { window.ME_AUDIO.auditionScale(meta.tuning_scales[state.tuningScaleId]); return; }
       if (ev.target.closest("#btn-play-tet")) { window.ME_AUDIO.audition12Tet(); return; }
       const centBtn = ev.target.closest("[data-play-cent]");
       if (centBtn) { window.ME_AUDIO.triggerBellNote(Number(centBtn.getAttribute("data-play-cent")), 0); return; }
@@ -656,44 +713,46 @@
       state.audioEnabled = ev.target.checked;
       window.ME_AUDIO.setEnabled(state.audioEnabled);
     });
-    document.getElementById("now-playing-chip").addEventListener("click", () => {
-      if (state.animPlaying) stopAnimPlayback();
-      else window.ME_AUDIO.stop();
-    });
 
+    // Global Spacebar Play/Pause + Escape handler
     window.addEventListener("keydown", (ev) => {
       if (ev.key === "Escape") {
         if (searchWrap && searchWrap.classList.contains("is-open")) { closeSearch(); return; }
         if (settingsPop && !settingsPop.hidden) { settingsPop.hidden = true; settingsBtn.setAttribute("aria-expanded", "false"); return; }
         if (state.mobileNavOpen) { state.mobileNavOpen = false; buildSideNav(); return; }
         if (isMapTab() && window.ME_NODEMAP.selected()) { window.ME_NODEMAP.setClusterFilter(null); }
-      } else if (ev.key === " " && !/INPUT|SELECT|TEXTAREA/.test((ev.target && ev.target.tagName) || "")) {
-        if (isMapTab() && window.ME_NODEMAP.selected()) { ev.preventDefault(); window.ME_AUDIO.toggleTrack(window.ME_NODEMAP.selected()); }
-        else if (state.tab === "timeline-player") { ev.preventDefault(); state.animPlaying ? stopAnimPlayback() : startAnimPlayback(); }
+        return;
+      }
+      if (ev.code === "Space" || ev.key === " ") {
+        if (isTextEditingTarget(document.activeElement) || isTextEditingTarget(ev.target)) return;
+        ev.preventDefault();
+        if (state.tab === "timeline-player" && state.animPlaying) {
+          stopAnimPlayback();
+          return;
+        }
+        const targetTid = resolveSpacebarTargetTrack();
+        if (targetTid) selectAndPlayTrack(targetTid);
       }
     });
 
     let resizeTimer = 0;
     window.addEventListener("resize", () => {
-      if (window.innerWidth > 840 && state.mobileNavOpen) {
-        state.mobileNavOpen = false;
-      }
+      if (window.innerWidth > 840 && state.mobileNavOpen) state.mobileNavOpen = false;
       buildSideNav();
       if (resizeTimer) clearTimeout(resizeTimer);
-      resizeTimer = setTimeout(() => { window.ME_NODEMAP.relayout(); }, 120);
+      resizeTimer = setTimeout(() => { window.ME_NODEMAP.relayout(false); }, 120);
     });
   }
 
   function boot() {
     initTheme();
-    window.ME_AUDIO.setTrackIndex(DATA.tracks || []);
+    window.ME_AUDIO.setTrackIndex(tracks);
     window.ME_AUDIO.setOnStateChange(() => {
       window.ME_NODEMAP.paint();
-      syncPlayingChip();
+      if (window.BTMM_PLAYER) window.BTMM_PLAYER.render();
       if (!isMapTab()) renderView();
     });
     window.ME_AUDIO.setOnBeat((tid, step) => {
-      window.ME_NODEMAP.stepBeat(tid, step);
       const leds = document.querySelectorAll("#audio-beat-leds .beat-led");
       if (leds.length === 4) {
         const b = Math.floor(step / 4) % 4;
@@ -702,28 +761,44 @@
     });
 
     if (typeof document !== "undefined") {
-      window.ME_NODEMAP.init({
-        tracks: DATA.tracks || [],
+      window.BTMM_PLAYER.init({
         byId,
         erasById,
-        styleGroups: DATA.meta.style_groups || [],
-        eraAnchors: DATA.meta.era_anchors || [],
-        trackMap: DATA.meta.track_map || {},
-        trackNear: DATA.meta.track_near || {},
+        playing: () => window.ME_AUDIO.playing(),
+        pending: () => window.ME_AUDIO.pending(),
+        onPlayToggle: (tid) => window.ME_AUDIO.toggleTrack(tid),
+        onSelectionChange: (tid) => {
+          if (window.ME_NODEMAP) window.ME_NODEMAP.setSelectedSilent(tid);
+        },
+        onStarChange: () => {
+          if (window.ME_NODEMAP) window.ME_NODEMAP.paint();
+        },
+      });
+
+      window.ME_NODEMAP.init({
+        tracks,
+        eras,
+        byId,
+        erasById,
+        styleGroups: meta.style_groups || DATA.style_groups || mapBlob.style_groups || [],
+        eraAnchors: meta.era_anchors || DATA.era_anchors || mapBlob.era_anchors || [],
+        trackMap: meta.track_map || DATA.track_map || mapBlob.track_map || {},
+        trackNear: meta.track_near || DATA.track_near || mapBlob.track_near || {},
         playing: () => window.ME_AUDIO.playing(),
         pending: () => window.ME_AUDIO.pending(),
         onTap: (tid) => window.ME_AUDIO.toggleTrack(tid),
-        onLayoutChange: () => renderTopSwitch(),
+        onLayoutChange: () => renderModeSwitchers(),
       });
       bindGlobalUi();
     }
 
-    const h = (typeof window !== "undefined" && window.location && window.location.hash || "").replace(/^#/, "");
-    if (VIEWS.some((v) => v.id === h)) state.tab = h;
+    const rawHash = (typeof window !== "undefined" && window.location && window.location.hash || "").replace(/^#/, "");
+    const mappedHash = rawHash === "similarity" ? "vibe" : rawHash;
+    if (VIEWS.some((v) => v.id === mappedHash)) state.tab = mappedHash;
     renderView();
     if (typeof window !== "undefined") {
       window.__APP_LOADED__ = true;
-      window.__APP_TEST__ = { state, DATA, VIEWS, setTab, renderView, applyTheme };
+      window.__APP_TEST__ = { state, DATA, VIEWS, MODE_LABELS, setTab, renderView, applyTheme };
     }
   }
 
