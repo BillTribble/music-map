@@ -134,9 +134,10 @@
   function nodeBaseRadius(t) {
     const e = Math.max(1, Math.min(10, Number(t.energy || 4)));
     if (tracks.length > 220) {
-      return 4.3 + ((e - 1) / 9) * 3.1; // 4.3px .. 7.4px crisp jewel dots for 559-track corpus
+      if (vw <= 600) return 2.9 + ((e - 1) / 9) * 1.8;
+      return 4.2 + ((e - 1) / 9) * 3.0;
     }
-    return 6.4 + ((e - 1) / 9) * 4.4; // 6.4px .. 10.8px for smaller sets
+    return 6.4 + ((e - 1) / 9) * 4.4;
   }
 
   function isMatch(t) {
@@ -150,9 +151,9 @@
   function vibeTarget(tid) {
     const coords = trackMap[tid];
     const norm = (coords && (coords.vibe || coords.similarity)) || [0.5, 0.5];
-    const topPad = vw <= 800 ? 74 : PAD;
-    const sidePad = vw <= 800 ? 22 : PAD;
-    const botPad = vw <= 800 ? 74 : PAD;
+    const topPad = vw <= 800 ? 64 : PAD;
+    const sidePad = vw <= 800 ? 18 : PAD;
+    const botPad = vw <= 800 ? 24 : PAD;
     const w = Math.max(220, vw - sidePad * 2);
     const h = Math.max(200, vh - topPad - botPad);
     return [sidePad + norm[0] * w, topPad + norm[1] * h];
@@ -258,10 +259,10 @@
       return;
     }
 
-    // Vibe cluster pills positioned cleanly just above each cluster's dot cloud & clamped inside viewport
-    const topPad = vw <= 800 ? 74 : PAD;
-    const sidePad = vw <= 800 ? 22 : PAD;
-    const botPad = vw <= 800 ? 74 : PAD;
+    // Vibe cluster pills positioned cleanly just above each cluster's dot cloud
+    const topPad = vw <= 800 ? 64 : PAD;
+    const sidePad = vw <= 800 ? 18 : PAD;
+    const botPad = vw <= 800 ? 24 : PAD;
     const w = Math.max(220, vw - sidePad * 2);
     const h = Math.max(200, vh - topPad - botPad);
     const compactMob = vw <= 560;
@@ -280,7 +281,7 @@
         }
         if (nCnt > 0) {
           ax = sxSum / nCnt;
-          ay = minY - 22;
+          ay = minY - (compactMob ? 16 : 22);
         }
       }
       const sx = ax * zoom.k + zoom.x;
@@ -291,9 +292,10 @@
       return { g, sx, sy, w: pw, sub: `${count} tracks` };
     });
 
-    // Lightweight screen-space separation + dot avoidance + strict viewport edge clamping
-    const minTop = vw <= 800 ? 76 : 64;
-    const maxBot = vh - 36;
+    // Screen-space separation; clamp inside screen at 1x, scroll naturally off-screen when zoomed in
+    const minTop = vw <= 800 ? 74 : 64;
+    const maxBot = vh - 32;
+    const clampToEdges = zoom.k <= 1.05;
     for (let it = 0; it < 22; it++) {
       for (let i = 0; i < pts.length; i++) {
         for (let j = i + 1; j < pts.length; j++) {
@@ -310,14 +312,17 @@
           }
         }
       }
-      pts.forEach((p) => {
-        const halfW = p.w * 0.5 + 10;
-        p.sx = Math.max(halfW, Math.min(vw - halfW, p.sx));
-        p.sy = Math.max(minTop, Math.min(maxBot, p.sy));
-      });
+      if (clampToEdges) {
+        pts.forEach((p) => {
+          const halfW = p.w * 0.5 + 10;
+          p.sx = Math.max(halfW, Math.min(vw - halfW, p.sx));
+          p.sy = Math.max(minTop, Math.min(maxBot, p.sy));
+        });
+      }
     }
 
     pts.forEach((p) => {
+      if (!clampToEdges && (p.sx + p.w * 0.5 < -40 || p.sx - p.w * 0.5 > vw + 40 || p.sy < -40 || p.sy > vh + 40)) return;
       const grp = elSvg("g", "map-group-label" + (activeClusterId === p.g.id ? " is-active" : ""));
       const pill = elSvg("rect", "map-group-pill");
       pill.setAttribute("x", (-p.w / 2).toFixed(1));
@@ -590,89 +595,70 @@
     return typeof window !== "undefined" && window.matchMedia && window.matchMedia("(pointer: coarse)").matches;
   }
 
+  let physics = null;
+
+  function worldSize() {
+    if (layout === "era" && eraLayout && eraLayout.virtualW && eraLayout.virtualH) {
+      return [eraLayout.virtualW, eraLayout.virtualH];
+    }
+    return [vw, vh];
+  }
+
+  function clampZoom() {
+    if (physics) physics.clampZoom();
+  }
+
+  function stopMomentum() {
+    if (physics) physics.stopMomentum();
+  }
+
   function bindEvents() {
-    let dragging = false;
-    let moved = false;
-    let activePointerType = "mouse";
-    let sx = 0, sy = 0, zx = 0, zy = 0;
-
-    mapWrap.addEventListener("pointerdown", (ev) => {
-      if (ev.target.closest("#map-floating-hud")) return;
-      if (ev.target.closest(".map-group-label") || ev.target.closest(".era-spine-hit")) return;
-      if (ev.button !== 0 && ev.pointerType === "mouse") return;
-      dragging = true;
-      moved = false;
-      activePointerType = ev.pointerType || "mouse";
-      sx = ev.clientX;
-      sy = ev.clientY;
-      zx = zoom.x;
-      zy = zoom.y;
-    });
-
-    window.addEventListener("pointermove", (ev) => {
-      if (dragging) {
-        const dx = ev.clientX - sx;
-        const dy = ev.clientY - sy;
-        const thresh = activePointerType === "touch" ? DRAG_TOUCH_PX : DRAG_MOUSE_PX;
-        if (!moved && Math.hypot(dx, dy) > thresh) {
-          moved = true;
-          mapWrap.classList.add("is-dragging");
+    physics = window.BTMM_MAP_PHYSICS.createController({
+      mapWrap,
+      getZoom: () => zoom,
+      getViewport: () => [vw, vh],
+      getWorldSize: worldSize,
+      onTransform: () => {
+        paintCanvas();
+        drawFloatingLabels();
+      },
+      onFullPaint: () => paint(),
+      onHoverMove: (ev, [px, py]) => {
+        if (mapWrap.hidden || !ev.target || !mapWrap.contains(ev.target) || ev.target.closest("#map-floating-hud")) {
+          if (hoverId !== null) {
+            hoverId = null;
+            mapWrap.classList.remove("has-hover");
+            paintCanvas();
+          }
+          return;
         }
-        if (moved) {
-          zoom.x = zx + dx;
-          zoom.y = zy + dy;
+        const hitMax = isTouchEvent(ev) ? HIT_TOUCH_PX : HIT_MOUSE_PX;
+        const hit = findNearestVisibleNode(px, py, hitMax);
+        const nextHov = hit ? hit.id : null;
+        if (nextHov !== hoverId) {
+          hoverId = nextHov;
+          mapWrap.classList.toggle("has-hover", Boolean(hoverId));
           paintCanvas();
-          drawFloatingLabels();
         }
-        return;
-      }
-      // Hover detection when inside mapWrap
-      if (mapWrap.hidden || !ev.target || !mapWrap.contains(ev.target) || ev.target.closest("#map-floating-hud")) {
+      },
+      onHoverLeave: () => {
         if (hoverId !== null) {
           hoverId = null;
           mapWrap.classList.remove("has-hover");
           paintCanvas();
         }
-        return;
-      }
-      const [px, py] = pointerLocalXY(ev);
-      const hitMax = isTouchEvent(ev) ? HIT_TOUCH_PX : HIT_MOUSE_PX;
-      const hit = findNearestVisibleNode(px, py, hitMax);
-      const nextHov = hit ? hit.id : null;
-      if (nextHov !== hoverId) {
-        hoverId = nextHov;
-        mapWrap.classList.toggle("has-hover", Boolean(hoverId));
-        paintCanvas();
-      }
-    });
-
-    window.addEventListener("pointerup", () => {
-      dragging = false;
-      mapWrap.classList.remove("is-dragging");
-    });
-
-    mapWrap.addEventListener("pointerleave", () => {
-      if (hoverId !== null) {
-        hoverId = null;
-        mapWrap.classList.remove("has-hover");
-        paintCanvas();
-      }
-    });
-
-    mapWrap.addEventListener("click", (ev) => {
-      if (moved) return;
-      if (ev.target.closest("#map-floating-hud")) return;
-      if (ev.target.closest(".map-group-label") || ev.target.closest(".era-spine-hit")) return;
-
-      const [px, py] = pointerLocalXY(ev);
-      const hitMax = isTouchEvent(ev) ? HIT_TOUCH_PX : HIT_MOUSE_PX;
-      const hit = findNearestVisibleNode(px, py, hitMax);
-      if (hit) {
+      },
+      onTapPoint: (ev, px, py) => {
+        const hitMax = isTouchEvent(ev) ? HIT_TOUCH_PX : HIT_MOUSE_PX;
+        const hit = findNearestVisibleNode(px, py, hitMax);
+        if (!hit) return false;
         selectedId = hit.id;
         if (window.BTMM_PLAYER) window.BTMM_PLAYER.select(hit.id, { silent: true });
         if (hooks && hooks.onTap) hooks.onTap(hit.id);
         paint();
-      } else {
+        return true;
+      },
+      onBackgroundTap: () => {
         selectedId = null;
         if (window.BTMM_PLAYER) window.BTMM_PLAYER.select(null, { silent: true });
         if (activeClusterId || activeEraId) {
@@ -680,27 +666,9 @@
           activeEraId = null;
         }
         paint();
-      }
+      },
     });
-
-    mapWrap.addEventListener("wheel", (ev) => {
-      ev.preventDefault();
-      const [px, py] = pointerLocalXY(ev);
-      if (layout === "era" && Math.abs(ev.deltaX) > Math.abs(ev.deltaY)) {
-        zoom.x -= ev.deltaX;
-        paintCanvas();
-        drawFloatingLabels();
-        return;
-      }
-      const factor = ev.deltaY < 0 ? 1.14 : 1 / 1.14;
-      const nextK = Math.max(0.38, Math.min(5.0, zoom.k * factor));
-      const ratio = nextK / zoom.k;
-      zoom.x = px - (px - zoom.x) * ratio;
-      zoom.y = py - (py - zoom.y) * ratio;
-      zoom.k = nextK;
-      paintCanvas();
-      drawFloatingLabels();
-    }, { passive: false });
+    physics.bind();
 
     if (starBtn) {
       starBtn.addEventListener("click", (ev) => {
@@ -737,9 +705,11 @@
   }
 
   function relayout(animate = false) {
+    stopMomentum();
     resizeCanvas();
     computeTargetPositions();
     if (layout === "era" && eraLayout) zoom = { ...eraLayout.defaultZoom };
+    clampZoom();
     tweenToTargets(animate);
     drawFloatingLabels();
   }
@@ -752,6 +722,7 @@
   }
 
   function setLayout(nextLay, animate = true) {
+    stopMomentum();
     const norm = normLayoutName(nextLay);
     layout = norm;
     activeClusterId = null;
@@ -763,6 +734,7 @@
     } else {
       zoom = { k: 1, x: 0, y: 0 };
     }
+    clampZoom();
     buildEdges();
     tweenToTargets(animate);
     drawFloatingLabels();
@@ -818,6 +790,7 @@
 
     computeTargetPositions();
     nodes.forEach((n) => { n.x = n.tx; n.y = n.ty; });
+    clampZoom();
     buildEdges();
     bindEvents();
     paint();
@@ -829,6 +802,7 @@
     focus,
     setLayout,
     getLayout: () => layout,
+    getZoom: () => ({ ...zoom }),
     selected: () => selectedId,
     setSelectedSilent(tid) { selectedId = tid; paint(); },
     firstVisibleTrackId,

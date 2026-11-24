@@ -5,8 +5,11 @@
   const STAR_KEY = "btmm.starred";
   const COLLAPSE_KEY = "btmm.playerCollapsed";
   const LEGACY_STAR_KEY = "me.starred";
-  const REQUEST_EMAIL = "bill@billtribble.com";
   const PRE_2015_ERAS = new Set(["present_ambient", "present_electro", "hd_2005", "bands_archive"]);
+  // Public opaque Web3Forms UUID (zero email address in client bundle; paste key from web3forms.com)
+  let web3FormsKey = "";
+  const WEB3FORMS_URL = "https://api.web3forms.com/submit";
+  const INSTAGRAM_URL = "https://www.instagram.com/bill_tribble/";
 
   // Official inline brand SVG paths (zero external icon CDNs)
   const BRAND_SVGS = {
@@ -26,7 +29,11 @@
   let collapsed = false;
   let starred = new Set();
   const requestedIds = new Set();
-  const copiedIds = new Set();
+  let formOpenForId = null;
+  let sendingId = null;
+  let reqError = "";
+  let draftEmail = "";
+  let draftNote = "";
 
   function esc(s) {
     return String(s).replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;").replace(/"/g, "&quot;");
@@ -168,23 +175,39 @@
         </div>`;
     }
 
-    // Tier C: Unreleased >= 2015 -> Silent GoatCounter + mailto:bill@billtribble.com
+    // Tier C: Unreleased >= 2015 -> Zero-email-exposure request flow (Web3Forms + private GoatCounter)
     const sent = requestedIds.has(t.id);
-    const copied = copiedIds.has(t.id);
+    const hasRelay = Boolean((web3FormsKey || "").trim());
+    if (formOpenForId === t.id && !sent && hasRelay) {
+      const busy = sendingId === t.id;
+      return `
+        <div class="player-actions">
+          <form class="req-form" data-req-form="${esc(t.id)}">
+            <input type="checkbox" name="botcheck" tabindex="-1" autocomplete="off" hidden />
+            <input class="req-input" type="email" name="email" required placeholder="Your email so Bill can reply" value="${esc(draftEmail)}" ${busy ? "disabled" : ""} />
+            <input class="req-input" type="text" name="note" maxlength="280" placeholder="Optional note (DJ set, licensing, mix…)" value="${esc(draftNote)}" ${busy ? "disabled" : ""} />
+            ${reqError ? `<div class="req-err">${esc(reqError)}</div>` : ""}
+            <div class="req-actions">
+              <button type="submit" class="btn" ${busy ? "disabled" : ""}>
+                <span class="ms">send</span>
+                <span>${busy ? "Sending…" : "Send request"}</span>
+              </button>
+              <button type="button" class="req-cancel-btn" data-cancel-req="${esc(t.id)}" ${busy ? "disabled" : ""}>Cancel</button>
+            </div>
+          </form>
+        </div>`;
+    }
     return `
       <div class="player-actions">
         <div class="player-cta-row">
           <button type="button" class="btn ${sent ? "is-sent" : ""}" data-request-track="${esc(t.id)}">
             <span class="ms">${sent ? "check" : "mail"}</span>
-            <span>${sent ? "Requested" : "Request track"}</span>
+            <span>${sent ? (hasRelay ? "Request sent" : "Requested") : "Request track"}</span>
           </button>
         </div>
         <div class="request-helper">
-          ${sent ? '<span>Opening mail draft to Bill…</span>' : ""}
-          <button type="button" class="copy-email-btn" data-copy-email="${esc(t.id)}" title="Copy ${REQUEST_EMAIL} for webmail">
-            <span class="ms" style="font-size:14px">${copied ? "check" : "content_copy"}</span>
-            <span>${copied ? "Copied email" : REQUEST_EMAIL}</span>
-          </button>
+          <span>${sent ? (hasRelay ? "Bill has your track request." : "Request logged for Bill.") : "Spam-protected track request"}</span>
+          ${!hasRelay ? `<a class="ig-dm-link" href="${INSTAGRAM_URL}" target="_blank" rel="noopener noreferrer"><span class="ms" style="font-size:13px">open_in_new</span><span>Instagram</span></a>` : ""}
         </div>
       </div>`;
   }
@@ -202,6 +225,22 @@
     const isPend = hooks.pending() === t.id;
     const isStar = starred.has(t.id);
 
+    if (
+      !collapsed &&
+      formOpenForId === t.id &&
+      typeof document !== "undefined" &&
+      cardEl.contains(document.activeElement) &&
+      (document.activeElement.tagName === "INPUT" || document.activeElement.tagName === "TEXTAREA")
+    ) {
+      const playBtn = cardEl.querySelector("[data-player-play]");
+      if (playBtn) {
+        playBtn.classList.toggle("is-playing", isPlaying);
+        const ic = playBtn.querySelector(".ms");
+        if (ic) ic.textContent = isPlaying ? "stop" : isPend ? "hourglass_top" : "play_arrow";
+      }
+      return;
+    }
+
     cardEl.hidden = false;
     cardEl.classList.toggle("is-collapsed", collapsed);
 
@@ -213,7 +252,7 @@
           </button>
           <div class="mp-mini-title" title="${esc(t.title)}">${esc(t.title)}</div>
           <button type="button" class="star-btn ${isStar ? "is-starred" : ""}" data-player-star="${esc(t.id)}" aria-pressed="${isStar}" aria-label="${isStar ? "Unstar track" : "Star track"}" title="${isStar ? "Remove star" : "Star track"}">
-            <span class="ms">${isStar ? "star" : "star"}</span>
+            <span class="ms">star</span>
           </button>
           <button type="button" class="icon-btn" id="mp-expand" aria-label="Expand player" title="Expand player">
             <span class="ms">expand_less</span>
@@ -266,32 +305,93 @@
   function handleRequestTrack(t) {
     if (!t) return;
     logPrivateTrackEvent("track-request", t);
-    requestedIds.add(t.id);
+    const hasRelay = Boolean((web3FormsKey || "").trim());
+    if (!hasRelay) {
+      requestedIds.add(t.id);
+      render();
+      return;
+    }
+    reqError = "";
+    formOpenForId = t.id;
+    render();
+    const emailInput = cardEl && cardEl.querySelector('input[name="email"]');
+    if (emailInput) emailInput.focus();
+  }
+
+  async function submitRequestForm(formEl) {
+    const tid = formEl.getAttribute("data-req-form");
+    const t = byId.get(tid);
+    if (!t || sendingId) return;
+    const fd = new FormData(formEl);
+    if (fd.get("botcheck")) {
+      requestedIds.add(t.id);
+      formOpenForId = null;
+      render();
+      return;
+    }
+    const visitorEmail = String(fd.get("email") || "").trim();
+    const note = String(fd.get("note") || "").trim();
+    draftEmail = visitorEmail;
+    draftNote = note;
+    if (!visitorEmail || visitorEmail.indexOf("@") < 1) {
+      reqError = "Please enter a valid reply email.";
+      render();
+      return;
+    }
+    reqError = "";
+    sendingId = t.id;
     render();
     const er = erasById.get(t.era);
     const eraLabel = er ? er.label : t.era;
-    const subject = `Track Request: ${t.title}`;
-    const body = [
-      `Hi Bill,`,
-      ``,
-      `I would love to hear or license "${t.title}" from your Music Map (${eraLabel}).`,
-      ``,
-      `Track reference: ${t.id}`,
-      `Key / Tempo: ${t.key_label || "—"} · ${Math.round(t.bpm || 0)} BPM`,
-      ``,
-      `Thanks!`,
-    ].join("\n");
-    const mailUrl = `mailto:${REQUEST_EMAIL}?subject=${encodeURIComponent(subject)}&body=${encodeURIComponent(body)}`;
-    setTimeout(() => {
-      try { window.location.href = mailUrl; } catch (_) {}
-    }, 120);
+    try {
+      const resp = await fetch(WEB3FORMS_URL, {
+        method: "POST",
+        headers: { "Content-Type": "application/json", Accept: "application/json" },
+        body: JSON.stringify({
+          access_key: web3FormsKey.trim(),
+          subject: `Track Request: ${t.title}`,
+          from_name: "Bill Tribble Music Map",
+          email: visitorEmail,
+          track_title: t.title,
+          track_id: t.id,
+          era: eraLabel,
+          key_tempo: `${t.key_label || "—"} · ${Math.round(t.bpm || 0)} BPM`,
+          message: note || `Requesting "${t.title}" (${eraLabel}).`,
+          botcheck: "",
+        }),
+      });
+      const json = await resp.json().catch(() => ({}));
+      if (!resp.ok || json.success === false) {
+        throw new Error(json.message || "Could not send request right now.");
+      }
+      requestedIds.add(t.id);
+      formOpenForId = null;
+      draftNote = "";
+    } catch (err) {
+      reqError = (err && err.message) || "Network error — please try again.";
+    } finally {
+      sendingId = null;
+      render();
+    }
   }
 
   function bindCardEvents() {
     if (!cardEl) return;
+    cardEl.addEventListener("input", (ev) => {
+      if (ev.target.name === "email") draftEmail = ev.target.value;
+      if (ev.target.name === "note") draftNote = ev.target.value;
+    });
+    cardEl.addEventListener("submit", (ev) => {
+      const f = ev.target.closest("[data-req-form]");
+      if (f) {
+        ev.preventDefault();
+        submitRequestForm(f);
+      }
+    });
     cardEl.addEventListener("click", (ev) => {
       if (ev.target.closest("#mp-close")) {
         selectedId = null;
+        formOpenForId = null;
         render();
         if (hooks && hooks.onSelectionChange) hooks.onSelectionChange(null);
         return;
@@ -323,13 +423,10 @@
         handleRequestTrack(byId.get(reqBtn.getAttribute("data-request-track")));
         return;
       }
-      const copyBtn = ev.target.closest("[data-copy-email]");
-      if (copyBtn) {
-        const tid = copyBtn.getAttribute("data-copy-email");
-        if (navigator.clipboard && navigator.clipboard.writeText) {
-          navigator.clipboard.writeText(REQUEST_EMAIL).catch(() => {});
-        }
-        copiedIds.add(tid);
+      const cancelBtn = ev.target.closest("[data-cancel-req]");
+      if (cancelBtn) {
+        formOpenForId = null;
+        reqError = "";
         render();
         return;
       }
@@ -352,9 +449,14 @@
   function select(tid, opts = {}) {
     if (!tid || !byId.has(tid)) {
       selectedId = null;
+      formOpenForId = null;
       render();
       if (!opts.silent && hooks && hooks.onSelectionChange) hooks.onSelectionChange(null);
       return;
+    }
+    if (selectedId !== tid) {
+      formOpenForId = null;
+      reqError = "";
     }
     selectedId = tid;
     render();
@@ -365,6 +467,9 @@
     hooks = cfg || {};
     byId = hooks.byId || new Map();
     erasById = hooks.erasById || new Map();
+    if (typeof window !== "undefined" && window.BTMM_WEB3FORMS_KEY) {
+      web3FormsKey = String(window.BTMM_WEB3FORMS_KEY);
+    }
     cardEl = typeof document !== "undefined" ? document.getElementById("track-player-card") : null;
     loadPrefs();
     bindCardEvents();
@@ -383,6 +488,7 @@
     starredCount: () => starred.size,
     isCollapsed: () => collapsed,
     setCollapsed(v) { collapsed = Boolean(v); saveCollapsed(); render(); },
+    setWeb3FormsKey(k) { web3FormsKey = String(k || ""); render(); },
     logPrivateTrackEvent,
   };
 })();

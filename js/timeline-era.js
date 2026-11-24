@@ -45,22 +45,22 @@
     const bands = [];
 
     if (!isMobile) {
-      // Desktop: Left -> Right proportional chronological wave, Y = Sonic Energy & Intensity
-      const padL = 56;
-      const padR = 56;
-      const padT = 114; // clears top-left HUD + top era headings + year ticks
-      const padB = 46;
-      const virtualH = Math.max(580, vh);
-      const waveH = Math.max(280, virtualH - padT - padB);
+      // Desktop: Left -> Right proportional chronological wave fitted 100% inside viewport (vw x vh)
+      const padL = 24;
+      const padR = 24;
+      const padT = 104; // clears top-left HUD + top era headings + year ticks
+      const padB = 34;
+      const virtualW = vw;
+      const virtualH = vh;
+      const waveH = Math.max(200, virtualH - padT - padB);
+      const usableW = Math.max(480, virtualW - padL - padR);
 
-      const widths = eraList.map((er) => {
+      const rawWidths = eraList.map((er) => {
         const cnt = (byEra.get(er.id) || []).length;
-        return dense
-          ? Math.max(108, Math.min(360, Math.round(78 + Math.sqrt(cnt) * 23)))
-          : Math.max(115, Math.round((Math.max(vw, 1840) - padL - padR) / Math.max(1, eraList.length)));
+        return dense ? (34 + Math.sqrt(cnt) * 11) : 100;
       });
-      const totalColsW = widths.reduce((a, b) => a + b, 0);
-      const virtualW = Math.max(vw, padL + padR + totalColsW);
+      const rawSumW = rawWidths.reduce((a, b) => a + b, 0) || 1;
+      const widths = rawWidths.map((w) => (w / rawSumW) * usableW);
 
       let cursorX = padL;
       eraList.forEach((er, idx) => {
@@ -69,20 +69,22 @@
         const x0 = cursorX;
         cursorX += colW;
         const cx = x0 + colW * 0.5;
-        const padInX = 14;
+        const padInX = Math.min(10, colW * 0.16);
 
         list.forEach((t, ti) => {
           const en = energyNorm(t);
-          const jitterX = (hashFrac(t.id + "_x") - 0.5) * Math.max(24, colW - padInX * 2.5);
-          const jitterY = (hashFrac(t.id + "_y") - 0.5) * 28;
+          const jitterX = (hashFrac(t.id + "_x") - 0.5) * Math.max(12, colW - padInX * 2.2);
+          const jitterY = (hashFrac(t.id + "_y") - 0.5) * 26;
           const px = Math.max(x0 + padInX, Math.min(x0 + colW - padInX, cx + jitterX));
           const py = Math.max(padT + 8, Math.min(virtualH - padB - 8, padT + (1 - en) * waveH + jitterY));
           coords.set(t.id, { x: px, y: py, era: er.id, idx: ti });
         });
 
-        // Micro-swarm collision repulsion (>= 18px center spacing at 1.0x)
-        const minDist = dense ? 19 : 22;
-        for (let iter = 0; iter < 22; iter++) {
+        // Adaptive micro-swarm collision repulsion scaled to column area
+        const minDist = dense
+          ? Math.max(9.5, Math.min(18, Math.sqrt((colW * waveH) / Math.max(1, list.length)) * 0.46))
+          : 20;
+        for (let iter = 0; iter < 20; iter++) {
           for (let i = 0; i < list.length; i++) {
             const a = coords.get(list[i].id);
             for (let j = i + 1; j < list.length; j++) {
@@ -94,7 +96,7 @@
               if (dist < minDist) {
                 const push = (minDist - dist) * 0.48;
                 const ux = (dx / dist) * push;
-                const uy = (dy / dist) * push * 0.78;
+                const uy = (dy / dist) * push * 0.82;
                 a.x = Math.max(x0 + padInX, Math.min(x0 + colW - padInX, a.x - ux));
                 b.x = Math.max(x0 + padInX, Math.min(x0 + colW - padInX, b.x + ux));
                 a.y = Math.max(padT + 6, Math.min(virtualH - padB - 6, a.y - uy));
@@ -126,7 +128,6 @@
       });
 
       const spine = bands.filter((b) => b.count > 0).map((b) => ({ x: b.cx, y: b.cy, id: b.id }));
-      const fitK = Math.max(0.28, Math.min(1.0, (vw - 24) / virtualW));
       return {
         isMobile: false,
         virtualW,
@@ -135,30 +136,26 @@
         spine,
         coords,
         eraIndexById,
-        defaultZoom: {
-          k: fitK,
-          x: Math.max(8, (vw - virtualW * fitK) * 0.5),
-          y: Math.max(0, (vh - virtualH * fitK) * 0.5),
-        },
+        defaultZoom: { k: 1, x: 0, y: 0 },
       };
     }
 
-    // Mobile (<= 800px): Top -> Bottom proportional chronological Y-axis, X = Sonic Energy & Groove Tension
-    const leftGutter = 110;
-    const padR = 18;
-    const padT = 76;
-    const padB = 90;
-    const bankW = Math.max(150, vw - leftGutter - padR);
-
-    const heights = eraList.map((er) => {
-      const cnt = (byEra.get(er.id) || []).length;
-      return dense
-        ? Math.max(84, Math.min(460, Math.round(64 + Math.sqrt(cnt) * 28)))
-        : 108;
-    });
-    const totalRowsH = heights.reduce((a, b) => a + b, 0);
+    // Mobile (<= 800px): Top -> Bottom proportional chronological Y-axis fitted 100% inside viewport (vw x vh)
+    const leftGutter = 90;
+    const padR = 14;
+    const padT = 58;
+    const padB = 14;
     const virtualW = vw;
-    const virtualH = Math.max(vh, padT + padB + totalRowsH);
+    const virtualH = vh;
+    const bankW = Math.max(150, virtualW - leftGutter - padR);
+    const usableH = Math.max(320, virtualH - padT - padB);
+
+    const rawHeights = eraList.map((er) => {
+      const cnt = (byEra.get(er.id) || []).length;
+      return dense ? (18 + Math.sqrt(cnt) * 4.2) : 40;
+    });
+    const rawSumH = rawHeights.reduce((a, b) => a + b, 0) || 1;
+    const heights = rawHeights.map((h) => (h / rawSumH) * usableH);
 
     let cursorY = padT;
     eraList.forEach((er, idx) => {
@@ -167,20 +164,21 @@
       const y0 = cursorY;
       cursorY += rowH;
       const cy = y0 + rowH * 0.5;
-      const padInY = 14;
+      const padInY = Math.min(7, rowH * 0.18);
 
       list.forEach((t, ti) => {
         const en = energyNorm(t);
-        const jitterX = (hashFrac(t.id + "_mx") - 0.5) * 32;
-        const jitterY = (hashFrac(t.id + "_my") - 0.5) * Math.max(22, rowH - padInY * 2.5);
-        const px = Math.max(leftGutter + 12, Math.min(virtualW - padR, leftGutter + en * bankW + jitterX));
+        const jitterX = (hashFrac(t.id + "_mx") - 0.5) * 28;
+        const jitterY = (hashFrac(t.id + "_my") - 0.5) * Math.max(8, rowH - padInY * 2.2);
+        const px = Math.max(leftGutter + 8, Math.min(virtualW - padR, leftGutter + en * bankW + jitterX));
         const py = Math.max(y0 + padInY, Math.min(y0 + rowH - padInY, cy + jitterY));
         coords.set(t.id, { x: px, y: py, era: er.id, idx: ti });
       });
 
-      // >= 22px center spacing for effortless thumb tapping
-      const minDist = dense ? 22 : 24;
-      for (let iter = 0; iter < 22; iter++) {
+      const minDist = dense
+        ? Math.max(6.8, Math.min(16, Math.sqrt((bankW * rowH) / Math.max(1, list.length)) * 0.48))
+        : 16;
+      for (let iter = 0; iter < 20; iter++) {
         for (let i = 0; i < list.length; i++) {
           const a = coords.get(list[i].id);
           for (let j = i + 1; j < list.length; j++) {
@@ -191,10 +189,10 @@
             if (dist < 0.01) { dx = 0.5; dy = 1; dist = 1.12; }
             if (dist < minDist) {
               const push = (minDist - dist) * 0.48;
-              const ux = (dx / dist) * push * 0.78;
-              const uy = (dy / dist) * push;
-              a.x = Math.max(leftGutter + 12, Math.min(virtualW - padR, a.x - ux));
-              b.x = Math.max(leftGutter + 12, Math.min(virtualW - padR, b.x + ux));
+              const ux = (dx / dist) * push * 0.85;
+              const uy = (dy / dist) * push * 0.78;
+              a.x = Math.max(leftGutter + 8, Math.min(virtualW - padR, a.x - ux));
+              b.x = Math.max(leftGutter + 8, Math.min(virtualW - padR, b.x + ux));
               a.y = Math.max(y0 + padInY, Math.min(y0 + rowH - padInY, a.y - uy));
               b.y = Math.max(y0 + padInY, Math.min(y0 + rowH - padInY, b.y + uy));
             }
@@ -285,12 +283,12 @@
         ctx.stroke();
       });
     } else {
-      const leftGutter = 110;
+      const leftGutter = 90;
       [0.25, 0.55, 0.85].forEach((f) => {
-        const x = leftGutter + (data.virtualW - leftGutter - 18) * f;
+        const x = leftGutter + (data.virtualW - leftGutter - 14) * f;
         ctx.beginPath();
-        ctx.moveTo(x, 60);
-        ctx.lineTo(x, data.virtualH - 40);
+        ctx.moveTo(x, 54);
+        ctx.lineTo(x, data.virtualH - 14);
         ctx.stroke();
       });
     }
@@ -347,40 +345,55 @@
           g.appendChild(yr);
         }
 
-        const pillW = Math.min(Math.max(66, sw - 6), (b.shortLabel.length * 7.2) + 18);
+        const displayLbl = sw < 130 ? b.shortLabel : b.label;
+        const pillW = Math.max(40, Math.min(sw - 4, displayLbl.length * 6.4 + 14));
         const rect = document.createElementNS(NS, "rect");
         rect.setAttribute("class", "map-group-pill");
         rect.setAttribute("x", (cx - pillW * 0.5).toFixed(1));
         rect.setAttribute("y", (headerY - 4).toFixed(1));
         rect.setAttribute("width", pillW.toFixed(1));
-        rect.setAttribute("height", "24");
-        rect.setAttribute("rx", "12");
+        rect.setAttribute("height", "22");
+        rect.setAttribute("rx", "11");
 
         const txt = document.createElementNS(NS, "text");
         txt.setAttribute("class", "era-wave-title");
+        if (sw < 78) txt.setAttribute("style", "font-size:10.5px");
         txt.setAttribute("x", cx.toFixed(1));
-        txt.setAttribute("y", (headerY + 12).toFixed(1));
+        txt.setAttribute("y", (headerY + 11).toFixed(1));
         txt.setAttribute("text-anchor", "middle");
-        txt.textContent = sw < 130 ? b.shortLabel : b.label;
+        txt.textContent = displayLbl;
 
         g.append(rect, txt);
       } else {
-        // Mobile pinned left-aligned Syne era + year label
+        // Mobile pinned left-aligned Syne era + year label (compact 1-line at 1x, 2-line when zoomed)
         const cy = sy + sh * 0.5;
-        if (cy < 48 || cy > vh + 40) return;
+        if (cy < 48 || cy > vh + 24) return;
+        const compactRow = sh < 36;
         const txt = document.createElementNS(NS, "text");
         txt.setAttribute("class", "era-wave-title");
-        txt.setAttribute("x", "12");
-        txt.setAttribute("y", (cy - 2).toFixed(1));
+        if (compactRow) txt.setAttribute("style", "font-size:10.5px");
+        txt.setAttribute("x", "10");
+        txt.setAttribute("y", (compactRow ? cy + 3.5 : cy - 2).toFixed(1));
         txt.textContent = b.shortLabel;
+        g.appendChild(txt);
 
-        const sub = document.createElementNS(NS, "text");
-        sub.setAttribute("class", "era-tick-year");
-        sub.setAttribute("x", "12");
-        sub.setAttribute("y", (cy + 13).toFixed(1));
-        sub.textContent = b.sublabel || b.yearMark || "";
-
-        g.append(txt, sub);
+        if (!compactRow) {
+          const sub = document.createElementNS(NS, "text");
+          sub.setAttribute("class", "era-tick-year");
+          sub.setAttribute("x", "10");
+          sub.setAttribute("y", (cy + 12).toFixed(1));
+          sub.textContent = b.sublabel || b.yearMark || "";
+          g.appendChild(sub);
+        } else if (b.yearMark) {
+          const yr = document.createElementNS(NS, "text");
+          yr.setAttribute("class", "era-tick-year");
+          yr.setAttribute("style", "font-size:9px");
+          yr.setAttribute("x", "84");
+          yr.setAttribute("y", (cy + 3.2).toFixed(1));
+          yr.setAttribute("text-anchor", "end");
+          yr.textContent = "'" + b.yearMark.slice(2);
+          g.appendChild(yr);
+        }
       }
 
       g.addEventListener("click", (ev) => {
@@ -393,12 +406,12 @@
     const hint = document.createElementNS(NS, "text");
     hint.setAttribute("class", "era-tick-year");
     if (!data.isMobile) {
-      hint.setAttribute("x", "18");
-      hint.setAttribute("y", String(Math.max(134, Math.min(vh - 24, 134))));
-      hint.textContent = "↑ High energy";
+      hint.setAttribute("x", "196");
+      hint.setAttribute("y", "35");
+      hint.textContent = "↑ High energy · ↓ Ambient";
     } else {
-      hint.setAttribute("x", String(vw - 14));
-      hint.setAttribute("y", "64");
+      hint.setAttribute("x", String(vw - 12));
+      hint.setAttribute("y", "33");
       hint.setAttribute("text-anchor", "end");
       hint.textContent = "Ambient ← → High energy";
     }

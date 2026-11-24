@@ -9,8 +9,9 @@
   overflow: hidden;
   user-select: none;
   touch-action: none;
-  cursor: grab;
+  cursor: default;
 }
+.map.is-zoomed { cursor: grab; }
 .map.is-dragging { cursor: grabbing; }
 .map.has-hover { cursor: pointer; }
 .map[hidden] { display: none; }
@@ -322,20 +323,61 @@
   font-size: 11px;
   color: var(--md-sys-color-on-surface-variant);
 }
-.copy-email-btn {
+.ig-dm-link {
   display: inline-flex;
   align-items: center;
   gap: 4px;
   margin-left: auto;
   padding: 4px 10px;
-  border: none;
   border-radius: 999px;
   background: var(--md-sys-color-surface-container-high);
   color: var(--md-sys-color-on-surface);
+  font-family: var(--font-sans);
   font-size: 11px;
   font-weight: 500;
+  text-decoration: none;
 }
-.copy-email-btn:hover { background: var(--md-sys-color-surface-container-highest); }
+.ig-dm-link:hover { background: var(--md-sys-color-surface-container-highest); }
+
+.req-form {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+.req-input {
+  width: 100%;
+  padding: 8px 11px;
+  border-radius: 10px;
+  border: 1px solid var(--md-sys-color-outline);
+  background: transparent;
+  color: var(--md-sys-color-on-surface);
+  font-family: var(--font-sans);
+  font-size: 12.5px;
+  line-height: 1.35;
+  outline: none;
+}
+.req-input::placeholder { color: var(--md-sys-color-on-surface-variant); opacity: 0.8; }
+.req-input:focus, .req-input:focus-visible { outline: none; border-color: var(--md-sys-color-primary); }
+.req-actions {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+.req-cancel-btn {
+  padding: 7px 12px;
+  border: none;
+  border-radius: 999px;
+  background: var(--md-sys-color-surface-container-high);
+  color: var(--md-sys-color-on-surface-variant);
+  font-family: var(--font-sans);
+  font-size: 12px;
+  font-weight: 500;
+}
+.req-cancel-btn:hover { background: var(--md-sys-color-surface-container-highest); color: var(--md-sys-color-on-surface); }
+.req-err {
+  font-size: 11px;
+  color: var(--md-sys-color-error, var(--c4));
+}
 
 @media (max-width: 840px) {
   .map {
