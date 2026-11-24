@@ -7,15 +7,18 @@
     (s) => -Math.PI / 2 + (s * Math.PI) / 8
   );
   const RINGS = [12, 22, 34, 48, 66, 88, 114, 144, 180, 220];
+  const LEADER_RADII = [15, 23, 32, 42, 54, 68, 84, 102, 122];
 
   let measureCtx = null;
   let lastTrackBoxes = [];
+  let lastPlacedEntries = [];
+  let shownIds = new Set();
 
   function textWidth(font, text) {
     if (!measureCtx && typeof document !== "undefined") {
       measureCtx = document.createElement("canvas").getContext("2d");
     }
-    if (!measureCtx) return text.length * 6.8;
+    if (!measureCtx) return text.length * 6.4;
     measureCtx.font = font;
     return measureCtx.measureText(text).width;
   }
@@ -26,16 +29,15 @@
 
   function cleanMapLabel(t) {
     let s = String((t && (t.shortTitle || t.title)) || "").trim();
-    // Strip noisy studio/export suffixes while keeping musical title intact
     s = s.replace(/\s*[,(\[]\s*(cute|rough|ruff|wip|master|bounce|mix|edit|test).*$/i, "").trim();
     if (s.length <= 24) return s;
     const cut = s.slice(0, 23);
     const sp = cut.lastIndexOf(" ");
-    return (sp >= 12 ? cut.slice(0, sp) : cut).replace(/[-–—,:;\s]+$/, "") + "…";
+    return (sp >= 11 ? cut.slice(0, sp) : cut).replace(/[-–—,:;\s]+$/, "") + "…";
   }
 
   function getUiObstacleBoxes(mapWrap) {
-    const boxes = [[0, 0, 218, 62]]; // top-left Vibe | Era | Star HUD
+    const boxes = [[0, 0, 214, 58]]; // top-left Vibe | Era | Star HUD
     if (typeof document !== "undefined" && mapWrap) {
       const mRect = mapWrap.getBoundingClientRect();
       const card = document.getElementById("track-player-card");
@@ -43,10 +45,10 @@
         const cRect = card.getBoundingClientRect();
         if (cRect.width > 0 && cRect.height > 0) {
           boxes.push([
-            cRect.left - mRect.left - 8,
-            cRect.top - mRect.top - 8,
-            cRect.right - mRect.left + 8,
-            cRect.bottom - mRect.top + 8,
+            cRect.left - mRect.left - 6,
+            cRect.top - mRect.top - 6,
+            cRect.right - mRect.left + 6,
+            cRect.bottom - mRect.top + 6,
           ]);
         }
       }
@@ -54,9 +56,18 @@
     return boxes;
   }
 
-  // Draw crisp 12px Inter 500/700 track labels in 1:1 screen space with 3px surface knock-out halo & strict collision culling
+  function nearestBoxPoint(sx, sy, b) {
+    const nx = Math.max(b[0], Math.min(b[2], sx));
+    const ny = Math.max(b[1], Math.min(b[3], sy));
+    return [nx, ny];
+  }
+
+  // Draw crisp Inter track labels in 1:1 screen space with surface knock-out halo,
+  // 8 immediate slots + concentric cartographic leader slots so 100% of zoomed-in cluster tracks show their names.
   function drawScreenTrackLabels(ctx, opts) {
     lastTrackBoxes = [];
+    lastPlacedEntries = [];
+    shownIds = new Set();
     if (!ctx) return lastTrackBoxes;
     const {
       nodes,
@@ -66,6 +77,7 @@
       palette,
       isMatch,
       nodeScreenRadius,
+      trackColor,
       playId,
       selectedId,
       hoverId,
@@ -73,24 +85,25 @@
       mapWrap,
     } = opts;
 
-    const zoomed = zoom.k >= 1.65;
+    const zoomed = zoom.k >= 1.55;
     const uiBoxes = getUiObstacleBoxes(mapWrap);
+    const isCompact = vw <= 600;
+    const baseFs = isCompact ? 11 : 11.5;
 
-    // Collect visible in-viewport nodes and register dot obstacles
     const visible = [];
     const dotBoxes = [];
     for (let i = 0; i < nodes.length; i++) {
       const n = nodes[i];
       if (!isMatch(n.t)) continue;
-      const sx = n.x * zoom.k + zoom.x;
-      const sy = n.y * zoom.k + zoom.y;
-      if (sx < -36 || sx > vw + 36 || sy < -36 || sy > vh + 36) continue;
+      const sx = Number.isFinite(n.px) ? n.px : n.x * zoom.k + zoom.x;
+      const sy = Number.isFinite(n.py) ? n.py : n.y * zoom.k + zoom.y;
+      if (sx < -24 || sx > vw + 24 || sy < -24 || sy > vh + 24) continue;
       const r = nodeScreenRadius(n.t);
       const isPlay = n.id === playId;
       const isSel = n.id === selectedId;
       const isHov = n.id === hoverId;
-      dotBoxes.push({ id: n.id, box: [sx - r - 2.5, sy - r - 2.5, sx + r + 2.5, sy + r + 2.5] });
-      if (zoomed || isPlay || isSel) {
+      dotBoxes.push({ id: n.id, box: [sx - r - 1.2, sy - r - 1.2, sx + r + 1.2, sy + r + 1.2] });
+      if ((zoomed && sx >= 6 && sx <= vw - 6 && sy >= 8 && sy <= vh - 8) || isPlay || isSel) {
         const prio =
           (isPlay ? 1000 : 0) +
           (isSel ? 800 : 0) +
@@ -105,65 +118,145 @@
     if (!visible.length) return lastTrackBoxes;
     visible.sort((a, b) => b.prio - a.prio);
 
-    ctx.save();
-    ctx.lineJoin = "round";
-    ctx.miterLimit = 2;
-    ctx.textBaseline = "middle";
-
+    const allowLeaderRings = zoom.k >= 2.2 || visible.length <= 160;
     const placed = [];
+    const toDraw = [];
+
     for (let i = 0; i < visible.length; i++) {
       const item = visible[i];
       const lbl = cleanMapLabel(item.n.t);
       if (!lbl) continue;
-      const font = `${item.emph ? 700 : 500} 12px Inter, -apple-system, BlinkMacSystemFont, sans-serif`;
-      ctx.font = font;
-      const w = ctx.measureText(lbl).width;
+      const fs = item.emph ? 12 : baseFs;
+      const font = `${item.emph ? 700 : 500} ${fs}px Inter, -apple-system, BlinkMacSystemFont, sans-serif`;
+      const w = textWidth(font, lbl);
       const hw = w * 0.5;
-      const hh = 7.5;
-      const gap = item.r + 6;
+      const hh = item.emph ? 6.4 : (isCompact ? 5.5 : 5.8);
+      const g = item.r + 3.8;
 
-      // 4 outward candidate positions around the dot (above, below, right, left — Groove Explorer style)
-      const cands = [
-        { x: item.sx, y: item.sy - gap - 4, align: "center", box: [item.sx - hw, item.sy - gap - 4 - hh, item.sx + hw, item.sy - gap - 4 + hh] },
-        { x: item.sx, y: item.sy + gap + 5, align: "center", box: [item.sx - hw, item.sy + gap + 5 - hh, item.sx + hw, item.sy + gap + 5 + hh] },
-        { x: item.sx + gap, y: item.sy + 0.5, align: "left", box: [item.sx + gap, item.sy + 0.5 - hh, item.sx + gap + w, item.sy + 0.5 + hh] },
-        { x: item.sx - gap, y: item.sy + 0.5, align: "right", box: [item.sx - gap - w, item.sy + 0.5 - hh, item.sx - gap, item.sy + 0.5 + hh] },
-      ];
+      const cands = [];
+      if (item.n.fanAngle != null) {
+        const ca = Math.cos(item.n.fanAngle);
+        const sa = Math.sin(item.n.fanAngle);
+        const ax = item.sx + ca * (g + 2);
+        const ay = item.sy + sa * (g + 2);
+        const bx0 = ca > 0.35 ? ax : ca < -0.35 ? ax - w : ax - hw;
+        cands.push({ box: [bx0, ay - hh, bx0 + w, ay + hh], leader: false });
+      }
+      // 8 tight adjacent slots around the small dot
+      cands.push(
+        { box: [item.sx - hw, item.sy - g - 2 * hh, item.sx + hw, item.sy - g], leader: false },
+        { box: [item.sx - hw, item.sy + g, item.sx + hw, item.sy + g + 2 * hh], leader: false },
+        { box: [item.sx + g, item.sy - hh, item.sx + g + w, item.sy + hh], leader: false },
+        { box: [item.sx - g - w, item.sy - hh, item.sx - g, item.sy + hh], leader: false },
+        { box: [item.sx + g - hw * 0.3, item.sy - g - 2 * hh, item.sx + g + hw * 1.7, item.sy - g], leader: false },
+        { box: [item.sx - g - hw * 1.7, item.sy - g - 2 * hh, item.sx - g + hw * 0.3, item.sy - g], leader: false },
+        { box: [item.sx + g - hw * 0.3, item.sy + g, item.sx + g + hw * 1.7, item.sy + g + 2 * hh], leader: false },
+        { box: [item.sx - g - hw * 1.7, item.sy + g, item.sx - g + hw * 0.3, item.sy + g + 2 * hh], leader: false }
+      );
 
-      let chosen = null;
+      if (allowLeaderRings) {
+        for (let ri = 0; ri < LEADER_RADII.length; ri++) {
+          const rad = LEADER_RADII[ri];
+          for (let ai = 0; ai < ANGLES.length; ai++) {
+            const ang = ANGLES[ai];
+            const ca = Math.cos(ang);
+            const sa = Math.sin(ang);
+            const ax = item.sx + ca * rad;
+            const ay = item.sy + sa * rad;
+            const bx0 = ca > 0.35 ? ax : ca < -0.35 ? ax - w : ax - hw;
+            cands.push({ box: [bx0, ay - hh, bx0 + w, ay + hh], leader: true });
+          }
+        }
+      }
+
+      let chosenBox = null;
       for (let ci = 0; ci < cands.length; ci++) {
-        const c = cands[ci];
-        const b = c.box;
-        if (b[0] < 6 || b[2] > vw - 6 || b[1] < 8 || b[3] > vh - 8) continue;
-        // Pad candidate box slightly so adjacent labels keep clean air between them
-        const padB = [b[0] - 5, b[1] - 2.5, b[2] + 5, b[3] + 2.5];
+        let b = cands[ci].box;
+        if (b[0] < 4) {
+          const sh = 4 - b[0];
+          b = [b[0] + sh, b[1], b[2] + sh, b[3]];
+        } else if (b[2] > vw - 4) {
+          const sh = b[2] - (vw - 4);
+          b = [b[0] - sh, b[1], b[2] - sh, b[3]];
+        }
+        if (b[0] < 3 || b[2] > vw - 3 || b[1] < 6 || b[3] > vh - 6) continue;
+
+        const padB = [b[0] - 1.4, b[1] - 0.9, b[2] + 1.4, b[3] + 0.9];
         if (!item.emph && uiBoxes.some((ub) => boxOverlap(padB, ub))) continue;
+
         let hitPlaced = false;
         for (let pi = 0; pi < placed.length; pi++) {
-          if (boxOverlap(padB, placed[pi])) { hitPlaced = true; break; }
+          if (boxOverlap(padB, placed[pi])) {
+            hitPlaced = true;
+            break;
+          }
         }
         if (hitPlaced) continue;
 
         let hitDot = false;
         for (let di = 0; di < dotBoxes.length; di++) {
           if (dotBoxes[di].id === item.n.id) continue;
-          if (boxOverlap(b, dotBoxes[di].box)) { hitDot = true; break; }
+          if (boxOverlap(b, dotBoxes[di].box)) {
+            hitDot = true;
+            break;
+          }
         }
         if (hitDot && !item.emph) continue;
-        chosen = c;
+
+        chosenBox = b;
         break;
       }
 
-      if (!chosen) continue;
-      placed.push([chosen.box[0] - 4, chosen.box[1] - 2, chosen.box[2] + 4, chosen.box[3] + 2]);
+      if (!chosenBox) continue;
+      placed.push(chosenBox);
+      shownIds.add(item.n.id);
+      lastPlacedEntries.push({ id: item.n.id, box: chosenBox });
+      toDraw.push({ item, lbl, font, box: chosenBox });
+    }
 
-      ctx.textAlign = chosen.align;
-      ctx.globalAlpha = item.emph ? 1 : 0.94;
-      ctx.lineWidth = 3.2;
+    ctx.save();
+    ctx.lineJoin = "round";
+    ctx.lineCap = "round";
+    ctx.miterLimit = 2;
+    ctx.textBaseline = "middle";
+    ctx.textAlign = "center";
+
+    // Pass 1: subtle cartographic leader ticks for any stepped-outward labels so lines sit cleanly beneath text
+    for (let i = 0; i < toDraw.length; i++) {
+      const { item, box } = toDraw[i];
+      const [nx, ny] = nearestBoxPoint(item.sx, item.sy, box);
+      const dist = Math.hypot(nx - item.sx, ny - item.sy);
+      if (dist > item.r + 7.5) {
+        const ux = (nx - item.sx) / dist;
+        const uy = (ny - item.sy) / dist;
+        const x0 = item.sx + ux * (item.r + 1.4);
+        const y0 = item.sy + uy * (item.r + 1.4);
+        ctx.beginPath();
+        ctx.moveTo(x0, y0);
+        ctx.lineTo(nx, ny);
+        ctx.globalAlpha = 0.85;
+        ctx.lineWidth = 2.4;
+        ctx.strokeStyle = palette.surfaceLowest;
+        ctx.stroke();
+        ctx.globalAlpha = item.emph ? 0.85 : 0.52;
+        ctx.lineWidth = 1.05;
+        ctx.strokeStyle = trackColor ? trackColor(item.n.t) : palette.outline;
+        ctx.stroke();
+      }
+    }
+
+    // Pass 2: crisp knock-out halo text
+    for (let i = 0; i < toDraw.length; i++) {
+      const { item, lbl, font, box } = toDraw[i];
+      const cx = (box[0] + box[2]) * 0.5;
+      const cy = (box[1] + box[3]) * 0.5 + 0.5;
+      ctx.font = font;
+      ctx.globalAlpha = item.emph ? 1 : 0.95;
+      ctx.lineWidth = 2.9;
       ctx.strokeStyle = palette.surfaceLowest;
-      ctx.strokeText(lbl, chosen.x, chosen.y);
+      ctx.strokeText(lbl, cx, cy);
       ctx.fillStyle = palette.onSurface;
-      ctx.fillText(lbl, chosen.x, chosen.y);
+      ctx.fillText(lbl, cx, cy);
     }
 
     ctx.restore();
@@ -171,7 +264,21 @@
     return lastTrackBoxes;
   }
 
-  // Render Groove Explorer cartographic floating .map-family-label landmarks (Google Sans Flex 600 + surface halo, obstacle-avoiding)
+  function isLabelShown(id) {
+    return shownIds.has(id);
+  }
+
+  function hitLabelAt(px, py) {
+    for (let i = lastPlacedEntries.length - 1; i >= 0; i--) {
+      const b = lastPlacedEntries[i].box;
+      if (px >= b[0] - 3 && px <= b[2] + 3 && py >= b[1] - 3 && py <= b[3] + 3) {
+        return lastPlacedEntries[i].id;
+      }
+    }
+    return null;
+  }
+
+  // Render Groove Explorer cartographic floating .map-family-label landmarks
   function renderClusterLandmarks(svgGroup, opts) {
     if (!svgGroup) return;
     svgGroup.innerHTML = "";
@@ -189,7 +296,7 @@
     } = opts;
 
     const isWide = vw > 840;
-    const zoomed = zoom.k >= 1.65;
+    const zoomed = zoom.k >= 1.55;
     const fs = zoomed ? (isWide ? 20 : 17) : (isWide ? 18 : 14);
     const fontSpec = `600 ${fs}px "Google Sans Flex", "Google Sans", Inter, sans-serif`;
 
@@ -197,22 +304,31 @@
     const allDots = [];
     for (let i = 0; i < nodes.length; i++) {
       const n = nodes[i];
-      const sx = n.x * zoom.k + zoom.x;
-      const sy = n.y * zoom.k + zoom.y;
+      const sx = Number.isFinite(n.px) ? n.px : n.x * zoom.k + zoom.x;
+      const sy = Number.isFinite(n.py) ? n.py : n.y * zoom.k + zoom.y;
       if (sx < -60 || sx > vw + 60 || sy < -60 || sy > vh + 60) continue;
       allDots.push([sx, sy, n.id]);
     }
-    const dotPad = isWide ? 8.5 : 7.0;
+    const dotPad = zoomed ? 5.0 : (isWide ? 7.5 : 6.0);
     const dotBoxes = allDots.map(([dx, dy]) => [dx - dotPad, dy - dotPad, dx + dotPad, dy + dotPad]);
     const placedFam = [];
 
-    // Order largest / central clusters cleanly
+    const MOBILE_SHORT = {
+      "Ambient & meditative": "Ambient",
+      "Dark ambient & drone": "Dark ambient",
+      "Downtempo & lush chords": "Downtempo",
+      "House & ecstatic 4/4 groove": "House & 4/4",
+      "Chill & steady electronic": "Chill electronic",
+      "Complex drums & breaks": "Breaks & drums",
+      "Hypnotic electro & microtonal": "Hypnotic electro",
+      "Experimental guitar & vocal": "Guitar & vocal",
+    };
+
     styleGroups.forEach((g) => {
       const members = (g.members || []).map((id) => nodeById.get(id)).filter(Boolean);
       if (!members.length) return;
       const anyMatch = members.some((m) => isMatch(m.t));
 
-      // Compute visible member cloud bounds in screen space
       let minX = Infinity, maxX = -Infinity, minY = Infinity, maxY = -Infinity;
       let topX = 0, visCount = 0;
       const xs = [], ys = [];
@@ -220,8 +336,8 @@
       for (let i = 0; i < members.length; i++) {
         const m = members[i];
         ownSet.add(m.id);
-        const sx = m.x * zoom.k + zoom.x;
-        const sy = m.y * zoom.k + zoom.y;
+        const sx = Number.isFinite(m.px) ? m.px : m.x * zoom.k + zoom.x;
+        const sy = Number.isFinite(m.py) ? m.py : m.y * zoom.k + zoom.y;
         if (zoomed && (sx < -40 || sx > vw + 40 || sy < -40 || sy > vh + 40)) continue;
         xs.push(sx);
         ys.push(sy);
@@ -235,16 +351,6 @@
       xs.sort((a, b) => a - b);
       ys.sort((a, b) => a - b);
 
-      const MOBILE_SHORT = {
-        "Ambient & meditative": "Ambient",
-        "Dark ambient & drone": "Dark ambient",
-        "Downtempo & lush chords": "Downtempo",
-        "House & ecstatic 4/4 groove": "House & 4/4",
-        "Chill & steady electronic": "Chill electronic",
-        "Complex drums & breaks": "Breaks & drums",
-        "Hypnotic electro & microtonal": "Hypnotic electro",
-        "Experimental guitar & vocal": "Guitar & vocal",
-      };
       const mx = xs[xs.length >> 1];
       const my = ys[ys.length >> 1];
       const qLo = xs.length >= 10 ? Math.floor(xs.length * 0.14) : 0;
@@ -306,6 +412,7 @@
         if (zoomed && dotCost > 0) continue;
 
         const distCore = Math.hypot(cx - mx, cy - my);
+        if (!zoomed && distCore > (isWide ? 150 : 80)) continue;
         let score =
           ownD * 1.2 +
           distCore * (isWide || zoomed ? 0.6 : 1.9) +
@@ -358,5 +465,7 @@
   window.BTMM_MAP_LABELS = {
     drawScreenTrackLabels,
     renderClusterLandmarks,
+    isLabelShown,
+    hitLabelAt,
   };
 })();

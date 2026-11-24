@@ -5,7 +5,7 @@
   const DRAG_MOUSE_PX = 8;
   const DRAG_TOUCH_PX = 14;
   const MIN_ZOOM = 1.0;
-  const MAX_ZOOM = 6.0;
+  const MAX_ZOOM = 40.0;
 
   function createController(opts) {
     const mapWrap = opts.mapWrap;
@@ -210,7 +210,7 @@
         const zoom = opts.getZoom();
         if (now - lastTapTs < 320 && Math.hypot(px - lastTapXY[0], py - lastTapXY[1]) < 36) {
           lastTapTs = 0;
-          const nextK = zoom.k > 1.15 ? 1.0 : 2.4;
+          const nextK = zoom.k < 2.2 ? 3.8 : (zoom.k < 6.0 ? 8.0 : 1.0);
           const ratio = nextK / zoom.k;
           zoom.x = px - (px - zoom.x) * ratio;
           zoom.y = py - (py - zoom.y) * ratio;

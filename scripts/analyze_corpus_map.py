@@ -578,7 +578,7 @@ def cluster_and_layout(tracks: list[dict]) -> dict:
         pul_presence = clamp((float(t.get("perc_share", 0.0)) - 0.02) / 0.10, 0.0, 1.0) * float(t.get("transient_conf", 1.0))
         t["drum_pulse"] = round(float(t.get("pulse_clarity", 0.0)) * pul_presence * 100.0, 1)
 
-    # Standardize continuous features + add bounded sparse detectors so N=559 z-scores stay balanced
+    # Standardize continuous features + add bounded sparse detectors so N=557 z-scores stay balanced
     dense_w = np.array([1.85, 2.85, 1.85, 4.45, 2.65, 0.55, 0.40, 0.30, 0.30, 0.90])
     X_dense = np.array([
         [

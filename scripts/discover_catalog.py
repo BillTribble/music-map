@@ -32,6 +32,7 @@ MIN_BYTES = 50 * 1024
 
 EXCLUDED_BAND_RE = re.compile(r"\b(clor|infants|real\s+feal|feal\s+real)\b", re.IGNORECASE)
 EXCLUDED_ZOMBIES_RE = re.compile(r"\bzombies\b", re.IGNORECASE)
+EXCLUDED_TITLE_RE = re.compile(r"^claudia(?:\s+poem)?$", re.IGNORECASE)
 EXCLUDED_DIR_NAMES = {
     "samples",
     "backup",
@@ -184,6 +185,8 @@ def is_excluded(rel_path: str, size_bytes: int, dirs_with_top_render: set[str]) 
         return "excluded_band"
     if EXCLUDED_ZOMBIES_RE.search(low):
         return "excluded_zombies"
+    if EXCLUDED_TITLE_RE.match(Path(fname).stem.strip()):
+        return "excluded_claudia"
     for sub in EXCLUDED_PATH_SUBSTRS:
         if sub in low:
             return f"excluded_path:{sub}"

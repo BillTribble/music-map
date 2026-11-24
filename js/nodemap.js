@@ -7,8 +7,8 @@
   const PAD = 56;
   const LINKS = 2;
   const MORPH_MS = 620;
-  const HIT_MOUSE_PX = 28;
-  const HIT_TOUCH_PX = 38;
+  const HIT_MOUSE_PX = 30;
+  const HIT_TOUCH_PX = 42;
   const DRAG_MOUSE_PX = 8;
   const DRAG_TOUCH_PX = 14;
 
@@ -131,13 +131,57 @@
     return cols[((idx % cols.length) + cols.length) % cols.length] || palette.primary;
   }
 
-  function nodeBaseRadius(t) {
+  function nodeScreenRadius(t) {
     const e = Math.max(1, Math.min(10, Number(t.energy || 4)));
-    if (tracks.length > 220) {
-      if (vw <= 600) return 2.9 + ((e - 1) / 9) * 1.8;
-      return 4.2 + ((e - 1) / 9) * 3.0;
+    const base = vw <= 600
+      ? 2.5 + ((e - 1) / 9) * 1.1
+      : 3.4 + ((e - 1) / 9) * 1.5;
+    // Shrink circle size in screen pixels as you zoom in so dense clusters open up for all track labels
+    const zoomShrink = zoom.k <= 1 ? 1 : Math.max(0.56, 1 / Math.pow(zoom.k, 0.28));
+    return Math.max(2.0, base * zoomShrink);
+  }
+
+  // Fan out co-located or near-touching screen dots into a small ring (Groove Explorer style)
+  function computeScreenPositions() {
+    const T = 7.5;
+    const raw = nodes.map((n) => [n.x * zoom.k + zoom.x, n.y * zoom.k + zoom.y]);
+    const taken = new Set();
+    for (let i = 0; i < nodes.length; i++) {
+      if (taken.has(i)) continue;
+      if (!isMatch(nodes[i].t)) {
+        nodes[i].px = raw[i][0];
+        nodes[i].py = raw[i][1];
+        nodes[i].fanAngle = null;
+        taken.add(i);
+        continue;
+      }
+      const grp = [i];
+      taken.add(i);
+      for (let j = i + 1; j < nodes.length; j++) {
+        if (taken.has(j) || !isMatch(nodes[j].t)) continue;
+        if (Math.abs(raw[i][0] - raw[j][0]) < T && Math.hypot(raw[i][0] - raw[j][0], raw[i][1] - raw[j][1]) < T) {
+          grp.push(j);
+          taken.add(j);
+        }
+      }
+      if (grp.length === 1) {
+        nodes[i].px = raw[i][0];
+        nodes[i].py = raw[i][1];
+        nodes[i].fanAngle = null;
+        continue;
+      }
+      const cx = grp.reduce((acc, idx) => acc + raw[idx][0], 0) / grp.length;
+      const cy = grp.reduce((acc, idx) => acc + raw[idx][1], 0) / grp.length;
+      const gap = Math.min(40, Math.max(10, 12 * Math.sqrt(Math.max(1, zoom.k))));
+      const ringR = Math.max(7, grp.length === 2 ? gap * 0.5 : gap / (2 * Math.sin(Math.PI / grp.length)));
+      for (let k = 0; k < grp.length; k++) {
+        const ang = -Math.PI / 2 + (2 * Math.PI * k) / grp.length;
+        const ni = grp[k];
+        nodes[ni].px = cx + ringR * Math.cos(ang);
+        nodes[ni].py = cy + ringR * Math.sin(ang);
+        nodes[ni].fanAngle = ang;
+      }
     }
-    return 6.4 + ((e - 1) / 9) * 4.4;
   }
 
   function isMatch(t) {
@@ -289,13 +333,14 @@
   function updateHoverPill() {
     if (!hoverPill) return;
     const hn = hoverId ? nodeById.get(hoverId) : null;
-    if (!hn || !isMatch(hn.t)) {
+    const alreadyLabeled = hn && window.BTMM_MAP_LABELS && window.BTMM_MAP_LABELS.isLabelShown && window.BTMM_MAP_LABELS.isLabelShown(hn.id);
+    if (!hn || !isMatch(hn.t) || alreadyLabeled) {
       hoverPill.hidden = true;
       return;
     }
-    const sx = hn.x * zoom.k + zoom.x;
-    const sy = hn.y * zoom.k + zoom.y;
-    const r = nodeBaseRadius(hn.t);
+    const sx = Number.isFinite(hn.px) ? hn.px : hn.x * zoom.k + zoom.x;
+    const sy = Number.isFinite(hn.py) ? hn.py : hn.y * zoom.k + zoom.y;
+    const r = nodeScreenRadius(hn.t);
     hoverPill.textContent = hn.t.title;
     hoverPill.style.left = `${sx.toFixed(1)}px`;
     hoverPill.style.top = `${Math.max(44, sy - r - 12).toFixed(1)}px`;
@@ -306,7 +351,6 @@
     if (!ringG) return;
     ringG.innerHTML = "";
 
-    // Draw hover 18px soft aura + active/selected/playing crisp SVG rings
     const targets = [];
     if (hoverId && hoverId !== selectedId && hoverId !== playId) targets.push({ id: hoverId, kind: "hover" });
     if (pendId && pendId !== playId) targets.push({ id: pendId, kind: "queued" });
@@ -316,15 +360,15 @@
     targets.forEach((item) => {
       const n = nodeById.get(item.id);
       if (!n) return;
-      const sx = n.x * zoom.k + zoom.x;
-      const sy = n.y * zoom.k + zoom.y;
-      const baseR = nodeBaseRadius(n.t);
+      const sx = Number.isFinite(n.px) ? n.px : n.x * zoom.k + zoom.x;
+      const sy = Number.isFinite(n.py) ? n.py : n.y * zoom.k + zoom.y;
+      const baseR = nodeScreenRadius(n.t);
 
       if (item.kind === "hover") {
         const aura = elSvg("circle");
         aura.setAttribute("cx", sx.toFixed(1));
         aura.setAttribute("cy", sy.toFixed(1));
-        aura.setAttribute("r", "18");
+        aura.setAttribute("r", "16");
         aura.setAttribute("fill", trackColor(n.t));
         aura.setAttribute("fill-opacity", "0.2");
         ringG.appendChild(aura);
@@ -332,10 +376,10 @@
         const ring = elSvg("circle");
         ring.setAttribute("cx", sx.toFixed(1));
         ring.setAttribute("cy", sy.toFixed(1));
-        ring.setAttribute("r", String((baseR + 5).toFixed(1)));
+        ring.setAttribute("r", String((baseR + 4.4).toFixed(1)));
         ring.setAttribute("fill", "none");
         ring.setAttribute("stroke", item.kind === "playing" ? palette.playing : item.kind === "queued" ? palette.queued : palette.primary);
-        ring.setAttribute("stroke-width", item.kind === "playing" ? "2.6" : "2.2");
+        ring.setAttribute("stroke-width", item.kind === "playing" ? "2.2" : "1.9");
         if (item.kind === "playing") ring.setAttribute("stroke-dasharray", "4 2.5");
         else if (item.kind === "queued") ring.setAttribute("stroke-dasharray", "3 3");
         ringG.appendChild(ring);
@@ -363,12 +407,9 @@
       }, activeEraId, selTrack);
     }
 
-    ctx.translate(zoom.x, zoom.y);
-    ctx.scale(zoom.k, zoom.k);
+    computeScreenPositions();
 
-    const invK = 1 / Math.max(0.55, Math.min(2.2, zoom.k));
-
-    // Batched Edges
+    // Draw edges & shrunk jewel circles directly in 1:1 screen space so zooming never inflates circle size
     edges.forEach((e) => {
       const a = nodeById.get(e.a);
       const b = nodeById.get(e.b);
@@ -380,58 +421,57 @@
 
       ctx.beginPath();
       if (layout === "era") {
-        const mx = (a.x + b.x) * 0.5;
-        const arcOff = -Math.min(34, Math.abs(b.x - a.x) * 0.25 + 14);
-        ctx.moveTo(a.x, a.y);
-        ctx.quadraticCurveTo(mx, (a.y + b.y) * 0.5 + arcOff, b.x, b.y);
+        const mx = (a.px + b.px) * 0.5;
+        const arcOff = -Math.min(34, Math.abs(b.px - a.px) * 0.25 + 14);
+        ctx.moveTo(a.px, a.py);
+        ctx.quadraticCurveTo(mx, (a.py + b.py) * 0.5 + arcOff, b.px, b.py);
       } else {
-        ctx.moveTo(a.x, a.y);
-        ctx.lineTo(b.x, b.y);
+        ctx.moveTo(a.px, a.py);
+        ctx.lineTo(b.px, b.py);
       }
 
       if (lit) {
         ctx.strokeStyle = palette.primary;
         ctx.globalAlpha = 0.85;
-        ctx.lineWidth = 2.0 * invK;
+        ctx.lineWidth = 1.75;
         ctx.setLineDash([]);
       } else {
         ctx.strokeStyle = palette.outline;
-        ctx.globalAlpha = (!aMatch && !bMatch) ? 0.05 : (layout === "era" ? 0.16 : (e.weak ? 0.18 : 0.34));
-        ctx.lineWidth = 1.15 * invK;
-        if (e.weak && layout === "vibe") ctx.setLineDash([4 * invK, 5 * invK]);
+        ctx.globalAlpha = (!aMatch && !bMatch) ? 0.05 : (layout === "era" ? 0.15 : (e.weak ? 0.16 : 0.3));
+        ctx.lineWidth = 0.95;
+        if (e.weak && layout === "vibe") ctx.setLineDash([3.5, 4.5]);
         else ctx.setLineDash([]);
       }
       ctx.stroke();
     });
     ctx.setLineDash([]);
 
-    // Batched Nodes (dimmed drawn first, active/visible drawn on top)
     const drawPass = (wantMatch) => {
       nodes.forEach((n) => {
         const match = isMatch(n.t);
         if (match !== wantMatch) return;
         if (starFilter && !match) return;
+        if (n.px < -20 || n.px > vw + 20 || n.py < -20 || n.py > vh + 20) return;
         const isPlay = n.id === playId;
         const isSel = n.id === selectedId;
         const isHov = n.id === hoverId;
-        let r = nodeBaseRadius(n.t);
-        if (isPlay) r += 2.2;
-        else if (isSel || isHov) r += 1.4;
-        const drawR = r * Math.pow(invK, 0.45);
+        let drawR = nodeScreenRadius(n.t);
+        if (isPlay) drawR += 1.3;
+        else if (isSel || isHov) drawR += 0.9;
 
         ctx.beginPath();
-        ctx.arc(n.x, n.y, drawR, 0, Math.PI * 2);
+        ctx.arc(n.px, n.py, drawR, 0, Math.PI * 2);
         ctx.fillStyle = trackColor(n.t);
-        ctx.globalAlpha = match ? 0.94 : 0.12;
+        ctx.globalAlpha = match ? 0.95 : 0.12;
         ctx.fill();
 
         if (isSel || isPlay || isHov) {
-          ctx.lineWidth = 2.0 / zoom.k;
+          ctx.lineWidth = 1.7;
           ctx.strokeStyle = palette.surfaceLowest;
           ctx.globalAlpha = 1;
           ctx.stroke();
         } else if (match) {
-          ctx.lineWidth = 1.6 / zoom.k;
+          ctx.lineWidth = 1.25;
           ctx.strokeStyle = palette.surfaceLowest;
           ctx.globalAlpha = 0.88;
           ctx.stroke();
@@ -441,13 +481,7 @@
     drawPass(false);
     drawPass(true);
 
-    ctx.restore();
-
-    // Draw crisp 1:1 screen-space 12px Inter track labels with 3px surface knock-out halo & collision culling
     if (window.BTMM_MAP_LABELS) {
-      ctx.save();
-      ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
-      const scaleExp = Math.pow(invK, 0.45) * zoom.k;
       window.BTMM_MAP_LABELS.drawScreenTrackLabels(ctx, {
         nodes,
         zoom,
@@ -455,15 +489,17 @@
         vh,
         palette,
         isMatch,
-        nodeScreenRadius: (t) => nodeBaseRadius(t) * scaleExp,
+        nodeScreenRadius,
+        trackColor,
         playId,
         selectedId,
         hoverId,
         isStarred: (id) => Boolean(window.BTMM_PLAYER && window.BTMM_PLAYER.isStarred(id)),
         mapWrap,
       });
-      ctx.restore();
     }
+
+    ctx.restore();
     paintRings(playId, pendId);
     updateHoverPill();
   }
@@ -499,18 +535,30 @@
     tweenRaf = requestAnimationFrame(step);
   }
 
+  function hitRadiusForEvent(ev) {
+    const base = isTouchEvent(ev) ? HIT_TOUCH_PX : HIT_MOUSE_PX;
+    return zoom.k >= 1.55 ? base + 8 : base;
+  }
+
   function findNearestVisibleNode(px, py, maxDist) {
     let best = null;
     let bestDist = maxDist;
     for (let i = 0; i < nodes.length; i++) {
       const n = nodes[i];
       if (!isMatch(n.t)) continue;
-      const sx = n.x * zoom.k + zoom.x;
-      const sy = n.y * zoom.k + zoom.y;
+      const sx = Number.isFinite(n.px) ? n.px : n.x * zoom.k + zoom.x;
+      const sy = Number.isFinite(n.py) ? n.py : n.y * zoom.k + zoom.y;
       const d = Math.hypot(px - sx, py - sy);
       if (d <= bestDist) {
         bestDist = d;
         best = n;
+      }
+    }
+    if (bestDist > 9 && window.BTMM_MAP_LABELS && window.BTMM_MAP_LABELS.hitLabelAt) {
+      const lid = window.BTMM_MAP_LABELS.hitLabelAt(px, py);
+      if (lid) {
+        const ln = nodeById.get(lid);
+        if (ln && isMatch(ln.t)) return ln;
       }
     }
     return best;
@@ -563,8 +611,7 @@
           }
           return;
         }
-        const hitMax = isTouchEvent(ev) ? HIT_TOUCH_PX : HIT_MOUSE_PX;
-        const hit = findNearestVisibleNode(px, py, hitMax);
+        const hit = findNearestVisibleNode(px, py, hitRadiusForEvent(ev));
         const nextHov = hit ? hit.id : null;
         if (nextHov !== hoverId) {
           hoverId = nextHov;
@@ -580,8 +627,7 @@
         }
       },
       onTapPoint: (ev, px, py) => {
-        const hitMax = isTouchEvent(ev) ? HIT_TOUCH_PX : HIT_MOUSE_PX;
-        const hit = findNearestVisibleNode(px, py, hitMax);
+        const hit = findNearestVisibleNode(px, py, hitRadiusForEvent(ev));
         if (!hit) return false;
         selectedId = hit.id;
         if (window.BTMM_PLAYER) window.BTMM_PLAYER.select(hit.id, { silent: true });
