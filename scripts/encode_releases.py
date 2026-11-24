@@ -44,6 +44,67 @@ def load_excluded_ids(exclusions_path: Path | None) -> set[str]:
     return set()
 
 
+def load_calibration_only_ids(exclusions_path: Path | None) -> set[str]:
+    if exclusions_path and exclusions_path.exists():
+        data = json.loads(exclusions_path.read_text(encoding="utf-8"))
+        return set(data.get("calibration_only_ids", []))
+    return set()
+
+
+def prune_excluded_release_assets(
+    gh_bin: str,
+    repo: str,
+    excluded_ids: set[str],
+    calibration_ids: set[str],
+    archive_dl_path: Path,
+    archive_tag: str = "archive-downloads-v1",
+    preview_tag: str = "audio-previews-v1",
+    stream_tag: str = "audio-streams-v1",
+) -> None:
+    dl = json.loads(archive_dl_path.read_text(encoding="utf-8")) if archive_dl_path.exists() else {}
+
+    def _live_assets(tag: str) -> set[str]:
+        r = subprocess.run([gh_bin, "release", "view", tag, "-R", repo, "--json", "assets"], capture_output=True, text=True)
+        if r.returncode != 0:
+            return set()
+        return {a["name"] for a in json.loads(r.stdout).get("assets", [])}
+
+    arch_live = _live_assets(archive_tag)
+    prev_live = _live_assets(preview_tag)
+    stream_live = _live_assets(stream_tag)
+
+    to_delete: list[tuple[str, str]] = []
+    for tid in sorted(excluded_ids):
+        rec = dl.get(tid, {})
+        for key in ("mp3_320_url", "flac_url"):
+            u = rec.get(key) or ""
+            if u:
+                aname = u.rsplit("/", 1)[-1]
+                if aname in arch_live:
+                    to_delete.append((archive_tag, aname))
+        if tid not in calibration_ids:
+            pname = f"{tid}.mp3"
+            if pname in prev_live:
+                to_delete.append((preview_tag, pname))
+        for ext in (".m4a", ".webm", ".mp3"):
+            sname = f"{tid}{ext}"
+            if sname in stream_live:
+                to_delete.append((stream_tag, sname))
+
+    if not to_delete:
+        print("No excluded assets present on GitHub Releases.")
+        return
+
+    def _del_one(pair: tuple[str, str]) -> tuple[str, str, int]:
+        tag, name = pair
+        r = subprocess.run([gh_bin, "release", "delete-asset", tag, name, "-R", repo, "--yes"], capture_output=True, text=True)
+        return tag, name, r.returncode
+
+    with ThreadPoolExecutor(max_workers=8) as pool:
+        for tag, name, rc in pool.map(_del_one, to_delete):
+            print(f"Deleted {tag}/{name} (rc={rc})")
+
+
 def encode_preview_clip(
     ffmpeg_bin: str,
     src_path: Path,
@@ -113,18 +174,30 @@ def stream_ext_for_codec(codec: str) -> str:
     raise ValueError(f"Unsupported stream codec: {codec!r} (choose opus, aac, or mp3)")
 
 
+def atomic_write_text(dst: Path, text: str) -> None:
+    dst.parent.mkdir(parents=True, exist_ok=True)
+    tmp = dst.with_name(f".{dst.name}.tmp.{os.getpid()}")
+    tmp.write_text(text, encoding="utf-8")
+    os.replace(tmp, dst)
+
+
 def encode_stream_file(
     ffmpeg_bin: str,
     src_path: Path,
     dst_path: Path,
-    codec: str = "opus",
-    bitrate: str = "104k",
+    codec: str = "aac",
+    bitrate: str = "128k",
     lowpass_hz: int = 16500,
 ) -> int:
-    """Encode a streaming-tier full track (Opus `.webm`, AAC `.m4a` +faststart, or MP3)."""
+    """Encode a streaming-tier full track (AAC `.m4a` +faststart, Opus `.webm`, or MP3) with stripped metadata."""
     dst_path.parent.mkdir(parents=True, exist_ok=True)
     c = codec.lower()
-    cmd = [ffmpeg_bin, "-nostdin", "-y", "-v", "error", "-i", str(src_path), "-map", "0:a:0", "-vn"]
+    cmd = [
+        ffmpeg_bin, "-nostdin", "-y", "-v", "error",
+        "-i", str(src_path),
+        "-map", "0:a:0", "-vn",
+        "-map_metadata", "-1",
+    ]
     if lowpass_hz and lowpass_hz > 0:
         cmd += ["-af", f"lowpass=f={int(lowpass_hz)}"]
     if c == "opus":
@@ -164,10 +237,21 @@ def release_asset_count(gh_bin: str, repo: str, tag: str) -> int:
         return 0
 
 
-def upload_assets_batched(gh_bin: str, repo: str, tag: str, files: list[Path], batch_size: int = 25) -> None:
-    for idx in range(0, len(files), batch_size):
-        chunk = [str(p) for p in files[idx : idx + batch_size]]
-        subprocess.run([gh_bin, "release", "upload", tag, *chunk, "-R", repo, "--clobber"], check=True)
+def upload_assets_batched(gh_bin: str, repo: str, tag: str, files: list[Path], batch_size: int = 20, parallel_batches: int = 4) -> None:
+    chunks = [[str(p) for p in files[idx : idx + batch_size]] for idx in range(0, len(files), batch_size)]
+
+    def _upload_chunk(chunk: list[str]) -> None:
+        for attempt in range(3):
+            res = subprocess.run([gh_bin, "release", "upload", tag, *chunk, "-R", repo, "--clobber"], capture_output=True, text=True)
+            if res.returncode == 0:
+                return
+            if attempt == 2:
+                raise subprocess.CalledProcessError(res.returncode, res.args, output=res.stdout, stderr=res.stderr)
+
+    with ThreadPoolExecutor(max_workers=parallel_batches) as pool:
+        futs = [pool.submit(_upload_chunk, ch) for ch in chunks]
+        for fut in as_completed(futs):
+            fut.result()
 
 
 def release_download_url(repo: str, tag: str, filename: str) -> str:
@@ -256,8 +340,10 @@ def main() -> None:
     ap.add_argument("--upload-previews", action="store_true", help="Upload preview MP3s to audio-previews-v1")
     ap.add_argument("--encode-streams", action="store_true", help="Encode staged >=2015 newer tracks for streaming")
     ap.add_argument("--upload-streams", action="store_true", help="Upload encoded newer streams to audio-streams-v1 & update waveforms_and_cues.json")
-    ap.add_argument("--stream-codec", default="opus", choices=["opus", "aac", "mp3"])
-    ap.add_argument("--stream-bitrate", default="104k")
+    ap.add_argument("--prune-excluded", action="store_true", help="Delete excluded assets from GitHub Releases")
+    ap.add_argument("--archive-dl-json", type=Path, default=DEFAULT_STAGING / "archive_dl_results.json")
+    ap.add_argument("--stream-codec", default="aac", choices=["opus", "aac", "mp3"])
+    ap.add_argument("--stream-bitrate", default="128k")
     ap.add_argument("--stream-lowpass", type=int, default=16500, help="Low-pass cutoff in Hz (0 disables)")
     ap.add_argument("--stream-tag", default="audio-streams-v1")
     ap.add_argument("--preview-tag", default="audio-previews-v1")
@@ -269,6 +355,19 @@ def main() -> None:
         raise SystemExit("ffmpeg not found on PATH")
     gh_bin = find_gh()
     excluded_ids = load_excluded_ids(args.exclusions)
+    calibration_ids = load_calibration_only_ids(args.exclusions)
+
+    if args.prune_excluded:
+        prune_excluded_release_assets(
+            gh_bin=gh_bin,
+            repo=args.repo,
+            excluded_ids=excluded_ids,
+            calibration_ids=calibration_ids,
+            archive_dl_path=args.archive_dl_json,
+            archive_tag=f"{args.archive_tag_prefix}-v1",
+            preview_tag=args.preview_tag,
+            stream_tag=args.stream_tag,
+        )
 
     if args.upload_previews:
         clips = [p for p in sorted(args.previews_dir.glob("*.mp3")) if p.stem not in excluded_ids]
@@ -316,7 +415,7 @@ def main() -> None:
                         stream_files.append(res["path"])
                         stream_urls[res["id"]] = res["stream_url"]
                         staged_man[res["id"]]["stream_url"] = res["stream_url"]
-            man_path.write_text(json.dumps(staged_man, indent=2, ensure_ascii=False) + "\n", encoding="utf-8")
+            atomic_write_text(man_path, json.dumps(staged_man, indent=2, ensure_ascii=False) + "\n")
             tot_mb = sum(p.stat().st_size for p in stream_files) / (1024 * 1024)
             print(f"Encoded {len(stream_files)}/{len(items)} newer streams ({args.stream_codec} @ {args.stream_bitrate}, {tot_mb:.1f} MB) -> {out_subdir}")
         else:
@@ -338,16 +437,16 @@ def main() -> None:
             upload_assets_batched(gh_bin, args.repo, args.stream_tag, sorted(stream_files))
             print(f"Uploaded {len(stream_files)} stream assets to {args.repo} release {args.stream_tag}")
 
-            # Promote precomputed full-track waveforms & cues + stream_url into waveforms_and_cues.json
+            # Promote precomputed full-track waveforms & cues + stream_url into waveforms_and_cues.json atomically
             pre_full_path = args.newer_stage_dir / "precomputed_full_waveforms.json"
             pre_full = json.loads(pre_full_path.read_text(encoding="utf-8")) if pre_full_path.exists() else {}
             wf_map = json.loads(args.waveforms_json.read_text(encoding="utf-8")) if args.waveforms_json.exists() else {}
             wf_map = {k: v for k, v in wf_map.items() if k not in excluded_ids}
             for tid, s_url in stream_urls.items():
-                base_rec = dict(pre_full.get(tid) or wf_map.get(tid) or {})
+                base_rec = {**(wf_map.get(tid) or {}), **(pre_full.get(tid) or {})}
                 base_rec["stream_url"] = s_url
                 wf_map[tid] = base_rec
-            args.waveforms_json.write_text(json.dumps(wf_map, separators=(",", ":"), ensure_ascii=False) + "\n", encoding="utf-8")
+            atomic_write_text(args.waveforms_json, json.dumps(wf_map, separators=(",", ":"), ensure_ascii=False) + "\n")
             print(f"Promoted {len(stream_urls)} full-track stream waveforms + stream_url entries in {args.waveforms_json}")
 
     if not args.encode_archive and not args.upload_archive:
