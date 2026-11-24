@@ -972,7 +972,6 @@
   }
 
   function resolveIdleTargetTrackId() {
-    if (lastPaused && byId.has(lastPaused.trackId)) return lastPaused.trackId;
     if (typeof window !== "undefined") {
       const selPlayer = window.BTMM_PLAYER && typeof window.BTMM_PLAYER.selected === "function"
         ? window.BTMM_PLAYER.selected()
@@ -983,6 +982,7 @@
         : null;
       if (selMap && byId.has(selMap)) return selMap;
     }
+    if (lastPaused && byId.has(lastPaused.trackId)) return lastPaused.trackId;
     return null;
   }
 
