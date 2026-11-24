@@ -1,0 +1,5284 @@
+{
+  "n_tracks": 66,
+  "silhouette": 0.262,
+  "style_groups": [
+    {
+      "id": "s0_ambient",
+      "label": "Ambient & meditative",
+      "idx": 0,
+      "hue": 205,
+      "members": [
+        "present_ambient_1",
+        "hd_2005_2",
+        "bands_archive_5",
+        "ep_concepts_3",
+        "le_garage_2",
+        "le_garage_4",
+        "archive_2018_23_1",
+        "spirit_guides_1",
+        "spirit_guides_2",
+        "spirit_guides_3",
+        "spirit_guides_4",
+        "lucid_crystal_1",
+        "lucid_crystal_2",
+        "lucid_crystal_4",
+        "sketches_2024_25_1"
+      ],
+      "cx": 0.8648,
+      "cy": 0.6881
+    },
+    {
+      "id": "s1_downtempo_lush",
+      "label": "Downtempo & lush chords",
+      "idx": 1,
+      "hue": 165,
+      "members": [
+        "present_ambient_2",
+        "archive_2013_18_4",
+        "psychedailies_4",
+        "sketches_2026_4"
+      ],
+      "cx": 0.541,
+      "cy": 0.1413
+    },
+    {
+      "id": "s2_chill_elec",
+      "label": "Chill & sparse electronic",
+      "idx": 2,
+      "hue": 275,
+      "members": [
+        "present_ambient_3",
+        "present_ambient_4",
+        "hd_2005_3",
+        "ep_concepts_1",
+        "psychedailies_2",
+        "lucid_crystal_3"
+      ],
+      "cx": 0.7355,
+      "cy": 0.4459
+    },
+    {
+      "id": "s3_hypnotic_micro",
+      "label": "Hypnotic electro & microtonal",
+      "idx": 3,
+      "hue": 35,
+      "members": [
+        "present_electro_1",
+        "present_electro_4",
+        "present_electro_5",
+        "hd_2005_4",
+        "archive_2013_18_2",
+        "nihon_forever_3",
+        "ep_concepts_2",
+        "ep_concepts_4",
+        "le_garage_1",
+        "le_garage_3",
+        "archive_2018_23_2",
+        "sketches_2024_25_3",
+        "sketches_2024_25_4",
+        "ecstatic_wave_4",
+        "sketches_2026_2",
+        "sketches_2026_3"
+      ],
+      "cx": 0.4882,
+      "cy": 0.1704
+    },
+    {
+      "id": "s4_house_ecstatic",
+      "label": "House & ecstatic groove",
+      "idx": 4,
+      "hue": 130,
+      "members": [
+        "present_electro_3",
+        "hd_2005_1",
+        "bands_archive_6",
+        "nihon_forever_4",
+        "ecstatic_wave_1",
+        "ecstatic_wave_2",
+        "ecstatic_wave_3",
+        "sketches_2026_1"
+      ],
+      "cx": 0.3284,
+      "cy": 0.05
+    },
+    {
+      "id": "s5_dnb_breaks",
+      "label": "Complex drums & breaks",
+      "idx": 5,
+      "hue": 340,
+      "members": [
+        "present_electro_2",
+        "hd_2005_5",
+        "bands_archive_1",
+        "bands_archive_2",
+        "bands_archive_3",
+        "bands_archive_4",
+        "archive_2013_18_1",
+        "archive_2013_18_3",
+        "nihon_forever_1",
+        "nihon_forever_2",
+        "psychedailies_1",
+        "psychedailies_3",
+        "archive_2018_23_3",
+        "remixes_commissions_1",
+        "remixes_commissions_2",
+        "remixes_commissions_3",
+        "sketches_2024_25_2"
+      ],
+      "cx": 0.1852,
+      "cy": 0.0535
+    }
+  ],
+  "track_map": {
+    "present_ambient_2": {
+      "similarity": [
+        0.5328,
+        0.1763
+      ],
+      "era": [
+        0.13,
+        0.1224
+      ]
+    },
+    "present_ambient_1": {
+      "similarity": [
+        0.9015,
+        0.8943
+      ],
+      "era": [
+        0.166,
+        0.153
+      ]
+    },
+    "present_ambient_3": {
+      "similarity": [
+        0.7363,
+        0.5584
+      ],
+      "era": [
+        0.13,
+        0.1836
+      ]
+    },
+    "present_ambient_4": {
+      "similarity": [
+        0.7707,
+        0.4809
+      ],
+      "era": [
+        0.094,
+        0.153
+      ]
+    },
+    "present_electro_1": {
+      "similarity": [
+        0.4978,
+        0.4459
+      ],
+      "era": [
+        0.375,
+        0.1173
+      ]
+    },
+    "present_electro_3": {
+      "similarity": [
+        0.3631,
+        0.07
+      ],
+      "era": [
+        0.4149,
+        0.142
+      ]
+    },
+    "present_electro_4": {
+      "similarity": [
+        0.4287,
+        0.4358
+      ],
+      "era": [
+        0.3997,
+        0.1819
+      ]
+    },
+    "present_electro_2": {
+      "similarity": [
+        0.193,
+        0.1782
+      ],
+      "era": [
+        0.3503,
+        0.1819
+      ]
+    },
+    "present_electro_5": {
+      "similarity": [
+        0.352,
+        0.454
+      ],
+      "era": [
+        0.3351,
+        0.142
+      ]
+    },
+    "hd_2005_2": {
+      "similarity": [
+        0.877,
+        0.9266
+      ],
+      "era": [
+        0.62,
+        0.1173
+      ]
+    },
+    "hd_2005_1": {
+      "similarity": [
+        0.07,
+        0.247
+      ],
+      "era": [
+        0.6599,
+        0.142
+      ]
+    },
+    "hd_2005_4": {
+      "similarity": [
+        0.4835,
+        0.3227
+      ],
+      "era": [
+        0.6447,
+        0.1819
+      ]
+    },
+    "hd_2005_3": {
+      "similarity": [
+        0.7399,
+        0.4989
+      ],
+      "era": [
+        0.5953,
+        0.1819
+      ]
+    },
+    "hd_2005_5": {
+      "similarity": [
+        0.0967,
+        0.1603
+      ],
+      "era": [
+        0.5801,
+        0.142
+      ]
+    },
+    "bands_archive_5": {
+      "similarity": [
+        0.929,
+        0.7231
+      ],
+      "era": [
+        0.865,
+        0.1173
+      ]
+    },
+    "bands_archive_6": {
+      "similarity": [
+        0.4208,
+        0.1068
+      ],
+      "era": [
+        0.9014,
+        0.1351
+      ]
+    },
+    "bands_archive_3": {
+      "similarity": [
+        0.1662,
+        0.1445
+      ],
+      "era": [
+        0.9014,
+        0.1709
+      ]
+    },
+    "bands_archive_4": {
+      "similarity": [
+        0.1721,
+        0.2279
+      ],
+      "era": [
+        0.865,
+        0.1887
+      ]
+    },
+    "bands_archive_1": {
+      "similarity": [
+        0.1077,
+        0.1274
+      ],
+      "era": [
+        0.8286,
+        0.1709
+      ]
+    },
+    "bands_archive_2": {
+      "similarity": [
+        0.1435,
+        0.0983
+      ],
+      "era": [
+        0.8286,
+        0.1351
+      ]
+    },
+    "archive_2013_18_4": {
+      "similarity": [
+        0.5104,
+        0.7534
+      ],
+      "era": [
+        0.13,
+        0.3644
+      ]
+    },
+    "archive_2013_18_2": {
+      "similarity": [
+        0.5456,
+        0.372
+      ],
+      "era": [
+        0.166,
+        0.395
+      ]
+    },
+    "archive_2013_18_1": {
+      "similarity": [
+        0.2134,
+        0.1423
+      ],
+      "era": [
+        0.13,
+        0.4256
+      ]
+    },
+    "archive_2013_18_3": {
+      "similarity": [
+        0.1767,
+        0.2935
+      ],
+      "era": [
+        0.094,
+        0.395
+      ]
+    },
+    "nihon_forever_3": {
+      "similarity": [
+        0.5359,
+        0.4116
+      ],
+      "era": [
+        0.375,
+        0.3644
+      ]
+    },
+    "nihon_forever_4": {
+      "similarity": [
+        0.3601,
+        0.1454
+      ],
+      "era": [
+        0.411,
+        0.395
+      ]
+    },
+    "nihon_forever_1": {
+      "similarity": [
+        0.1313,
+        0.1804
+      ],
+      "era": [
+        0.375,
+        0.4256
+      ]
+    },
+    "nihon_forever_2": {
+      "similarity": [
+        0.2274,
+        0.4026
+      ],
+      "era": [
+        0.339,
+        0.395
+      ]
+    },
+    "ep_concepts_1": {
+      "similarity": [
+        0.7582,
+        0.5858
+      ],
+      "era": [
+        0.62,
+        0.3644
+      ]
+    },
+    "ep_concepts_3": {
+      "similarity": [
+        0.8819,
+        0.8184
+      ],
+      "era": [
+        0.656,
+        0.395
+      ]
+    },
+    "ep_concepts_2": {
+      "similarity": [
+        0.5905,
+        0.2175
+      ],
+      "era": [
+        0.62,
+        0.4256
+      ]
+    },
+    "ep_concepts_4": {
+      "similarity": [
+        0.5412,
+        0.2392
+      ],
+      "era": [
+        0.584,
+        0.395
+      ]
+    },
+    "le_garage_4": {
+      "similarity": [
+        0.8924,
+        0.8585
+      ],
+      "era": [
+        0.865,
+        0.3644
+      ]
+    },
+    "le_garage_2": {
+      "similarity": [
+        0.857,
+        0.7478
+      ],
+      "era": [
+        0.901,
+        0.395
+      ]
+    },
+    "le_garage_1": {
+      "similarity": [
+        0.3915,
+        0.4874
+      ],
+      "era": [
+        0.865,
+        0.4256
+      ]
+    },
+    "le_garage_3": {
+      "similarity": [
+        0.3511,
+        0.4885
+      ],
+      "era": [
+        0.829,
+        0.395
+      ]
+    },
+    "psychedailies_4": {
+      "similarity": [
+        0.5745,
+        0.7728
+      ],
+      "era": [
+        0.13,
+        0.6064
+      ]
+    },
+    "psychedailies_2": {
+      "similarity": [
+        0.7003,
+        0.5613
+      ],
+      "era": [
+        0.166,
+        0.637
+      ]
+    },
+    "psychedailies_3": {
+      "similarity": [
+        0.2902,
+        0.2934
+      ],
+      "era": [
+        0.13,
+        0.6676
+      ]
+    },
+    "psychedailies_1": {
+      "similarity": [
+        0.2359,
+        0.2909
+      ],
+      "era": [
+        0.094,
+        0.637
+      ]
+    },
+    "archive_2018_23_1": {
+      "similarity": [
+        0.7936,
+        0.8869
+      ],
+      "era": [
+        0.375,
+        0.6064
+      ]
+    },
+    "archive_2018_23_2": {
+      "similarity": [
+        0.5473,
+        0.277
+      ],
+      "era": [
+        0.4062,
+        0.6523
+      ]
+    },
+    "archive_2018_23_3": {
+      "similarity": [
+        0.1807,
+        0.3936
+      ],
+      "era": [
+        0.3438,
+        0.6523
+      ]
+    },
+    "spirit_guides_1": {
+      "similarity": [
+        0.9257,
+        0.8104
+      ],
+      "era": [
+        0.62,
+        0.6064
+      ]
+    },
+    "spirit_guides_3": {
+      "similarity": [
+        0.8427,
+        0.8925
+      ],
+      "era": [
+        0.656,
+        0.637
+      ]
+    },
+    "spirit_guides_2": {
+      "similarity": [
+        0.8409,
+        0.7924
+      ],
+      "era": [
+        0.62,
+        0.6676
+      ]
+    },
+    "spirit_guides_4": {
+      "similarity": [
+        0.8589,
+        0.8454
+      ],
+      "era": [
+        0.584,
+        0.637
+      ]
+    },
+    "lucid_crystal_1": {
+      "similarity": [
+        0.7888,
+        0.9211
+      ],
+      "era": [
+        0.865,
+        0.6064
+      ]
+    },
+    "lucid_crystal_2": {
+      "similarity": [
+        0.93,
+        0.7744
+      ],
+      "era": [
+        0.901,
+        0.637
+      ]
+    },
+    "lucid_crystal_4": {
+      "similarity": [
+        0.8317,
+        0.93
+      ],
+      "era": [
+        0.865,
+        0.6676
+      ]
+    },
+    "lucid_crystal_3": {
+      "similarity": [
+        0.7073,
+        0.6103
+      ],
+      "era": [
+        0.829,
+        0.637
+      ]
+    },
+    "remixes_commissions_2": {
+      "similarity": [
+        0.3262,
+        0.2902
+      ],
+      "era": [
+        0.13,
+        0.8484
+      ]
+    },
+    "remixes_commissions_3": {
+      "similarity": [
+        0.1405,
+        0.2934
+      ],
+      "era": [
+        0.1612,
+        0.8943
+      ]
+    },
+    "remixes_commissions_1": {
+      "similarity": [
+        0.1818,
+        0.0885
+      ],
+      "era": [
+        0.0988,
+        0.8943
+      ]
+    },
+    "sketches_2024_25_1": {
+      "similarity": [
+        0.8211,
+        0.7593
+      ],
+      "era": [
+        0.375,
+        0.8484
+      ]
+    },
+    "sketches_2024_25_3": {
+      "similarity": [
+        0.5061,
+        0.3817
+      ],
+      "era": [
+        0.411,
+        0.879
+      ]
+    },
+    "sketches_2024_25_4": {
+      "similarity": [
+        0.4361,
+        0.4695
+      ],
+      "era": [
+        0.375,
+        0.9096
+      ]
+    },
+    "sketches_2024_25_2": {
+      "similarity": [
+        0.1654,
+        0.3264
+      ],
+      "era": [
+        0.339,
+        0.879
+      ]
+    },
+    "ecstatic_wave_4": {
+      "similarity": [
+        0.5733,
+        0.6725
+      ],
+      "era": [
+        0.62,
+        0.8484
+      ]
+    },
+    "ecstatic_wave_1": {
+      "similarity": [
+        0.3432,
+        0.1759
+      ],
+      "era": [
+        0.656,
+        0.879
+      ]
+    },
+    "ecstatic_wave_2": {
+      "similarity": [
+        0.3771,
+        0.115
+      ],
+      "era": [
+        0.62,
+        0.9096
+      ]
+    },
+    "ecstatic_wave_3": {
+      "similarity": [
+        0.3106,
+        0.1057
+      ],
+      "era": [
+        0.584,
+        0.879
+      ]
+    },
+    "sketches_2026_4": {
+      "similarity": [
+        0.5464,
+        0.7511
+      ],
+      "era": [
+        0.865,
+        0.8484
+      ]
+    },
+    "sketches_2026_2": {
+      "similarity": [
+        0.4781,
+        0.2844
+      ],
+      "era": [
+        0.901,
+        0.879
+      ]
+    },
+    "sketches_2026_3": {
+      "similarity": [
+        0.5522,
+        0.2054
+      ],
+      "era": [
+        0.865,
+        0.9096
+      ]
+    },
+    "sketches_2026_1": {
+      "similarity": [
+        0.3825,
+        0.1795
+      ],
+      "era": [
+        0.829,
+        0.879
+      ]
+    }
+  },
+  "era_anchors": [
+    {
+      "id": "present_ambient",
+      "idx": 0,
+      "x": 0.13,
+      "y": 0.073,
+      "cx": 0.13,
+      "cy": 0.145
+    },
+    {
+      "id": "present_electro",
+      "idx": 1,
+      "x": 0.375,
+      "y": 0.073,
+      "cx": 0.375,
+      "cy": 0.145
+    },
+    {
+      "id": "hd_2005",
+      "idx": 2,
+      "x": 0.62,
+      "y": 0.073,
+      "cx": 0.62,
+      "cy": 0.145
+    },
+    {
+      "id": "bands_archive",
+      "idx": 3,
+      "x": 0.865,
+      "y": 0.073,
+      "cx": 0.865,
+      "cy": 0.145
+    },
+    {
+      "id": "archive_2013_18",
+      "idx": 4,
+      "x": 0.13,
+      "y": 0.315,
+      "cx": 0.13,
+      "cy": 0.387
+    },
+    {
+      "id": "nihon_forever",
+      "idx": 5,
+      "x": 0.375,
+      "y": 0.315,
+      "cx": 0.375,
+      "cy": 0.387
+    },
+    {
+      "id": "ep_concepts",
+      "idx": 6,
+      "x": 0.62,
+      "y": 0.315,
+      "cx": 0.62,
+      "cy": 0.387
+    },
+    {
+      "id": "le_garage",
+      "idx": 7,
+      "x": 0.865,
+      "y": 0.315,
+      "cx": 0.865,
+      "cy": 0.387
+    },
+    {
+      "id": "psychedailies",
+      "idx": 8,
+      "x": 0.13,
+      "y": 0.557,
+      "cx": 0.13,
+      "cy": 0.629
+    },
+    {
+      "id": "archive_2018_23",
+      "idx": 9,
+      "x": 0.375,
+      "y": 0.557,
+      "cx": 0.375,
+      "cy": 0.629
+    },
+    {
+      "id": "spirit_guides",
+      "idx": 10,
+      "x": 0.62,
+      "y": 0.557,
+      "cx": 0.62,
+      "cy": 0.629
+    },
+    {
+      "id": "lucid_crystal",
+      "idx": 11,
+      "x": 0.865,
+      "y": 0.557,
+      "cx": 0.865,
+      "cy": 0.629
+    },
+    {
+      "id": "remixes_commissions",
+      "idx": 12,
+      "x": 0.13,
+      "y": 0.799,
+      "cx": 0.13,
+      "cy": 0.871
+    },
+    {
+      "id": "sketches_2024_25",
+      "idx": 13,
+      "x": 0.375,
+      "y": 0.799,
+      "cx": 0.375,
+      "cy": 0.871
+    },
+    {
+      "id": "ecstatic_wave",
+      "idx": 14,
+      "x": 0.62,
+      "y": 0.799,
+      "cx": 0.62,
+      "cy": 0.871
+    },
+    {
+      "id": "sketches_2026",
+      "idx": 15,
+      "x": 0.865,
+      "y": 0.799,
+      "cx": 0.865,
+      "cy": 0.871
+    }
+  ],
+  "track_near": {
+    "present_ambient_1": [
+      [
+        "le_garage_4",
+        0.789
+      ],
+      [
+        "hd_2005_2",
+        0.749
+      ],
+      [
+        "spirit_guides_4",
+        0.742
+      ],
+      [
+        "ep_concepts_3",
+        0.733
+      ]
+    ],
+    "present_ambient_2": [
+      [
+        "bands_archive_6",
+        0.549
+      ],
+      [
+        "archive_2013_18_4",
+        0.508
+      ],
+      [
+        "sketches_2026_4",
+        0.496
+      ],
+      [
+        "ep_concepts_4",
+        0.492
+      ]
+    ],
+    "present_ambient_3": [
+      [
+        "psychedailies_2",
+        0.736
+      ],
+      [
+        "ep_concepts_1",
+        0.694
+      ],
+      [
+        "sketches_2024_25_1",
+        0.608
+      ],
+      [
+        "lucid_crystal_3",
+        0.607
+      ]
+    ],
+    "present_ambient_4": [
+      [
+        "hd_2005_3",
+        0.855
+      ],
+      [
+        "present_ambient_3",
+        0.554
+      ],
+      [
+        "psychedailies_2",
+        0.533
+      ],
+      [
+        "ep_concepts_1",
+        0.506
+      ]
+    ],
+    "present_electro_1": [
+      [
+        "nihon_forever_3",
+        0.666
+      ],
+      [
+        "archive_2013_18_2",
+        0.638
+      ],
+      [
+        "present_electro_5",
+        0.628
+      ],
+      [
+        "psychedailies_3",
+        0.622
+      ]
+    ],
+    "present_electro_2": [
+      [
+        "archive_2013_18_1",
+        0.775
+      ],
+      [
+        "bands_archive_3",
+        0.727
+      ],
+      [
+        "bands_archive_4",
+        0.726
+      ],
+      [
+        "nihon_forever_1",
+        0.665
+      ]
+    ],
+    "present_electro_3": [
+      [
+        "ecstatic_wave_2",
+        0.669
+      ],
+      [
+        "nihon_forever_4",
+        0.66
+      ],
+      [
+        "bands_archive_6",
+        0.658
+      ],
+      [
+        "bands_archive_3",
+        0.625
+      ]
+    ],
+    "present_electro_4": [
+      [
+        "sketches_2024_25_4",
+        0.73
+      ],
+      [
+        "remixes_commissions_2",
+        0.674
+      ],
+      [
+        "le_garage_1",
+        0.668
+      ],
+      [
+        "sketches_2026_3",
+        0.645
+      ]
+    ],
+    "present_electro_5": [
+      [
+        "le_garage_3",
+        0.797
+      ],
+      [
+        "nihon_forever_2",
+        0.688
+      ],
+      [
+        "le_garage_1",
+        0.659
+      ],
+      [
+        "sketches_2024_25_4",
+        0.652
+      ]
+    ],
+    "hd_2005_1": [
+      [
+        "bands_archive_6",
+        0.563
+      ],
+      [
+        "present_electro_3",
+        0.545
+      ],
+      [
+        "ep_concepts_4",
+        0.474
+      ],
+      [
+        "ecstatic_wave_2",
+        0.459
+      ]
+    ],
+    "hd_2005_2": [
+      [
+        "present_ambient_1",
+        0.749
+      ],
+      [
+        "spirit_guides_3",
+        0.706
+      ],
+      [
+        "lucid_crystal_4",
+        0.68
+      ],
+      [
+        "le_garage_4",
+        0.664
+      ]
+    ],
+    "hd_2005_3": [
+      [
+        "present_ambient_4",
+        0.855
+      ],
+      [
+        "present_ambient_3",
+        0.594
+      ],
+      [
+        "psychedailies_2",
+        0.589
+      ],
+      [
+        "lucid_crystal_3",
+        0.551
+      ]
+    ],
+    "hd_2005_4": [
+      [
+        "sketches_2026_2",
+        0.723
+      ],
+      [
+        "sketches_2024_25_3",
+        0.706
+      ],
+      [
+        "remixes_commissions_2",
+        0.65
+      ],
+      [
+        "archive_2013_18_2",
+        0.648
+      ]
+    ],
+    "hd_2005_5": [
+      [
+        "bands_archive_1",
+        0.831
+      ],
+      [
+        "nihon_forever_1",
+        0.749
+      ],
+      [
+        "bands_archive_2",
+        0.694
+      ],
+      [
+        "bands_archive_3",
+        0.659
+      ]
+    ],
+    "bands_archive_1": [
+      [
+        "hd_2005_5",
+        0.831
+      ],
+      [
+        "nihon_forever_1",
+        0.714
+      ],
+      [
+        "bands_archive_2",
+        0.689
+      ],
+      [
+        "bands_archive_3",
+        0.666
+      ]
+    ],
+    "bands_archive_2": [
+      [
+        "remixes_commissions_1",
+        0.748
+      ],
+      [
+        "bands_archive_3",
+        0.726
+      ],
+      [
+        "hd_2005_5",
+        0.694
+      ],
+      [
+        "bands_archive_1",
+        0.689
+      ]
+    ],
+    "bands_archive_3": [
+      [
+        "archive_2013_18_1",
+        0.764
+      ],
+      [
+        "nihon_forever_1",
+        0.754
+      ],
+      [
+        "present_electro_2",
+        0.727
+      ],
+      [
+        "bands_archive_2",
+        0.726
+      ]
+    ],
+    "bands_archive_4": [
+      [
+        "present_electro_2",
+        0.726
+      ],
+      [
+        "nihon_forever_1",
+        0.721
+      ],
+      [
+        "psychedailies_3",
+        0.684
+      ],
+      [
+        "archive_2013_18_3",
+        0.677
+      ]
+    ],
+    "bands_archive_5": [
+      [
+        "lucid_crystal_2",
+        0.599
+      ],
+      [
+        "spirit_guides_1",
+        0.551
+      ],
+      [
+        "sketches_2024_25_1",
+        0.538
+      ],
+      [
+        "ep_concepts_1",
+        0.521
+      ]
+    ],
+    "bands_archive_6": [
+      [
+        "ecstatic_wave_2",
+        0.686
+      ],
+      [
+        "ecstatic_wave_1",
+        0.671
+      ],
+      [
+        "nihon_forever_4",
+        0.668
+      ],
+      [
+        "present_electro_3",
+        0.658
+      ]
+    ],
+    "archive_2013_18_1": [
+      [
+        "present_electro_2",
+        0.775
+      ],
+      [
+        "bands_archive_3",
+        0.764
+      ],
+      [
+        "ecstatic_wave_1",
+        0.721
+      ],
+      [
+        "remixes_commissions_1",
+        0.716
+      ]
+    ],
+    "archive_2013_18_2": [
+      [
+        "nihon_forever_3",
+        0.755
+      ],
+      [
+        "psychedailies_3",
+        0.695
+      ],
+      [
+        "sketches_2024_25_3",
+        0.68
+      ],
+      [
+        "hd_2005_4",
+        0.648
+      ]
+    ],
+    "archive_2013_18_3": [
+      [
+        "remixes_commissions_3",
+        0.77
+      ],
+      [
+        "sketches_2024_25_2",
+        0.749
+      ],
+      [
+        "bands_archive_4",
+        0.677
+      ],
+      [
+        "remixes_commissions_2",
+        0.646
+      ]
+    ],
+    "archive_2013_18_4": [
+      [
+        "sketches_2026_4",
+        0.709
+      ],
+      [
+        "psychedailies_4",
+        0.578
+      ],
+      [
+        "ecstatic_wave_4",
+        0.509
+      ],
+      [
+        "present_ambient_2",
+        0.508
+      ]
+    ],
+    "nihon_forever_1": [
+      [
+        "bands_archive_3",
+        0.754
+      ],
+      [
+        "hd_2005_5",
+        0.749
+      ],
+      [
+        "bands_archive_4",
+        0.721
+      ],
+      [
+        "bands_archive_1",
+        0.714
+      ]
+    ],
+    "nihon_forever_2": [
+      [
+        "present_electro_5",
+        0.688
+      ],
+      [
+        "le_garage_3",
+        0.659
+      ],
+      [
+        "archive_2018_23_3",
+        0.646
+      ],
+      [
+        "sketches_2024_25_2",
+        0.646
+      ]
+    ],
+    "nihon_forever_3": [
+      [
+        "sketches_2024_25_3",
+        0.8
+      ],
+      [
+        "archive_2013_18_2",
+        0.755
+      ],
+      [
+        "psychedailies_2",
+        0.694
+      ],
+      [
+        "present_electro_1",
+        0.666
+      ]
+    ],
+    "nihon_forever_4": [
+      [
+        "ecstatic_wave_2",
+        0.853
+      ],
+      [
+        "ecstatic_wave_1",
+        0.777
+      ],
+      [
+        "sketches_2026_1",
+        0.77
+      ],
+      [
+        "ecstatic_wave_3",
+        0.674
+      ]
+    ],
+    "ep_concepts_1": [
+      [
+        "psychedailies_2",
+        0.704
+      ],
+      [
+        "present_ambient_3",
+        0.694
+      ],
+      [
+        "sketches_2024_25_1",
+        0.61
+      ],
+      [
+        "lucid_crystal_3",
+        0.58
+      ]
+    ],
+    "ep_concepts_2": [
+      [
+        "ep_concepts_4",
+        0.604
+      ],
+      [
+        "sketches_2026_3",
+        0.601
+      ],
+      [
+        "archive_2018_23_2",
+        0.563
+      ],
+      [
+        "remixes_commissions_3",
+        0.487
+      ]
+    ],
+    "ep_concepts_3": [
+      [
+        "spirit_guides_4",
+        0.901
+      ],
+      [
+        "le_garage_4",
+        0.889
+      ],
+      [
+        "present_ambient_1",
+        0.733
+      ],
+      [
+        "spirit_guides_2",
+        0.733
+      ]
+    ],
+    "ep_concepts_4": [
+      [
+        "archive_2018_23_2",
+        0.674
+      ],
+      [
+        "sketches_2026_3",
+        0.672
+      ],
+      [
+        "remixes_commissions_2",
+        0.637
+      ],
+      [
+        "bands_archive_6",
+        0.631
+      ]
+    ],
+    "le_garage_1": [
+      [
+        "present_electro_4",
+        0.668
+      ],
+      [
+        "le_garage_3",
+        0.663
+      ],
+      [
+        "present_electro_5",
+        0.659
+      ],
+      [
+        "present_electro_1",
+        0.611
+      ]
+    ],
+    "le_garage_2": [
+      [
+        "spirit_guides_2",
+        0.701
+      ],
+      [
+        "sketches_2024_25_1",
+        0.699
+      ],
+      [
+        "ep_concepts_3",
+        0.676
+      ],
+      [
+        "le_garage_4",
+        0.639
+      ]
+    ],
+    "le_garage_3": [
+      [
+        "present_electro_5",
+        0.797
+      ],
+      [
+        "le_garage_1",
+        0.663
+      ],
+      [
+        "nihon_forever_2",
+        0.659
+      ],
+      [
+        "sketches_2024_25_4",
+        0.642
+      ]
+    ],
+    "le_garage_4": [
+      [
+        "spirit_guides_4",
+        0.931
+      ],
+      [
+        "ep_concepts_3",
+        0.889
+      ],
+      [
+        "present_ambient_1",
+        0.789
+      ],
+      [
+        "spirit_guides_2",
+        0.694
+      ]
+    ],
+    "psychedailies_1": [
+      [
+        "psychedailies_3",
+        0.702
+      ],
+      [
+        "bands_archive_4",
+        0.653
+      ],
+      [
+        "archive_2013_18_3",
+        0.643
+      ],
+      [
+        "remixes_commissions_3",
+        0.642
+      ]
+    ],
+    "psychedailies_2": [
+      [
+        "present_ambient_3",
+        0.736
+      ],
+      [
+        "ep_concepts_1",
+        0.704
+      ],
+      [
+        "lucid_crystal_3",
+        0.696
+      ],
+      [
+        "nihon_forever_3",
+        0.694
+      ]
+    ],
+    "psychedailies_3": [
+      [
+        "remixes_commissions_2",
+        0.74
+      ],
+      [
+        "psychedailies_1",
+        0.702
+      ],
+      [
+        "archive_2013_18_2",
+        0.695
+      ],
+      [
+        "bands_archive_4",
+        0.684
+      ]
+    ],
+    "psychedailies_4": [
+      [
+        "sketches_2026_4",
+        0.782
+      ],
+      [
+        "ecstatic_wave_4",
+        0.613
+      ],
+      [
+        "archive_2013_18_4",
+        0.578
+      ],
+      [
+        "hd_2005_4",
+        0.555
+      ]
+    ],
+    "archive_2018_23_1": [
+      [
+        "lucid_crystal_1",
+        0.728
+      ],
+      [
+        "lucid_crystal_4",
+        0.691
+      ],
+      [
+        "hd_2005_2",
+        0.657
+      ],
+      [
+        "spirit_guides_3",
+        0.654
+      ]
+    ],
+    "archive_2018_23_2": [
+      [
+        "ep_concepts_4",
+        0.674
+      ],
+      [
+        "archive_2013_18_2",
+        0.63
+      ],
+      [
+        "psychedailies_3",
+        0.617
+      ],
+      [
+        "ecstatic_wave_2",
+        0.61
+      ]
+    ],
+    "archive_2018_23_3": [
+      [
+        "nihon_forever_2",
+        0.646
+      ],
+      [
+        "bands_archive_4",
+        0.645
+      ],
+      [
+        "present_electro_2",
+        0.587
+      ],
+      [
+        "psychedailies_1",
+        0.577
+      ]
+    ],
+    "spirit_guides_1": [
+      [
+        "lucid_crystal_2",
+        0.822
+      ],
+      [
+        "ep_concepts_3",
+        0.71
+      ],
+      [
+        "spirit_guides_2",
+        0.67
+      ],
+      [
+        "spirit_guides_4",
+        0.666
+      ]
+    ],
+    "spirit_guides_2": [
+      [
+        "sketches_2024_25_1",
+        0.806
+      ],
+      [
+        "ep_concepts_3",
+        0.733
+      ],
+      [
+        "le_garage_2",
+        0.701
+      ],
+      [
+        "le_garage_4",
+        0.694
+      ]
+    ],
+    "spirit_guides_3": [
+      [
+        "lucid_crystal_4",
+        0.765
+      ],
+      [
+        "hd_2005_2",
+        0.706
+      ],
+      [
+        "le_garage_4",
+        0.67
+      ],
+      [
+        "lucid_crystal_1",
+        0.658
+      ]
+    ],
+    "spirit_guides_4": [
+      [
+        "le_garage_4",
+        0.931
+      ],
+      [
+        "ep_concepts_3",
+        0.901
+      ],
+      [
+        "present_ambient_1",
+        0.742
+      ],
+      [
+        "spirit_guides_2",
+        0.688
+      ]
+    ],
+    "lucid_crystal_1": [
+      [
+        "archive_2018_23_1",
+        0.728
+      ],
+      [
+        "lucid_crystal_4",
+        0.692
+      ],
+      [
+        "spirit_guides_3",
+        0.658
+      ],
+      [
+        "spirit_guides_2",
+        0.603
+      ]
+    ],
+    "lucid_crystal_2": [
+      [
+        "spirit_guides_1",
+        0.822
+      ],
+      [
+        "ep_concepts_3",
+        0.626
+      ],
+      [
+        "spirit_guides_2",
+        0.619
+      ],
+      [
+        "bands_archive_5",
+        0.599
+      ]
+    ],
+    "lucid_crystal_3": [
+      [
+        "psychedailies_2",
+        0.696
+      ],
+      [
+        "sketches_2024_25_1",
+        0.659
+      ],
+      [
+        "nihon_forever_3",
+        0.641
+      ],
+      [
+        "present_ambient_3",
+        0.607
+      ]
+    ],
+    "lucid_crystal_4": [
+      [
+        "spirit_guides_3",
+        0.765
+      ],
+      [
+        "lucid_crystal_1",
+        0.692
+      ],
+      [
+        "archive_2018_23_1",
+        0.691
+      ],
+      [
+        "hd_2005_2",
+        0.68
+      ]
+    ],
+    "remixes_commissions_1": [
+      [
+        "bands_archive_2",
+        0.748
+      ],
+      [
+        "archive_2013_18_1",
+        0.716
+      ],
+      [
+        "bands_archive_3",
+        0.665
+      ],
+      [
+        "present_electro_2",
+        0.633
+      ]
+    ],
+    "remixes_commissions_2": [
+      [
+        "psychedailies_3",
+        0.74
+      ],
+      [
+        "ecstatic_wave_1",
+        0.703
+      ],
+      [
+        "sketches_2024_25_3",
+        0.686
+      ],
+      [
+        "present_electro_4",
+        0.674
+      ]
+    ],
+    "remixes_commissions_3": [
+      [
+        "archive_2013_18_3",
+        0.77
+      ],
+      [
+        "sketches_2024_25_2",
+        0.686
+      ],
+      [
+        "psychedailies_1",
+        0.642
+      ],
+      [
+        "bands_archive_4",
+        0.623
+      ]
+    ],
+    "sketches_2024_25_1": [
+      [
+        "spirit_guides_2",
+        0.806
+      ],
+      [
+        "le_garage_2",
+        0.699
+      ],
+      [
+        "lucid_crystal_3",
+        0.659
+      ],
+      [
+        "ep_concepts_3",
+        0.644
+      ]
+    ],
+    "sketches_2024_25_2": [
+      [
+        "archive_2013_18_3",
+        0.749
+      ],
+      [
+        "remixes_commissions_3",
+        0.686
+      ],
+      [
+        "nihon_forever_2",
+        0.646
+      ],
+      [
+        "psychedailies_1",
+        0.615
+      ]
+    ],
+    "sketches_2024_25_3": [
+      [
+        "nihon_forever_3",
+        0.8
+      ],
+      [
+        "hd_2005_4",
+        0.706
+      ],
+      [
+        "remixes_commissions_2",
+        0.686
+      ],
+      [
+        "archive_2013_18_2",
+        0.68
+      ]
+    ],
+    "sketches_2024_25_4": [
+      [
+        "present_electro_4",
+        0.73
+      ],
+      [
+        "present_electro_5",
+        0.652
+      ],
+      [
+        "le_garage_3",
+        0.642
+      ],
+      [
+        "psychedailies_2",
+        0.63
+      ]
+    ],
+    "ecstatic_wave_1": [
+      [
+        "nihon_forever_4",
+        0.777
+      ],
+      [
+        "ecstatic_wave_2",
+        0.738
+      ],
+      [
+        "sketches_2026_1",
+        0.724
+      ],
+      [
+        "archive_2013_18_1",
+        0.721
+      ]
+    ],
+    "ecstatic_wave_2": [
+      [
+        "nihon_forever_4",
+        0.853
+      ],
+      [
+        "ecstatic_wave_1",
+        0.738
+      ],
+      [
+        "sketches_2026_1",
+        0.69
+      ],
+      [
+        "bands_archive_6",
+        0.686
+      ]
+    ],
+    "ecstatic_wave_3": [
+      [
+        "nihon_forever_4",
+        0.674
+      ],
+      [
+        "ecstatic_wave_2",
+        0.667
+      ],
+      [
+        "archive_2013_18_1",
+        0.643
+      ],
+      [
+        "remixes_commissions_1",
+        0.609
+      ]
+    ],
+    "ecstatic_wave_4": [
+      [
+        "psychedailies_4",
+        0.613
+      ],
+      [
+        "sketches_2026_4",
+        0.612
+      ],
+      [
+        "hd_2005_4",
+        0.595
+      ],
+      [
+        "sketches_2026_2",
+        0.572
+      ]
+    ],
+    "sketches_2026_1": [
+      [
+        "nihon_forever_4",
+        0.77
+      ],
+      [
+        "ecstatic_wave_1",
+        0.724
+      ],
+      [
+        "ecstatic_wave_2",
+        0.69
+      ],
+      [
+        "sketches_2026_2",
+        0.635
+      ]
+    ],
+    "sketches_2026_2": [
+      [
+        "hd_2005_4",
+        0.723
+      ],
+      [
+        "nihon_forever_4",
+        0.655
+      ],
+      [
+        "sketches_2026_1",
+        0.635
+      ],
+      [
+        "sketches_2024_25_3",
+        0.635
+      ]
+    ],
+    "sketches_2026_3": [
+      [
+        "ep_concepts_4",
+        0.672
+      ],
+      [
+        "present_electro_4",
+        0.645
+      ],
+      [
+        "sketches_2026_2",
+        0.608
+      ],
+      [
+        "ep_concepts_2",
+        0.601
+      ]
+    ],
+    "sketches_2026_4": [
+      [
+        "psychedailies_4",
+        0.782
+      ],
+      [
+        "archive_2013_18_4",
+        0.709
+      ],
+      [
+        "ecstatic_wave_4",
+        0.612
+      ],
+      [
+        "archive_2018_23_1",
+        0.536
+      ]
+    ]
+  },
+  "tracks": [
+    {
+      "id": "present_ambient_1",
+      "era": "present_ambient",
+      "slot": 1,
+      "source": "archive",
+      "title": "1 Thing Led 2 Another",
+      "shortTitle": "1 Thing Led 2 Another",
+      "bpm": 60.04,
+      "energy": 3,
+      "energy_source": "mik_model",
+      "key_camelot": "7A",
+      "key_label": "Dm (7A)",
+      "harmonic_complexity": 57.2,
+      "chord_richness": 54.5,
+      "harmonic_motion": 34.2,
+      "modal_darkness": 97.0,
+      "microtonal_score": 85.3,
+      "drum_complexity": 9.9,
+      "perc_share": 0.025,
+      "pulse_clarity": 0.312,
+      "onset_rate": 4.8,
+      "sub_share": 0.362,
+      "bass_share": 0.149,
+      "mid_share": 0.024,
+      "high_share": 0.001,
+      "air_share": 0.0,
+      "crest": -49.44,
+      "scale_deg_12": [
+        0.3035,
+        0.0856,
+        0.0175,
+        0.2072,
+        0.0152,
+        0.0369,
+        0.0384,
+        0.0589,
+        0.0457,
+        0.0133,
+        0.1395,
+        0.0384
+      ],
+      "harmony_tag": "Dark modal pedal",
+      "rhythm_tag": "Beatless ambient wash",
+      "cluster_id": "s0_ambient",
+      "cluster_label": "Ambient & meditative",
+      "cluster_idx": 0,
+      "drum_pulse": 1.3
+    },
+    {
+      "id": "present_ambient_2",
+      "era": "present_ambient",
+      "slot": 2,
+      "source": "archive",
+      "title": "Sankhara 01",
+      "shortTitle": "Sankhara 01",
+      "bpm": 82.94,
+      "energy": 2,
+      "energy_source": "mik",
+      "key_camelot": "8B",
+      "key_label": "C (8B)",
+      "harmonic_complexity": 50.2,
+      "chord_richness": 74.4,
+      "harmonic_motion": 33.3,
+      "modal_darkness": 31.5,
+      "microtonal_score": 54.8,
+      "drum_complexity": 61.5,
+      "perc_share": 0.231,
+      "pulse_clarity": 0.846,
+      "onset_rate": 7.12,
+      "sub_share": 0.154,
+      "bass_share": 0.551,
+      "mid_share": 0.14,
+      "high_share": 0.008,
+      "air_share": 0.001,
+      "crest": -48.77,
+      "scale_deg_12": [
+        0.2388,
+        0.0619,
+        0.1431,
+        0.0053,
+        0.1184,
+        0.163,
+        0.0569,
+        0.0776,
+        0.0139,
+        0.0635,
+        0.0443,
+        0.0135
+      ],
+      "harmony_tag": "Rich extended voicings",
+      "rhythm_tag": "Intricate syncopated drums",
+      "cluster_id": "s1_downtempo_lush",
+      "cluster_label": "Downtempo & lush chords",
+      "cluster_idx": 1,
+      "drum_pulse": 84.6
+    },
+    {
+      "id": "present_ambient_3",
+      "era": "present_ambient",
+      "slot": 3,
+      "source": "archive",
+      "title": "Saying Only Small Things",
+      "shortTitle": "Saying Only Small Things",
+      "bpm": 93.68,
+      "energy": 4,
+      "energy_source": "mik_model",
+      "key_camelot": "8B",
+      "key_label": "C (8B)",
+      "harmonic_complexity": 28.1,
+      "chord_richness": 15.8,
+      "harmonic_motion": 35.0,
+      "modal_darkness": 40.1,
+      "microtonal_score": 57.4,
+      "drum_complexity": 21.3,
+      "perc_share": 0.08,
+      "pulse_clarity": 0.754,
+      "onset_rate": 2.18,
+      "sub_share": 0.719,
+      "bass_share": 0.251,
+      "mid_share": 0.002,
+      "high_share": 0.001,
+      "air_share": 0.0,
+      "crest": -51.07,
+      "scale_deg_12": [
+        0.503,
+        0.0403,
+        0.0227,
+        0.0,
+        0.0029,
+        0.1344,
+        0.0106,
+        0.1183,
+        0.0024,
+        0.1155,
+        0.0474,
+        0.0025
+      ],
+      "harmony_tag": "Open 5th / drone",
+      "rhythm_tag": "Beatless ambient wash",
+      "cluster_id": "s2_chill_elec",
+      "cluster_label": "Chill & sparse electronic",
+      "cluster_idx": 2,
+      "drum_pulse": 37.7
+    },
+    {
+      "id": "present_ambient_4",
+      "era": "present_ambient",
+      "slot": 4,
+      "source": "archive",
+      "title": "Do It Like a Robot",
+      "shortTitle": "Do It Like a Robot",
+      "bpm": 97.62,
+      "energy": 5,
+      "energy_source": "mik_model",
+      "key_camelot": "8B",
+      "key_label": "C (8B)",
+      "harmonic_complexity": 0.7,
+      "chord_richness": 0.0,
+      "harmonic_motion": 2.1,
+      "modal_darkness": 0.0,
+      "microtonal_score": 40.3,
+      "drum_complexity": 24.4,
+      "perc_share": 0.096,
+      "pulse_clarity": 0.364,
+      "onset_rate": 3.46,
+      "sub_share": 0.784,
+      "bass_share": 0.049,
+      "mid_share": 0.037,
+      "high_share": 0.012,
+      "air_share": 0.003,
+      "crest": -49.51,
+      "scale_deg_12": [
+        0.7776,
+        0.0039,
+        0.0465,
+        0.0006,
+        0.0164,
+        0.0781,
+        0.0043,
+        0.0217,
+        0.0055,
+        0.0327,
+        0.0003,
+        0.0124
+      ],
+      "harmony_tag": "Open 5th / drone",
+      "rhythm_tag": "Spacious / minimal pulse",
+      "cluster_id": "s2_chill_elec",
+      "cluster_label": "Chill & sparse electronic",
+      "cluster_idx": 2,
+      "drum_pulse": 23.1
+    },
+    {
+      "id": "present_electro_1",
+      "era": "present_electro",
+      "slot": 1,
+      "source": "archive",
+      "title": "Disco Queen (C64)",
+      "shortTitle": "Disco Queen",
+      "bpm": 136.03,
+      "energy": 5,
+      "energy_source": "mik_model",
+      "key_camelot": "8B",
+      "key_label": "C (8B)",
+      "harmonic_complexity": 20.3,
+      "chord_richness": 0.0,
+      "harmonic_motion": 58.1,
+      "modal_darkness": 0.0,
+      "microtonal_score": 57.6,
+      "drum_complexity": 56.7,
+      "perc_share": 0.353,
+      "pulse_clarity": 0.475,
+      "onset_rate": 3.99,
+      "sub_share": 0.554,
+      "bass_share": 0.132,
+      "mid_share": 0.044,
+      "high_share": 0.068,
+      "air_share": 0.023,
+      "crest": -47.86,
+      "scale_deg_12": [
+        0.5429,
+        0.0027,
+        0.0882,
+        0.0006,
+        0.0062,
+        0.1619,
+        0.0031,
+        0.1317,
+        0.0017,
+        0.0447,
+        0.015,
+        0.0014
+      ],
+      "harmony_tag": "Active chord progressions",
+      "rhythm_tag": "Chill downtempo groove",
+      "cluster_id": "s3_hypnotic_micro",
+      "cluster_label": "Hypnotic electro & microtonal",
+      "cluster_idx": 3,
+      "drum_pulse": 47.5
+    },
+    {
+      "id": "present_electro_2",
+      "era": "present_electro",
+      "slot": 2,
+      "source": "archive",
+      "title": "UFO (People U Can Relax With)",
+      "shortTitle": "UFO",
+      "bpm": 84.02,
+      "energy": 6,
+      "energy_source": "mik_model",
+      "key_camelot": "8A",
+      "key_label": "Am (8A)",
+      "harmonic_complexity": 62.0,
+      "chord_richness": 64.2,
+      "harmonic_motion": 38.7,
+      "modal_darkness": 93.3,
+      "microtonal_score": 79.6,
+      "drum_complexity": 57.7,
+      "perc_share": 0.246,
+      "pulse_clarity": 0.42,
+      "onset_rate": 4.93,
+      "sub_share": 0.23,
+      "bass_share": 0.194,
+      "mid_share": 0.13,
+      "high_share": 0.157,
+      "air_share": 0.041,
+      "crest": -44.42,
+      "scale_deg_12": [
+        0.1597,
+        0.0585,
+        0.0285,
+        0.3131,
+        0.0487,
+        0.1407,
+        0.0125,
+        0.0509,
+        0.0594,
+        0.0257,
+        0.0438,
+        0.0586
+      ],
+      "harmony_tag": "Rich extended voicings",
+      "rhythm_tag": "Driven 4/4 house groove",
+      "cluster_id": "s5_dnb_breaks",
+      "cluster_label": "Complex drums & breaks",
+      "cluster_idx": 5,
+      "drum_pulse": 42.0
+    },
+    {
+      "id": "present_electro_3",
+      "era": "present_electro",
+      "slot": 3,
+      "source": "archive",
+      "title": "Bethnal Green Sunset",
+      "shortTitle": "Bethnal Green Sunset",
+      "bpm": 136.0,
+      "energy": 5,
+      "energy_source": "mik_model",
+      "key_camelot": "8B",
+      "key_label": "C (8B)",
+      "harmonic_complexity": 68.1,
+      "chord_richness": 57.5,
+      "harmonic_motion": 93.3,
+      "modal_darkness": 49.2,
+      "microtonal_score": 64.2,
+      "drum_complexity": 67.4,
+      "perc_share": 0.409,
+      "pulse_clarity": 0.726,
+      "onset_rate": 3.9,
+      "sub_share": 0.33,
+      "bass_share": 0.298,
+      "mid_share": 0.069,
+      "high_share": 0.038,
+      "air_share": 0.003,
+      "crest": -45.52,
+      "scale_deg_12": [
+        0.3799,
+        0.0392,
+        0.1161,
+        0.0391,
+        0.0485,
+        0.0738,
+        0.0583,
+        0.0489,
+        0.0381,
+        0.0796,
+        0.05,
+        0.0286
+      ],
+      "harmony_tag": "Active chord progressions",
+      "rhythm_tag": "Intricate syncopated drums",
+      "cluster_id": "s4_house_ecstatic",
+      "cluster_label": "House & ecstatic groove",
+      "cluster_idx": 4,
+      "drum_pulse": 72.6
+    },
+    {
+      "id": "present_electro_4",
+      "era": "present_electro",
+      "slot": 4,
+      "source": "archive",
+      "title": "Lime Angel Delight",
+      "shortTitle": "Lime Angel Delight",
+      "bpm": 123.83,
+      "energy": 5,
+      "energy_source": "mik_model",
+      "key_camelot": "7A",
+      "key_label": "Dm (7A)",
+      "harmonic_complexity": 32.1,
+      "chord_richness": 12.7,
+      "harmonic_motion": 12.8,
+      "modal_darkness": 97.0,
+      "microtonal_score": 94.8,
+      "drum_complexity": 47.9,
+      "perc_share": 0.15,
+      "pulse_clarity": 0.653,
+      "onset_rate": 3.74,
+      "sub_share": 0.716,
+      "bass_share": 0.183,
+      "mid_share": 0.018,
+      "high_share": 0.018,
+      "air_share": 0.001,
+      "crest": -49.09,
+      "scale_deg_12": [
+        0.3621,
+        0.0005,
+        0.0023,
+        0.1928,
+        0.0035,
+        0.0587,
+        0.0011,
+        0.039,
+        0.0258,
+        0.0043,
+        0.3051,
+        0.0048
+      ],
+      "harmony_tag": "Dark modal pedal",
+      "rhythm_tag": "Chill downtempo groove",
+      "cluster_id": "s3_hypnotic_micro",
+      "cluster_label": "Hypnotic electro & microtonal",
+      "cluster_idx": 3,
+      "drum_pulse": 65.3
+    },
+    {
+      "id": "present_electro_5",
+      "era": "present_electro",
+      "slot": 5,
+      "source": "archive",
+      "title": "As We Enter (PR3S3NT)",
+      "shortTitle": "As We Enter",
+      "bpm": 155.0,
+      "energy": 6,
+      "energy_source": "mik_model",
+      "key_camelot": "7B",
+      "key_label": "F (7B)",
+      "harmonic_complexity": 29.4,
+      "chord_richness": 28.4,
+      "harmonic_motion": 40.6,
+      "modal_darkness": 14.2,
+      "microtonal_score": 68.9,
+      "drum_complexity": 43.3,
+      "perc_share": 0.1,
+      "pulse_clarity": 0.667,
+      "onset_rate": 6.08,
+      "sub_share": 0.592,
+      "bass_share": 0.086,
+      "mid_share": 0.164,
+      "high_share": 0.036,
+      "air_share": 0.004,
+      "crest": -48.58,
+      "scale_deg_12": [
+        0.2833,
+        0.0416,
+        0.1233,
+        0.0076,
+        0.0306,
+        0.0227,
+        0.0136,
+        0.2485,
+        0.0322,
+        0.1799,
+        0.0035,
+        0.0132
+      ],
+      "harmony_tag": "Balanced modal harmony",
+      "rhythm_tag": "Driven 4/4 house groove",
+      "cluster_id": "s3_hypnotic_micro",
+      "cluster_label": "Hypnotic electro & microtonal",
+      "cluster_idx": 3,
+      "drum_pulse": 44.5
+    },
+    {
+      "id": "hd_2005_1",
+      "era": "hd_2005",
+      "slot": 1,
+      "source": "archive",
+      "title": "Orch Synaesthesia",
+      "shortTitle": "Orch Synaesthesia",
+      "bpm": 114.85,
+      "energy": 4,
+      "energy_source": "mik_model",
+      "key_camelot": "7B",
+      "key_label": "F (7B)",
+      "harmonic_complexity": 61.3,
+      "chord_richness": 100.0,
+      "harmonic_motion": 33.5,
+      "modal_darkness": 33.0,
+      "microtonal_score": 48.6,
+      "drum_complexity": 84.2,
+      "perc_share": 0.41,
+      "pulse_clarity": 0.868,
+      "onset_rate": 7.93,
+      "sub_share": 0.05,
+      "bass_share": 0.218,
+      "mid_share": 0.185,
+      "high_share": 0.022,
+      "air_share": 0.001,
+      "crest": -47.18,
+      "scale_deg_12": [
+        0.1138,
+        0.0606,
+        0.1061,
+        0.0525,
+        0.1445,
+        0.0887,
+        0.0461,
+        0.1203,
+        0.0465,
+        0.119,
+        0.0407,
+        0.0611
+      ],
+      "harmony_tag": "Rich extended voicings",
+      "rhythm_tag": "Intricate syncopated drums",
+      "cluster_id": "s4_house_ecstatic",
+      "cluster_label": "House & ecstatic groove",
+      "cluster_idx": 4,
+      "drum_pulse": 86.8
+    },
+    {
+      "id": "hd_2005_2",
+      "era": "hd_2005",
+      "slot": 2,
+      "source": "archive",
+      "title": "Sine Mix 01",
+      "shortTitle": "Sine Mix 01",
+      "bpm": 55.0,
+      "energy": 2,
+      "energy_source": "mik_model",
+      "key_camelot": "8A",
+      "key_label": "Am (8A)",
+      "harmonic_complexity": 59.9,
+      "chord_richness": 65.1,
+      "harmonic_motion": 30.6,
+      "modal_darkness": 95.0,
+      "microtonal_score": 93.3,
+      "drum_complexity": 8.9,
+      "perc_share": 0.023,
+      "pulse_clarity": 0.47,
+      "onset_rate": 4.34,
+      "sub_share": 0.013,
+      "bass_share": 0.83,
+      "mid_share": 0.018,
+      "high_share": 0.001,
+      "air_share": 0.0,
+      "crest": -48.77,
+      "scale_deg_12": [
+        0.2131,
+        0.0401,
+        0.0154,
+        0.2471,
+        0.0687,
+        0.0909,
+        0.0064,
+        0.1196,
+        0.1393,
+        0.035,
+        0.0157,
+        0.0087
+      ],
+      "harmony_tag": "Rich extended voicings",
+      "rhythm_tag": "Beatless ambient wash",
+      "cluster_id": "s0_ambient",
+      "cluster_label": "Ambient & meditative",
+      "cluster_idx": 0,
+      "drum_pulse": 1.2
+    },
+    {
+      "id": "hd_2005_3",
+      "era": "hd_2005",
+      "slot": 3,
+      "source": "archive",
+      "title": "Junglemassive",
+      "shortTitle": "Junglemassive",
+      "bpm": 170.0,
+      "energy": 5,
+      "energy_source": "mik_model",
+      "key_camelot": "8B",
+      "key_label": "C (8B)",
+      "harmonic_complexity": 8.0,
+      "chord_richness": 0.0,
+      "harmonic_motion": 22.7,
+      "modal_darkness": 0.0,
+      "microtonal_score": 82.7,
+      "drum_complexity": 26.8,
+      "perc_share": 0.062,
+      "pulse_clarity": 0.574,
+      "onset_rate": 6.12,
+      "sub_share": 0.628,
+      "bass_share": 0.135,
+      "mid_share": 0.041,
+      "high_share": 0.02,
+      "air_share": 0.003,
+      "crest": -48.14,
+      "scale_deg_12": [
+        0.5996,
+        0.0115,
+        0.3029,
+        0.0016,
+        0.0129,
+        0.0313,
+        0.0119,
+        0.0115,
+        0.004,
+        0.0044,
+        0.0034,
+        0.0049
+      ],
+      "harmony_tag": "Open 5th / drone",
+      "rhythm_tag": "Spacious / minimal pulse",
+      "cluster_id": "s2_chill_elec",
+      "cluster_label": "Chill & sparse electronic",
+      "cluster_idx": 2,
+      "drum_pulse": 20.1
+    },
+    {
+      "id": "hd_2005_4",
+      "era": "hd_2005",
+      "slot": 4,
+      "source": "archive",
+      "title": "White Morning",
+      "shortTitle": "White Morning",
+      "bpm": 150.01,
+      "energy": 4,
+      "energy_source": "mik_model",
+      "key_camelot": "9B",
+      "key_label": "G (9B)",
+      "harmonic_complexity": 53.1,
+      "chord_richness": 35.2,
+      "harmonic_motion": 82.4,
+      "modal_darkness": 41.1,
+      "microtonal_score": 72.0,
+      "drum_complexity": 49.2,
+      "perc_share": 0.168,
+      "pulse_clarity": 0.463,
+      "onset_rate": 5.43,
+      "sub_share": 0.249,
+      "bass_share": 0.342,
+      "mid_share": 0.081,
+      "high_share": 0.017,
+      "air_share": 0.001,
+      "crest": -47.01,
+      "scale_deg_12": [
+        0.2151,
+        0.0253,
+        0.2034,
+        0.0281,
+        0.0181,
+        0.0748,
+        0.0584,
+        0.1295,
+        0.0046,
+        0.0649,
+        0.1265,
+        0.0514
+      ],
+      "harmony_tag": "Active chord progressions",
+      "rhythm_tag": "Chill downtempo groove",
+      "cluster_id": "s3_hypnotic_micro",
+      "cluster_label": "Hypnotic electro & microtonal",
+      "cluster_idx": 3,
+      "drum_pulse": 46.3
+    },
+    {
+      "id": "hd_2005_5",
+      "era": "hd_2005",
+      "slot": 5,
+      "source": "archive",
+      "title": "Clor — Wolf (Remix)",
+      "shortTitle": "Clor — Wolf",
+      "bpm": 108.66,
+      "energy": 7,
+      "energy_source": "mik_model",
+      "key_camelot": "8B",
+      "key_label": "C (8B)",
+      "harmonic_complexity": 64.2,
+      "chord_richness": 91.3,
+      "harmonic_motion": 45.0,
+      "modal_darkness": 44.1,
+      "microtonal_score": 73.6,
+      "drum_complexity": 74.7,
+      "perc_share": 0.36,
+      "pulse_clarity": 0.408,
+      "onset_rate": 5.32,
+      "sub_share": 0.14,
+      "bass_share": 0.264,
+      "mid_share": 0.185,
+      "high_share": 0.124,
+      "air_share": 0.015,
+      "crest": -47.78,
+      "scale_deg_12": [
+        0.2443,
+        0.0715,
+        0.1898,
+        0.033,
+        0.056,
+        0.0806,
+        0.0464,
+        0.0575,
+        0.0354,
+        0.0687,
+        0.0694,
+        0.0475
+      ],
+      "harmony_tag": "Rich extended voicings",
+      "rhythm_tag": "Driven 4/4 house groove",
+      "cluster_id": "s5_dnb_breaks",
+      "cluster_label": "Complex drums & breaks",
+      "cluster_idx": 5,
+      "drum_pulse": 40.8
+    },
+    {
+      "id": "bands_archive_1",
+      "era": "bands_archive",
+      "slot": 1,
+      "source": "archive",
+      "title": "Infants — Foam Party",
+      "shortTitle": "Infants — Foam Party",
+      "bpm": 97.5,
+      "energy": 7,
+      "energy_source": "mik_model",
+      "key_camelot": "7B",
+      "key_label": "F (7B)",
+      "harmonic_complexity": 61.6,
+      "chord_richness": 92.4,
+      "harmonic_motion": 46.6,
+      "modal_darkness": 28.2,
+      "microtonal_score": 73.2,
+      "drum_complexity": 68.1,
+      "perc_share": 0.382,
+      "pulse_clarity": 0.332,
+      "onset_rate": 4.66,
+      "sub_share": 0.216,
+      "bass_share": 0.256,
+      "mid_share": 0.259,
+      "high_share": 0.076,
+      "air_share": 0.011,
+      "crest": -44.95,
+      "scale_deg_12": [
+        0.0948,
+        0.0336,
+        0.1072,
+        0.0727,
+        0.1449,
+        0.0916,
+        0.0339,
+        0.1489,
+        0.054,
+        0.1378,
+        0.029,
+        0.0516
+      ],
+      "harmony_tag": "Rich extended voicings",
+      "rhythm_tag": "Live band drums",
+      "cluster_id": "s5_dnb_breaks",
+      "cluster_label": "Complex drums & breaks",
+      "cluster_idx": 5,
+      "drum_pulse": 33.2
+    },
+    {
+      "id": "bands_archive_2",
+      "era": "bands_archive",
+      "slot": 2,
+      "source": "archive",
+      "title": "Infants — Dark Hoist",
+      "shortTitle": "Infants — Dark Hoist",
+      "bpm": 86.0,
+      "energy": 7,
+      "energy_source": "mik_model",
+      "key_camelot": "8B",
+      "key_label": "C (8B)",
+      "harmonic_complexity": 75.7,
+      "chord_richness": 98.2,
+      "harmonic_motion": 62.6,
+      "modal_darkness": 54.6,
+      "microtonal_score": 52.7,
+      "drum_complexity": 62.6,
+      "perc_share": 0.403,
+      "pulse_clarity": 0.524,
+      "onset_rate": 4.5,
+      "sub_share": 0.391,
+      "bass_share": 0.218,
+      "mid_share": 0.171,
+      "high_share": 0.073,
+      "air_share": 0.009,
+      "crest": -43.49,
+      "scale_deg_12": [
+        0.2086,
+        0.0539,
+        0.1448,
+        0.0375,
+        0.0553,
+        0.0614,
+        0.0572,
+        0.0909,
+        0.1151,
+        0.0726,
+        0.0423,
+        0.0603
+      ],
+      "harmony_tag": "Lush moving chords",
+      "rhythm_tag": "Live band drums",
+      "cluster_id": "s5_dnb_breaks",
+      "cluster_label": "Complex drums & breaks",
+      "cluster_idx": 5,
+      "drum_pulse": 52.4
+    },
+    {
+      "id": "bands_archive_3",
+      "era": "bands_archive",
+      "slot": 3,
+      "source": "archive",
+      "title": "Real Feal — Shout",
+      "shortTitle": "Real Feal — Shout",
+      "bpm": 94.01,
+      "energy": 6,
+      "energy_source": "mik_model",
+      "key_camelot": "7B",
+      "key_label": "F (7B)",
+      "harmonic_complexity": 66.9,
+      "chord_richness": 96.0,
+      "harmonic_motion": 54.6,
+      "modal_darkness": 32.4,
+      "microtonal_score": 65.7,
+      "drum_complexity": 62.9,
+      "perc_share": 0.329,
+      "pulse_clarity": 0.53,
+      "onset_rate": 3.96,
+      "sub_share": 0.193,
+      "bass_share": 0.321,
+      "mid_share": 0.172,
+      "high_share": 0.072,
+      "air_share": 0.002,
+      "crest": -50.7,
+      "scale_deg_12": [
+        0.1084,
+        0.0309,
+        0.088,
+        0.0289,
+        0.1111,
+        0.1249,
+        0.0431,
+        0.1672,
+        0.0905,
+        0.1246,
+        0.0232,
+        0.0593
+      ],
+      "harmony_tag": "Rich extended voicings",
+      "rhythm_tag": "Live band drums",
+      "cluster_id": "s5_dnb_breaks",
+      "cluster_label": "Complex drums & breaks",
+      "cluster_idx": 5,
+      "drum_pulse": 53.0
+    },
+    {
+      "id": "bands_archive_4",
+      "era": "bands_archive",
+      "slot": 4,
+      "source": "archive",
+      "title": "Feal Real — Theogen Disco",
+      "shortTitle": "Feal Real — Theogen Disc",
+      "bpm": 90.0,
+      "energy": 6,
+      "energy_source": "mik_model",
+      "key_camelot": "8B",
+      "key_label": "C (8B)",
+      "harmonic_complexity": 47.9,
+      "chord_richness": 66.5,
+      "harmonic_motion": 22.8,
+      "modal_darkness": 52.3,
+      "microtonal_score": 63.8,
+      "drum_complexity": 66.0,
+      "perc_share": 0.404,
+      "pulse_clarity": 0.396,
+      "onset_rate": 5.2,
+      "sub_share": 0.397,
+      "bass_share": 0.355,
+      "mid_share": 0.088,
+      "high_share": 0.055,
+      "air_share": 0.006,
+      "crest": -45.79,
+      "scale_deg_12": [
+        0.298,
+        0.088,
+        0.1056,
+        0.0111,
+        0.0304,
+        0.1132,
+        0.0206,
+        0.1299,
+        0.0118,
+        0.0848,
+        0.0854,
+        0.021
+      ],
+      "harmony_tag": "Rich extended voicings",
+      "rhythm_tag": "Live band drums",
+      "cluster_id": "s5_dnb_breaks",
+      "cluster_label": "Complex drums & breaks",
+      "cluster_idx": 5,
+      "drum_pulse": 39.6
+    },
+    {
+      "id": "bands_archive_5",
+      "era": "bands_archive",
+      "slot": 5,
+      "source": "archive",
+      "title": "Spudboy — Drone 2 Static",
+      "shortTitle": "Spudboy — Drone 2 Static",
+      "bpm": 60.09,
+      "energy": 2,
+      "energy_source": "mik_model",
+      "key_camelot": "8B",
+      "key_label": "C (8B)",
+      "harmonic_complexity": 9.7,
+      "chord_richness": 10.9,
+      "harmonic_motion": 1.7,
+      "modal_darkness": 19.8,
+      "microtonal_score": 68.0,
+      "drum_complexity": 14.9,
+      "perc_share": 0.031,
+      "pulse_clarity": 0.054,
+      "onset_rate": 6.96,
+      "sub_share": 0.151,
+      "bass_share": 0.644,
+      "mid_share": 0.043,
+      "high_share": 0.011,
+      "air_share": 0.0,
+      "crest": -49.15,
+      "scale_deg_12": [
+        0.6129,
+        0.0079,
+        0.0651,
+        0.0002,
+        0.0528,
+        0.0238,
+        0.0072,
+        0.1568,
+        0.0379,
+        0.0025,
+        0.0053,
+        0.0276
+      ],
+      "harmony_tag": "Open 5th / drone",
+      "rhythm_tag": "Beatless ambient wash",
+      "cluster_id": "s0_ambient",
+      "cluster_label": "Ambient & meditative",
+      "cluster_idx": 0,
+      "drum_pulse": 0.5
+    },
+    {
+      "id": "bands_archive_6",
+      "era": "bands_archive",
+      "slot": 6,
+      "source": "archive",
+      "title": "Make It Thru",
+      "shortTitle": "Make It Thru",
+      "bpm": 142.0,
+      "energy": 4,
+      "energy_source": "mik_model",
+      "key_camelot": "12B",
+      "key_label": "E (12B)",
+      "harmonic_complexity": 59.6,
+      "chord_richness": 77.9,
+      "harmonic_motion": 42.9,
+      "modal_darkness": 51.5,
+      "microtonal_score": 52.0,
+      "drum_complexity": 59.9,
+      "perc_share": 0.169,
+      "pulse_clarity": 0.735,
+      "onset_rate": 6.6,
+      "sub_share": 0.034,
+      "bass_share": 0.348,
+      "mid_share": 0.307,
+      "high_share": 0.068,
+      "air_share": 0.0,
+      "crest": -46.33,
+      "scale_deg_12": [
+        0.2562,
+        0.0844,
+        0.0319,
+        0.0173,
+        0.1313,
+        0.0893,
+        0.028,
+        0.1362,
+        0.0422,
+        0.0599,
+        0.0939,
+        0.0295
+      ],
+      "harmony_tag": "Rich extended voicings",
+      "rhythm_tag": "Live band drums",
+      "cluster_id": "s4_house_ecstatic",
+      "cluster_label": "House & ecstatic groove",
+      "cluster_idx": 4,
+      "drum_pulse": 73.5
+    },
+    {
+      "id": "archive_2013_18_1",
+      "era": "archive_2013_18",
+      "slot": 1,
+      "source": "corpus",
+      "title": "808 Bomb",
+      "shortTitle": "808 Bomb",
+      "bpm": 136.0,
+      "energy": 6,
+      "energy_source": "mik_model",
+      "key_camelot": "5A",
+      "key_label": "Cm (5A)",
+      "harmonic_complexity": 64.9,
+      "chord_richness": 70.1,
+      "harmonic_motion": 64.0,
+      "modal_darkness": 56.8,
+      "microtonal_score": 60.9,
+      "drum_complexity": 53.3,
+      "perc_share": 0.149,
+      "pulse_clarity": 0.559,
+      "onset_rate": 4.08,
+      "sub_share": 0.316,
+      "bass_share": 0.255,
+      "mid_share": 0.171,
+      "high_share": 0.046,
+      "air_share": 0.008,
+      "crest": -48.88,
+      "scale_deg_12": [
+        0.4599,
+        0.0229,
+        0.1362,
+        0.0314,
+        0.0253,
+        0.0462,
+        0.0302,
+        0.0199,
+        0.0363,
+        0.0512,
+        0.0933,
+        0.0473
+      ],
+      "harmony_tag": "Lush moving chords",
+      "rhythm_tag": "Driven 4/4 house groove",
+      "cluster_id": "s5_dnb_breaks",
+      "cluster_label": "Complex drums & breaks",
+      "cluster_idx": 5,
+      "drum_pulse": 55.9
+    },
+    {
+      "id": "archive_2013_18_2",
+      "era": "archive_2013_18",
+      "slot": 2,
+      "source": "corpus",
+      "title": "Alchemy 30",
+      "shortTitle": "Alchemy 30",
+      "bpm": 120.0,
+      "energy": 4,
+      "energy_source": "mik_model",
+      "key_camelot": "8B",
+      "key_label": "C (8B)",
+      "harmonic_complexity": 36.0,
+      "chord_richness": 19.5,
+      "harmonic_motion": 75.4,
+      "modal_darkness": 6.1,
+      "microtonal_score": 71.4,
+      "drum_complexity": 60.8,
+      "perc_share": 0.243,
+      "pulse_clarity": 0.327,
+      "onset_rate": 4.01,
+      "sub_share": 0.433,
+      "bass_share": 0.129,
+      "mid_share": 0.133,
+      "high_share": 0.095,
+      "air_share": 0.024,
+      "crest": -45.68,
+      "scale_deg_12": [
+        0.4534,
+        0.0122,
+        0.2095,
+        0.0048,
+        0.0095,
+        0.1378,
+        0.0107,
+        0.11,
+        0.0127,
+        0.0216,
+        0.0115,
+        0.0063
+      ],
+      "harmony_tag": "Active chord progressions",
+      "rhythm_tag": "Intricate syncopated drums",
+      "cluster_id": "s3_hypnotic_micro",
+      "cluster_label": "Hypnotic electro & microtonal",
+      "cluster_idx": 3,
+      "drum_pulse": 32.7
+    },
+    {
+      "id": "archive_2013_18_3",
+      "era": "archive_2013_18",
+      "slot": 3,
+      "source": "corpus",
+      "title": "Acid Avenger 01",
+      "shortTitle": "Acid Avenger 01",
+      "bpm": 139.99,
+      "energy": 6,
+      "energy_source": "mik_model",
+      "key_camelot": "8B",
+      "key_label": "C (8B)",
+      "harmonic_complexity": 41.0,
+      "chord_richness": 60.7,
+      "harmonic_motion": 23.9,
+      "modal_darkness": 30.9,
+      "microtonal_score": 79.8,
+      "drum_complexity": 64.9,
+      "perc_share": 0.374,
+      "pulse_clarity": 0.679,
+      "onset_rate": 5.31,
+      "sub_share": 0.411,
+      "bass_share": 0.329,
+      "mid_share": 0.081,
+      "high_share": 0.025,
+      "air_share": 0.004,
+      "crest": -45.76,
+      "scale_deg_12": [
+        0.2288,
+        0.0192,
+        0.2104,
+        0.0198,
+        0.027,
+        0.1135,
+        0.0342,
+        0.1397,
+        0.0486,
+        0.0964,
+        0.0536,
+        0.0089
+      ],
+      "harmony_tag": "Balanced modal harmony",
+      "rhythm_tag": "Driven 4/4 house groove",
+      "cluster_id": "s5_dnb_breaks",
+      "cluster_label": "Complex drums & breaks",
+      "cluster_idx": 5,
+      "drum_pulse": 67.9
+    },
+    {
+      "id": "archive_2013_18_4",
+      "era": "archive_2013_18",
+      "slot": 4,
+      "source": "corpus",
+      "title": "Italo",
+      "shortTitle": "Italo",
+      "bpm": 56.18,
+      "energy": 2,
+      "energy_source": "mik_model",
+      "key_camelot": "8B",
+      "key_label": "C (8B)",
+      "harmonic_complexity": 78.4,
+      "chord_richness": 78.5,
+      "harmonic_motion": 100.0,
+      "modal_darkness": 45.2,
+      "microtonal_score": 64.8,
+      "drum_complexity": 43.1,
+      "perc_share": 0.14,
+      "pulse_clarity": 0.737,
+      "onset_rate": 7.46,
+      "sub_share": 0.152,
+      "bass_share": 0.488,
+      "mid_share": 0.024,
+      "high_share": 0.001,
+      "air_share": 0.0,
+      "crest": -44.6,
+      "scale_deg_12": [
+        0.1469,
+        0.0705,
+        0.0722,
+        0.0153,
+        0.1097,
+        0.1247,
+        0.1003,
+        0.0879,
+        0.0413,
+        0.1124,
+        0.0547,
+        0.0641
+      ],
+      "harmony_tag": "Lush moving chords",
+      "rhythm_tag": "Chill downtempo groove",
+      "cluster_id": "s1_downtempo_lush",
+      "cluster_label": "Downtempo & lush chords",
+      "cluster_idx": 1,
+      "drum_pulse": 73.7
+    },
+    {
+      "id": "nihon_forever_1",
+      "era": "nihon_forever",
+      "slot": 1,
+      "source": "corpus",
+      "title": "04 Cicada Overlords",
+      "shortTitle": "04 Cicada Overlords",
+      "bpm": 120.0,
+      "energy": 6,
+      "energy_source": "mik_model",
+      "key_camelot": "8B",
+      "key_label": "C (8B)",
+      "harmonic_complexity": 61.9,
+      "chord_richness": 95.6,
+      "harmonic_motion": 34.0,
+      "modal_darkness": 42.7,
+      "microtonal_score": 69.9,
+      "drum_complexity": 73.3,
+      "perc_share": 0.521,
+      "pulse_clarity": 0.439,
+      "onset_rate": 3.84,
+      "sub_share": 0.222,
+      "bass_share": 0.22,
+      "mid_share": 0.146,
+      "high_share": 0.115,
+      "air_share": 0.018,
+      "crest": -44.66,
+      "scale_deg_12": [
+        0.2332,
+        0.0694,
+        0.1674,
+        0.0486,
+        0.0632,
+        0.0844,
+        0.0435,
+        0.0463,
+        0.0294,
+        0.1085,
+        0.07,
+        0.0362
+      ],
+      "harmony_tag": "Rich extended voicings",
+      "rhythm_tag": "Driven 4/4 house groove",
+      "cluster_id": "s5_dnb_breaks",
+      "cluster_label": "Complex drums & breaks",
+      "cluster_idx": 5,
+      "drum_pulse": 43.9
+    },
+    {
+      "id": "nihon_forever_2",
+      "era": "nihon_forever",
+      "slot": 2,
+      "source": "corpus",
+      "title": "07 Funabashi Massive",
+      "shortTitle": "07 Funabashi Massive",
+      "bpm": 120.0,
+      "energy": 7,
+      "energy_source": "mik_model",
+      "key_camelot": "8B",
+      "key_label": "C (8B)",
+      "harmonic_complexity": 41.3,
+      "chord_richness": 36.1,
+      "harmonic_motion": 52.7,
+      "modal_darkness": 33.7,
+      "microtonal_score": 68.5,
+      "drum_complexity": 48.7,
+      "perc_share": 0.156,
+      "pulse_clarity": 0.501,
+      "onset_rate": 4.42,
+      "sub_share": 0.423,
+      "bass_share": 0.178,
+      "mid_share": 0.133,
+      "high_share": 0.08,
+      "air_share": 0.006,
+      "crest": -46.31,
+      "scale_deg_12": [
+        0.4103,
+        0.022,
+        0.1719,
+        0.012,
+        0.0054,
+        0.0993,
+        0.0074,
+        0.0766,
+        0.0177,
+        0.076,
+        0.0984,
+        0.003
+      ],
+      "harmony_tag": "Balanced modal harmony",
+      "rhythm_tag": "Driven 4/4 house groove",
+      "cluster_id": "s5_dnb_breaks",
+      "cluster_label": "Complex drums & breaks",
+      "cluster_idx": 5,
+      "drum_pulse": 50.1
+    },
+    {
+      "id": "nihon_forever_3",
+      "era": "nihon_forever",
+      "slot": 3,
+      "source": "corpus",
+      "title": "01 Korogi Song",
+      "shortTitle": "01 Korogi Song",
+      "bpm": 98.1,
+      "energy": 4,
+      "energy_source": "mik_model",
+      "key_camelot": "8B",
+      "key_label": "C (8B)",
+      "harmonic_complexity": 29.1,
+      "chord_richness": 26.2,
+      "harmonic_motion": 51.7,
+      "modal_darkness": 0.0,
+      "microtonal_score": 11.0,
+      "drum_complexity": 50.0,
+      "perc_share": 0.159,
+      "pulse_clarity": 0.351,
+      "onset_rate": 3.93,
+      "sub_share": 0.429,
+      "bass_share": 0.066,
+      "mid_share": 0.173,
+      "high_share": 0.069,
+      "air_share": 0.017,
+      "crest": -45.36,
+      "scale_deg_12": [
+        0.294,
+        0.0215,
+        0.2157,
+        0.0006,
+        0.0603,
+        0.0139,
+        0.0269,
+        0.1653,
+        0.0048,
+        0.1344,
+        0.0068,
+        0.0556
+      ],
+      "harmony_tag": "Balanced modal harmony",
+      "rhythm_tag": "Chill downtempo groove",
+      "cluster_id": "s3_hypnotic_micro",
+      "cluster_label": "Hypnotic electro & microtonal",
+      "cluster_idx": 3,
+      "drum_pulse": 35.1
+    },
+    {
+      "id": "nihon_forever_4",
+      "era": "nihon_forever",
+      "slot": 4,
+      "source": "corpus",
+      "title": "03 Shibuya Flyover",
+      "shortTitle": "03 Shibuya Flyover",
+      "bpm": 135.25,
+      "energy": 5,
+      "energy_source": "mik_model",
+      "key_camelot": "8B",
+      "key_label": "C (8B)",
+      "harmonic_complexity": 58.9,
+      "chord_richness": 55.6,
+      "harmonic_motion": 79.5,
+      "modal_darkness": 33.8,
+      "microtonal_score": 70.0,
+      "drum_complexity": 50.0,
+      "perc_share": 0.171,
+      "pulse_clarity": 0.759,
+      "onset_rate": 4.81,
+      "sub_share": 0.523,
+      "bass_share": 0.286,
+      "mid_share": 0.034,
+      "high_share": 0.035,
+      "air_share": 0.009,
+      "crest": -46.78,
+      "scale_deg_12": [
+        0.2721,
+        0.0246,
+        0.1972,
+        0.0046,
+        0.0178,
+        0.1169,
+        0.0559,
+        0.1319,
+        0.0398,
+        0.0738,
+        0.0399,
+        0.0256
+      ],
+      "harmony_tag": "Active chord progressions",
+      "rhythm_tag": "Chill downtempo groove",
+      "cluster_id": "s4_house_ecstatic",
+      "cluster_label": "House & ecstatic groove",
+      "cluster_idx": 4,
+      "drum_pulse": 75.9
+    },
+    {
+      "id": "ep_concepts_1",
+      "era": "ep_concepts",
+      "slot": 1,
+      "source": "corpus",
+      "title": "Deep Insight (Arising & Passing)",
+      "shortTitle": "Deep Insight",
+      "bpm": 120.0,
+      "energy": 3,
+      "energy_source": "mik_model",
+      "key_camelot": "8B",
+      "key_label": "C (8B)",
+      "harmonic_complexity": 19.4,
+      "chord_richness": 23.2,
+      "harmonic_motion": 27.6,
+      "modal_darkness": 0.0,
+      "microtonal_score": 44.7,
+      "drum_complexity": 28.1,
+      "perc_share": 0.067,
+      "pulse_clarity": 0.943,
+      "onset_rate": 4.91,
+      "sub_share": 0.222,
+      "bass_share": 0.188,
+      "mid_share": 0.114,
+      "high_share": 0.004,
+      "air_share": 0.0,
+      "crest": -46.25,
+      "scale_deg_12": [
+        0.3175,
+        0.0052,
+        0.053,
+        0.001,
+        0.0853,
+        0.2082,
+        0.0068,
+        0.2416,
+        0.0082,
+        0.0461,
+        0.0024,
+        0.0247
+      ],
+      "harmony_tag": "Open 5th / drone",
+      "rhythm_tag": "Spacious / minimal pulse",
+      "cluster_id": "s2_chill_elec",
+      "cluster_label": "Chill & sparse electronic",
+      "cluster_idx": 2,
+      "drum_pulse": 36.9
+    },
+    {
+      "id": "ep_concepts_2",
+      "era": "ep_concepts",
+      "slot": 2,
+      "source": "corpus",
+      "title": "Underground Forest (JI 808)",
+      "shortTitle": "Underground Forest",
+      "bpm": 137.0,
+      "energy": 4,
+      "energy_source": "mik_model",
+      "key_camelot": "8B",
+      "key_label": "C (8B)",
+      "harmonic_complexity": 21.7,
+      "chord_richness": 7.4,
+      "harmonic_motion": 24.8,
+      "modal_darkness": 43.1,
+      "microtonal_score": 74.6,
+      "drum_complexity": 73.6,
+      "perc_share": 0.46,
+      "pulse_clarity": 0.883,
+      "onset_rate": 6.87,
+      "sub_share": 0.331,
+      "bass_share": 0.208,
+      "mid_share": 0.08,
+      "high_share": 0.077,
+      "air_share": 0.013,
+      "crest": -42.4,
+      "scale_deg_12": [
+        0.3524,
+        0.0418,
+        0.2042,
+        0.0021,
+        0.0067,
+        0.0885,
+        0.0019,
+        0.0849,
+        0.0177,
+        0.0485,
+        0.1444,
+        0.007
+      ],
+      "harmony_tag": "Microtonal / bell intervals",
+      "rhythm_tag": "Intricate syncopated drums",
+      "cluster_id": "s3_hypnotic_micro",
+      "cluster_label": "Hypnotic electro & microtonal",
+      "cluster_idx": 3,
+      "drum_pulse": 88.3
+    },
+    {
+      "id": "ep_concepts_3",
+      "era": "ep_concepts",
+      "slot": 3,
+      "source": "corpus",
+      "title": "06 Olga",
+      "shortTitle": "06 Olga",
+      "bpm": 59.99,
+      "energy": 3,
+      "energy_source": "mik_model",
+      "key_camelot": "9B",
+      "key_label": "G (9B)",
+      "harmonic_complexity": 48.0,
+      "chord_richness": 19.0,
+      "harmonic_motion": 72.3,
+      "modal_darkness": 63.9,
+      "microtonal_score": 61.0,
+      "drum_complexity": 6.4,
+      "perc_share": 0.014,
+      "pulse_clarity": 0.881,
+      "onset_rate": 5.96,
+      "sub_share": 0.329,
+      "bass_share": 0.256,
+      "mid_share": 0.076,
+      "high_share": 0.006,
+      "air_share": 0.0,
+      "crest": -47.7,
+      "scale_deg_12": [
+        0.3412,
+        0.0093,
+        0.0551,
+        0.0083,
+        0.0136,
+        0.1118,
+        0.0292,
+        0.1656,
+        0.0018,
+        0.0707,
+        0.186,
+        0.0074
+      ],
+      "harmony_tag": "Microtonal / bell intervals",
+      "rhythm_tag": "Beatless ambient wash",
+      "cluster_id": "s0_ambient",
+      "cluster_label": "Ambient & meditative",
+      "cluster_idx": 0,
+      "drum_pulse": 0.0
+    },
+    {
+      "id": "ep_concepts_4",
+      "era": "ep_concepts",
+      "slot": 4,
+      "source": "corpus",
+      "title": "TempleGong City",
+      "shortTitle": "TempleGong City",
+      "bpm": 132.0,
+      "energy": 4,
+      "energy_source": "mik_model",
+      "key_camelot": "8A",
+      "key_label": "Am (8A)",
+      "harmonic_complexity": 41.6,
+      "chord_richness": 23.9,
+      "harmonic_motion": 26.5,
+      "modal_darkness": 97.0,
+      "microtonal_score": 78.8,
+      "drum_complexity": 64.9,
+      "perc_share": 0.386,
+      "pulse_clarity": 0.659,
+      "onset_rate": 3.93,
+      "sub_share": 0.334,
+      "bass_share": 0.357,
+      "mid_share": 0.03,
+      "high_share": 0.016,
+      "air_share": 0.011,
+      "crest": -45.84,
+      "scale_deg_12": [
+        0.2747,
+        0.2153,
+        0.0089,
+        0.3334,
+        0.0092,
+        0.0415,
+        0.0008,
+        0.0164,
+        0.0152,
+        0.0129,
+        0.0706,
+        0.0011
+      ],
+      "harmony_tag": "Microtonal / bell intervals",
+      "rhythm_tag": "Intricate syncopated drums",
+      "cluster_id": "s3_hypnotic_micro",
+      "cluster_label": "Hypnotic electro & microtonal",
+      "cluster_idx": 3,
+      "drum_pulse": 65.9
+    },
+    {
+      "id": "le_garage_1",
+      "era": "le_garage",
+      "slot": 1,
+      "source": "corpus",
+      "title": "01 Le Garage Hermétique",
+      "shortTitle": "01 Le Garage Hermétique",
+      "bpm": 137.0,
+      "energy": 6,
+      "energy_source": "mik_model",
+      "key_camelot": "8B",
+      "key_label": "C (8B)",
+      "harmonic_complexity": 21.5,
+      "chord_richness": 2.3,
+      "harmonic_motion": 38.6,
+      "modal_darkness": 30.7,
+      "microtonal_score": 56.9,
+      "drum_complexity": 46.7,
+      "perc_share": 0.143,
+      "pulse_clarity": 0.723,
+      "onset_rate": 4.6,
+      "sub_share": 0.389,
+      "bass_share": 0.14,
+      "mid_share": 0.061,
+      "high_share": 0.038,
+      "air_share": 0.009,
+      "crest": -47.62,
+      "scale_deg_12": [
+        0.6514,
+        0.0051,
+        0.113,
+        0.032,
+        0.0187,
+        0.0423,
+        0.0081,
+        0.0176,
+        0.0182,
+        0.0498,
+        0.0366,
+        0.0071
+      ],
+      "harmony_tag": "Microtonal / bell intervals",
+      "rhythm_tag": "Driven 4/4 house groove",
+      "cluster_id": "s3_hypnotic_micro",
+      "cluster_label": "Hypnotic electro & microtonal",
+      "cluster_idx": 3,
+      "drum_pulse": 72.3
+    },
+    {
+      "id": "le_garage_2",
+      "era": "le_garage",
+      "slot": 2,
+      "source": "corpus",
+      "title": "08 Sacred Songs of Chiram (Semaradana)",
+      "shortTitle": "08 Sacred Songs of Chira",
+      "bpm": 120.0,
+      "energy": 4,
+      "energy_source": "mik_model",
+      "key_camelot": "8B",
+      "key_label": "C (8B)",
+      "harmonic_complexity": 35.7,
+      "chord_richness": 17.0,
+      "harmonic_motion": 64.8,
+      "modal_darkness": 25.5,
+      "microtonal_score": 67.4,
+      "drum_complexity": 13.5,
+      "perc_share": 0.033,
+      "pulse_clarity": 0.155,
+      "onset_rate": 2.61,
+      "sub_share": 0.359,
+      "bass_share": 0.304,
+      "mid_share": 0.037,
+      "high_share": 0.013,
+      "air_share": 0.004,
+      "crest": -48.34,
+      "scale_deg_12": [
+        0.5173,
+        0.0233,
+        0.097,
+        0.0114,
+        0.0907,
+        0.0665,
+        0.0129,
+        0.0114,
+        0.016,
+        0.0581,
+        0.0816,
+        0.0138
+      ],
+      "harmony_tag": "Microtonal / bell intervals",
+      "rhythm_tag": "Beatless ambient wash",
+      "cluster_id": "s0_ambient",
+      "cluster_label": "Ambient & meditative",
+      "cluster_idx": 0,
+      "drum_pulse": 1.7
+    },
+    {
+      "id": "le_garage_3",
+      "era": "le_garage",
+      "slot": 3,
+      "source": "corpus",
+      "title": "03 Tar'Hai Bells",
+      "shortTitle": "03 Tar'Hai Bells",
+      "bpm": 150.0,
+      "energy": 6,
+      "energy_source": "mik_model",
+      "key_camelot": "7B",
+      "key_label": "F (7B)",
+      "harmonic_complexity": 33.9,
+      "chord_richness": 25.8,
+      "harmonic_motion": 62.9,
+      "modal_darkness": 4.6,
+      "microtonal_score": 78.5,
+      "drum_complexity": 36.8,
+      "perc_share": 0.121,
+      "pulse_clarity": 0.65,
+      "onset_rate": 4.44,
+      "sub_share": 0.615,
+      "bass_share": 0.263,
+      "mid_share": 0.009,
+      "high_share": 0.02,
+      "air_share": 0.014,
+      "crest": -49.09,
+      "scale_deg_12": [
+        0.2504,
+        0.0192,
+        0.0735,
+        0.0167,
+        0.0768,
+        0.0732,
+        0.0331,
+        0.2246,
+        0.005,
+        0.2016,
+        0.0099,
+        0.0161
+      ],
+      "harmony_tag": "Microtonal / bell intervals",
+      "rhythm_tag": "Steady electronic beat",
+      "cluster_id": "s3_hypnotic_micro",
+      "cluster_label": "Hypnotic electro & microtonal",
+      "cluster_idx": 3,
+      "drum_pulse": 54.7
+    },
+    {
+      "id": "le_garage_4",
+      "era": "le_garage",
+      "slot": 4,
+      "source": "corpus",
+      "title": "07 Major Grubert's Enlightenment",
+      "shortTitle": "07 Major Grubert's Enlig",
+      "bpm": 150.0,
+      "energy": 3,
+      "energy_source": "mik_model",
+      "key_camelot": "7A",
+      "key_label": "Dm (7A)",
+      "harmonic_complexity": 53.4,
+      "chord_richness": 22.0,
+      "harmonic_motion": 68.9,
+      "modal_darkness": 86.9,
+      "microtonal_score": 86.6,
+      "drum_complexity": 8.4,
+      "perc_share": 0.016,
+      "pulse_clarity": 0.671,
+      "onset_rate": 5.36,
+      "sub_share": 0.002,
+      "bass_share": 0.197,
+      "mid_share": 0.14,
+      "high_share": 0.014,
+      "air_share": 0.008,
+      "crest": -48.1,
+      "scale_deg_12": [
+        0.176,
+        0.0703,
+        0.1125,
+        0.147,
+        0.0587,
+        0.0417,
+        0.0489,
+        0.1315,
+        0.1278,
+        0.0186,
+        0.0507,
+        0.0165
+      ],
+      "harmony_tag": "Microtonal / bell intervals",
+      "rhythm_tag": "Beatless ambient wash",
+      "cluster_id": "s0_ambient",
+      "cluster_label": "Ambient & meditative",
+      "cluster_idx": 0,
+      "drum_pulse": 0.0
+    },
+    {
+      "id": "psychedailies_1",
+      "era": "psychedailies",
+      "slot": 1,
+      "source": "corpus",
+      "title": "25 Fireworks",
+      "shortTitle": "25 Fireworks",
+      "bpm": 176.78,
+      "energy": 6,
+      "energy_source": "mik_model",
+      "key_camelot": "7B",
+      "key_label": "F (7B)",
+      "harmonic_complexity": 46.8,
+      "chord_richness": 28.2,
+      "harmonic_motion": 100.0,
+      "modal_darkness": 0.0,
+      "microtonal_score": 79.3,
+      "drum_complexity": 62.2,
+      "perc_share": 0.261,
+      "pulse_clarity": 0.499,
+      "onset_rate": 4.01,
+      "sub_share": 0.382,
+      "bass_share": 0.084,
+      "mid_share": 0.173,
+      "high_share": 0.138,
+      "air_share": 0.014,
+      "crest": -44.45,
+      "scale_deg_12": [
+        0.2559,
+        0.005,
+        0.0664,
+        0.015,
+        0.0139,
+        0.0204,
+        0.0114,
+        0.3022,
+        0.0182,
+        0.2781,
+        0.0046,
+        0.0089
+      ],
+      "harmony_tag": "Active chord progressions",
+      "rhythm_tag": "Fast D&B breakbeats",
+      "cluster_id": "s5_dnb_breaks",
+      "cluster_label": "Complex drums & breaks",
+      "cluster_idx": 5,
+      "drum_pulse": 49.9
+    },
+    {
+      "id": "psychedailies_2",
+      "era": "psychedailies",
+      "slot": 2,
+      "source": "corpus",
+      "title": "03 Incantation",
+      "shortTitle": "03 Incantation",
+      "bpm": 141.97,
+      "energy": 4,
+      "energy_source": "mik_model",
+      "key_camelot": "8B",
+      "key_label": "C (8B)",
+      "harmonic_complexity": 27.0,
+      "chord_richness": 16.6,
+      "harmonic_motion": 57.4,
+      "modal_darkness": 0.0,
+      "microtonal_score": 82.6,
+      "drum_complexity": 33.7,
+      "perc_share": 0.118,
+      "pulse_clarity": 0.477,
+      "onset_rate": 3.18,
+      "sub_share": 0.614,
+      "bass_share": 0.216,
+      "mid_share": 0.01,
+      "high_share": 0.004,
+      "air_share": 0.002,
+      "crest": -46.58,
+      "scale_deg_12": [
+        0.3665,
+        0.0194,
+        0.3367,
+        0.0033,
+        0.0606,
+        0.0647,
+        0.0128,
+        0.0211,
+        0.0004,
+        0.0106,
+        0.0479,
+        0.056
+      ],
+      "harmony_tag": "Balanced modal harmony",
+      "rhythm_tag": "Spacious / minimal pulse",
+      "cluster_id": "s2_chill_elec",
+      "cluster_label": "Chill & sparse electronic",
+      "cluster_idx": 2,
+      "drum_pulse": 39.0
+    },
+    {
+      "id": "psychedailies_3",
+      "era": "psychedailies",
+      "slot": 3,
+      "source": "corpus",
+      "title": "26 Fell in Love",
+      "shortTitle": "26 Fell in Love",
+      "bpm": 140.29,
+      "energy": 5,
+      "energy_source": "mik_model",
+      "key_camelot": "8B",
+      "key_label": "C (8B)",
+      "harmonic_complexity": 43.4,
+      "chord_richness": 48.2,
+      "harmonic_motion": 62.6,
+      "modal_darkness": 5.4,
+      "microtonal_score": 73.9,
+      "drum_complexity": 61.5,
+      "perc_share": 0.241,
+      "pulse_clarity": 0.418,
+      "onset_rate": 4.59,
+      "sub_share": 0.337,
+      "bass_share": 0.305,
+      "mid_share": 0.043,
+      "high_share": 0.018,
+      "air_share": 0.013,
+      "crest": -45.83,
+      "scale_deg_12": [
+        0.1636,
+        0.0343,
+        0.1435,
+        0.0101,
+        0.2418,
+        0.1221,
+        0.0404,
+        0.1135,
+        0.0256,
+        0.0862,
+        0.0088,
+        0.0102
+      ],
+      "harmony_tag": "Active chord progressions",
+      "rhythm_tag": "Intricate syncopated drums",
+      "cluster_id": "s5_dnb_breaks",
+      "cluster_label": "Complex drums & breaks",
+      "cluster_idx": 5,
+      "drum_pulse": 41.8
+    },
+    {
+      "id": "psychedailies_4",
+      "era": "psychedailies",
+      "slot": 4,
+      "source": "corpus",
+      "title": "05 Summon",
+      "shortTitle": "05 Summon",
+      "bpm": 59.69,
+      "energy": 2,
+      "energy_source": "mik_model",
+      "key_camelot": "8B",
+      "key_label": "C (8B)",
+      "harmonic_complexity": 61.5,
+      "chord_richness": 44.6,
+      "harmonic_motion": 97.7,
+      "modal_darkness": 37.5,
+      "microtonal_score": 45.8,
+      "drum_complexity": 45.7,
+      "perc_share": 0.197,
+      "pulse_clarity": 0.402,
+      "onset_rate": 2.41,
+      "sub_share": 0.243,
+      "bass_share": 0.179,
+      "mid_share": 0.053,
+      "high_share": 0.002,
+      "air_share": 0.0,
+      "crest": -45.0,
+      "scale_deg_12": [
+        0.33,
+        0.0436,
+        0.1714,
+        0.0205,
+        0.0275,
+        0.0963,
+        0.0356,
+        0.1101,
+        0.0112,
+        0.0826,
+        0.0633,
+        0.008
+      ],
+      "harmony_tag": "Active chord progressions",
+      "rhythm_tag": "Chill downtempo groove",
+      "cluster_id": "s1_downtempo_lush",
+      "cluster_label": "Downtempo & lush chords",
+      "cluster_idx": 1,
+      "drum_pulse": 40.2
+    },
+    {
+      "id": "archive_2018_23_1",
+      "era": "archive_2018_23",
+      "slot": 1,
+      "source": "corpus",
+      "title": "Blood in My Veins",
+      "shortTitle": "Blood in My Veins",
+      "bpm": 120.0,
+      "energy": 2,
+      "energy_source": "mik_model",
+      "key_camelot": "8A",
+      "key_label": "Am (8A)",
+      "harmonic_complexity": 62.2,
+      "chord_richness": 45.6,
+      "harmonic_motion": 59.2,
+      "modal_darkness": 97.0,
+      "microtonal_score": 86.7,
+      "drum_complexity": 21.6,
+      "perc_share": 0.055,
+      "pulse_clarity": 0.761,
+      "onset_rate": 4.22,
+      "sub_share": 0.039,
+      "bass_share": 0.83,
+      "mid_share": 0.002,
+      "high_share": 0.006,
+      "air_share": 0.002,
+      "crest": -47.37,
+      "scale_deg_12": [
+        0.3746,
+        0.2025,
+        0.0106,
+        0.103,
+        0.0508,
+        0.0231,
+        0.0007,
+        0.0264,
+        0.0884,
+        0.0323,
+        0.0672,
+        0.0204
+      ],
+      "harmony_tag": "Active chord progressions",
+      "rhythm_tag": "Beatless ambient wash",
+      "cluster_id": "s0_ambient",
+      "cluster_label": "Ambient & meditative",
+      "cluster_idx": 0,
+      "drum_pulse": 22.2
+    },
+    {
+      "id": "archive_2018_23_2",
+      "era": "archive_2018_23",
+      "slot": 2,
+      "source": "corpus",
+      "title": "FF33 Utopia",
+      "shortTitle": "FF33 Utopia",
+      "bpm": 148.0,
+      "energy": 4,
+      "energy_source": "mik_model",
+      "key_camelot": "8B",
+      "key_label": "C (8B)",
+      "harmonic_complexity": 42.0,
+      "chord_richness": 16.6,
+      "harmonic_motion": 100.0,
+      "modal_darkness": 0.0,
+      "microtonal_score": 36.9,
+      "drum_complexity": 65.1,
+      "perc_share": 0.315,
+      "pulse_clarity": 0.659,
+      "onset_rate": 6.59,
+      "sub_share": 0.474,
+      "bass_share": 0.076,
+      "mid_share": 0.063,
+      "high_share": 0.035,
+      "air_share": 0.016,
+      "crest": -43.66,
+      "scale_deg_12": [
+        0.4853,
+        0.0014,
+        0.1428,
+        0.0005,
+        0.0794,
+        0.0178,
+        0.0492,
+        0.0122,
+        0.0006,
+        0.1741,
+        0.0079,
+        0.0289
+      ],
+      "harmony_tag": "Active chord progressions",
+      "rhythm_tag": "Intricate syncopated drums",
+      "cluster_id": "s3_hypnotic_micro",
+      "cluster_label": "Hypnotic electro & microtonal",
+      "cluster_idx": 3,
+      "drum_pulse": 65.9
+    },
+    {
+      "id": "archive_2018_23_3",
+      "era": "archive_2018_23",
+      "slot": 3,
+      "source": "corpus",
+      "title": "Who Are We",
+      "shortTitle": "Who Are We",
+      "bpm": 142.69,
+      "energy": 7,
+      "energy_source": "mik_model",
+      "key_camelot": "7A",
+      "key_label": "Dm (7A)",
+      "harmonic_complexity": 40.7,
+      "chord_richness": 21.5,
+      "harmonic_motion": 29.4,
+      "modal_darkness": 92.7,
+      "microtonal_score": 100.0,
+      "drum_complexity": 61.3,
+      "perc_share": 0.448,
+      "pulse_clarity": 0.292,
+      "onset_rate": 3.12,
+      "sub_share": 0.407,
+      "bass_share": 0.196,
+      "mid_share": 0.095,
+      "high_share": 0.062,
+      "air_share": 0.008,
+      "crest": -43.14,
+      "scale_deg_12": [
+        0.494,
+        0.0027,
+        0.0069,
+        0.0922,
+        0.035,
+        0.0104,
+        0.0056,
+        0.0598,
+        0.0101,
+        0.0324,
+        0.2415,
+        0.0093
+      ],
+      "harmony_tag": "Dark modal pedal",
+      "rhythm_tag": "Intricate syncopated drums",
+      "cluster_id": "s5_dnb_breaks",
+      "cluster_label": "Complex drums & breaks",
+      "cluster_idx": 5,
+      "drum_pulse": 29.2
+    },
+    {
+      "id": "spirit_guides_1",
+      "era": "spirit_guides",
+      "slot": 1,
+      "source": "corpus",
+      "title": "01 Call to Adventure",
+      "shortTitle": "01 Call to Adventure",
+      "bpm": 73.0,
+      "energy": 2,
+      "energy_source": "mik",
+      "key_camelot": "C",
+      "key_label": "C (C)",
+      "harmonic_complexity": 38.6,
+      "chord_richness": 17.8,
+      "harmonic_motion": 75.8,
+      "modal_darkness": 20.1,
+      "microtonal_score": 45.5,
+      "drum_complexity": 4.4,
+      "perc_share": 0.008,
+      "pulse_clarity": 0.904,
+      "onset_rate": 3.86,
+      "sub_share": 0.261,
+      "bass_share": 0.174,
+      "mid_share": 0.096,
+      "high_share": 0.007,
+      "air_share": 0.0,
+      "crest": -47.38,
+      "scale_deg_12": [
+        0.3998,
+        0.0434,
+        0.1582,
+        0.0002,
+        0.011,
+        0.058,
+        0.0038,
+        0.2399,
+        0.0081,
+        0.0548,
+        0.0186,
+        0.0042
+      ],
+      "harmony_tag": "Active chord progressions",
+      "rhythm_tag": "Beatless ambient wash",
+      "cluster_id": "s0_ambient",
+      "cluster_label": "Ambient & meditative",
+      "cluster_idx": 0,
+      "drum_pulse": 0.0
+    },
+    {
+      "id": "spirit_guides_2",
+      "era": "spirit_guides",
+      "slot": 2,
+      "source": "corpus",
+      "title": "03 Voice of the Spirits",
+      "shortTitle": "03 Voice of the Spirits",
+      "bpm": 109.0,
+      "energy": 3,
+      "energy_source": "mik_model",
+      "key_camelot": "9B",
+      "key_label": "G (9B)",
+      "harmonic_complexity": 43.1,
+      "chord_richness": 19.2,
+      "harmonic_motion": 100.0,
+      "modal_darkness": 0.0,
+      "microtonal_score": 52.0,
+      "drum_complexity": 14.8,
+      "perc_share": 0.034,
+      "pulse_clarity": 0.78,
+      "onset_rate": 7.26,
+      "sub_share": 0.268,
+      "bass_share": 0.153,
+      "mid_share": 0.078,
+      "high_share": 0.008,
+      "air_share": 0.001,
+      "crest": -46.84,
+      "scale_deg_12": [
+        0.1235,
+        0.007,
+        0.1441,
+        0.0058,
+        0.0093,
+        0.2256,
+        0.0192,
+        0.3021,
+        0.0029,
+        0.1372,
+        0.0178,
+        0.0055
+      ],
+      "harmony_tag": "Active chord progressions",
+      "rhythm_tag": "Beatless ambient wash",
+      "cluster_id": "s0_ambient",
+      "cluster_label": "Ambient & meditative",
+      "cluster_idx": 0,
+      "drum_pulse": 9.1
+    },
+    {
+      "id": "spirit_guides_3",
+      "era": "spirit_guides",
+      "slot": 3,
+      "source": "corpus",
+      "title": "02 Forest of Mysteries",
+      "shortTitle": "02 Forest of Mysteries",
+      "bpm": 60.09,
+      "energy": 2,
+      "energy_source": "mik",
+      "key_camelot": "Em",
+      "key_label": "C (Em)",
+      "harmonic_complexity": 61.3,
+      "chord_richness": 47.9,
+      "harmonic_motion": 100.0,
+      "modal_darkness": 26.9,
+      "microtonal_score": 60.3,
+      "drum_complexity": 10.3,
+      "perc_share": 0.026,
+      "pulse_clarity": 0.785,
+      "onset_rate": 5.92,
+      "sub_share": 0.434,
+      "bass_share": 0.438,
+      "mid_share": 0.005,
+      "high_share": 0.001,
+      "air_share": 0.0,
+      "crest": -47.71,
+      "scale_deg_12": [
+        0.1577,
+        0.0197,
+        0.1077,
+        0.0006,
+        0.0849,
+        0.1364,
+        0.0277,
+        0.1875,
+        0.0736,
+        0.0692,
+        0.0569,
+        0.0781
+      ],
+      "harmony_tag": "Active chord progressions",
+      "rhythm_tag": "Beatless ambient wash",
+      "cluster_id": "s0_ambient",
+      "cluster_label": "Ambient & meditative",
+      "cluster_idx": 0,
+      "drum_pulse": 3.9
+    },
+    {
+      "id": "spirit_guides_4",
+      "era": "spirit_guides",
+      "slot": 4,
+      "source": "corpus",
+      "title": "05 Dark Night of the Soul",
+      "shortTitle": "05 Dark Night of the Sou",
+      "bpm": 58.73,
+      "energy": 3,
+      "energy_source": "mik",
+      "key_camelot": "Am",
+      "key_label": "Dm (Am)",
+      "harmonic_complexity": 52.3,
+      "chord_richness": 13.0,
+      "harmonic_motion": 74.9,
+      "modal_darkness": 89.5,
+      "microtonal_score": 85.3,
+      "drum_complexity": 6.5,
+      "perc_share": 0.013,
+      "pulse_clarity": 0.762,
+      "onset_rate": 7.4,
+      "sub_share": 0.364,
+      "bass_share": 0.254,
+      "mid_share": 0.084,
+      "high_share": 0.009,
+      "air_share": 0.016,
+      "crest": -47.56,
+      "scale_deg_12": [
+        0.2739,
+        0.0014,
+        0.1424,
+        0.4216,
+        0.0409,
+        0.0408,
+        0.0162,
+        0.031,
+        0.0029,
+        0.0219,
+        0.0064,
+        0.0006
+      ],
+      "harmony_tag": "Active chord progressions",
+      "rhythm_tag": "Beatless ambient wash",
+      "cluster_id": "s0_ambient",
+      "cluster_label": "Ambient & meditative",
+      "cluster_idx": 0,
+      "drum_pulse": 0.0
+    },
+    {
+      "id": "lucid_crystal_1",
+      "era": "lucid_crystal",
+      "slot": 1,
+      "source": "corpus",
+      "title": "01 Crystal Temple Opening Ritual",
+      "shortTitle": "01 Crystal Temple Openin",
+      "bpm": 120.0,
+      "energy": 2,
+      "energy_source": "mik_model",
+      "key_camelot": "11A",
+      "key_label": "F#m (11A)",
+      "harmonic_complexity": 59.4,
+      "chord_richness": 22.0,
+      "harmonic_motion": 100.0,
+      "modal_darkness": 66.0,
+      "microtonal_score": 66.3,
+      "drum_complexity": 27.4,
+      "perc_share": 0.072,
+      "pulse_clarity": 0.186,
+      "onset_rate": 3.16,
+      "sub_share": 0.049,
+      "bass_share": 0.578,
+      "mid_share": 0.023,
+      "high_share": 0.046,
+      "air_share": 0.004,
+      "crest": -43.02,
+      "scale_deg_12": [
+        0.1479,
+        0.0614,
+        0.0919,
+        0.1182,
+        0.1452,
+        0.0027,
+        0.0517,
+        0.1256,
+        0.1092,
+        0.0822,
+        0.0406,
+        0.0233
+      ],
+      "harmony_tag": "Active chord progressions",
+      "rhythm_tag": "Spacious / minimal pulse",
+      "cluster_id": "s0_ambient",
+      "cluster_label": "Ambient & meditative",
+      "cluster_idx": 0,
+      "drum_pulse": 8.1
+    },
+    {
+      "id": "lucid_crystal_2",
+      "era": "lucid_crystal",
+      "slot": 2,
+      "source": "corpus",
+      "title": "03 Lightstone Cave",
+      "shortTitle": "03 Lightstone Cave",
+      "bpm": 83.0,
+      "energy": 2,
+      "energy_source": "mik_model",
+      "key_camelot": "8B",
+      "key_label": "C (8B)",
+      "harmonic_complexity": 28.7,
+      "chord_richness": 0.0,
+      "harmonic_motion": 79.7,
+      "modal_darkness": 3.5,
+      "microtonal_score": 74.1,
+      "drum_complexity": 2.9,
+      "perc_share": 0.005,
+      "pulse_clarity": 0.287,
+      "onset_rate": 3.42,
+      "sub_share": 0.009,
+      "bass_share": 0.591,
+      "mid_share": 0.051,
+      "high_share": 0.008,
+      "air_share": 0.0,
+      "crest": -47.73,
+      "scale_deg_12": [
+        0.4523,
+        0.0119,
+        0.0071,
+        0.0014,
+        0.0608,
+        0.1314,
+        0.0264,
+        0.0411,
+        0.0121,
+        0.144,
+        0.0238,
+        0.0877
+      ],
+      "harmony_tag": "Active chord progressions",
+      "rhythm_tag": "Beatless ambient wash",
+      "cluster_id": "s0_ambient",
+      "cluster_label": "Ambient & meditative",
+      "cluster_idx": 0,
+      "drum_pulse": 0.0
+    },
+    {
+      "id": "lucid_crystal_3",
+      "era": "lucid_crystal",
+      "slot": 3,
+      "source": "corpus",
+      "title": "02 Chromacolor",
+      "shortTitle": "02 Chromacolor",
+      "bpm": 120.01,
+      "energy": 4,
+      "energy_source": "mik_model",
+      "key_camelot": "7B",
+      "key_label": "F (7B)",
+      "harmonic_complexity": 34.0,
+      "chord_richness": 14.7,
+      "harmonic_motion": 79.6,
+      "modal_darkness": 0.0,
+      "microtonal_score": 79.4,
+      "drum_complexity": 35.7,
+      "perc_share": 0.106,
+      "pulse_clarity": 0.189,
+      "onset_rate": 3.3,
+      "sub_share": 0.463,
+      "bass_share": 0.296,
+      "mid_share": 0.084,
+      "high_share": 0.06,
+      "air_share": 0.003,
+      "crest": -43.87,
+      "scale_deg_12": [
+        0.223,
+        0.0018,
+        0.1257,
+        0.0019,
+        0.1568,
+        0.07,
+        0.0022,
+        0.2357,
+        0.0114,
+        0.1666,
+        0.0004,
+        0.0045
+      ],
+      "harmony_tag": "Active chord progressions",
+      "rhythm_tag": "Spacious / minimal pulse",
+      "cluster_id": "s2_chill_elec",
+      "cluster_label": "Chill & sparse electronic",
+      "cluster_idx": 2,
+      "drum_pulse": 13.5
+    },
+    {
+      "id": "lucid_crystal_4",
+      "era": "lucid_crystal",
+      "slot": 4,
+      "source": "corpus",
+      "title": "04 Procession of Eternal Gratitude",
+      "shortTitle": "04 Procession of Eternal",
+      "bpm": 64.6,
+      "energy": 2,
+      "energy_source": "mik_model",
+      "key_camelot": "4B",
+      "key_label": "Ab (4B)",
+      "harmonic_complexity": 69.7,
+      "chord_richness": 28.9,
+      "harmonic_motion": 100.0,
+      "modal_darkness": 98.1,
+      "microtonal_score": 71.8,
+      "drum_complexity": 13.2,
+      "perc_share": 0.032,
+      "pulse_clarity": 0.428,
+      "onset_rate": 4.65,
+      "sub_share": 0.006,
+      "bass_share": 0.592,
+      "mid_share": 0.07,
+      "high_share": 0.027,
+      "air_share": 0.001,
+      "crest": -45.35,
+      "scale_deg_12": [
+        0.3012,
+        0.1662,
+        0.0676,
+        0.0016,
+        0.0216,
+        0.0785,
+        0.0885,
+        0.096,
+        0.0719,
+        0.011,
+        0.0642,
+        0.0318
+      ],
+      "harmony_tag": "Active chord progressions",
+      "rhythm_tag": "Beatless ambient wash",
+      "cluster_id": "s0_ambient",
+      "cluster_label": "Ambient & meditative",
+      "cluster_idx": 0,
+      "drum_pulse": 4.3
+    },
+    {
+      "id": "remixes_commissions_1",
+      "era": "remixes_commissions",
+      "slot": 1,
+      "source": "corpus",
+      "title": "Serpentine (Remix)",
+      "shortTitle": "Serpentine",
+      "bpm": 174.0,
+      "energy": 7,
+      "energy_source": "mik_model",
+      "key_camelot": "8B",
+      "key_label": "C (8B)",
+      "harmonic_complexity": 70.5,
+      "chord_richness": 61.8,
+      "harmonic_motion": 86.7,
+      "modal_darkness": 61.9,
+      "microtonal_score": 55.8,
+      "drum_complexity": 57.6,
+      "perc_share": 0.186,
+      "pulse_clarity": 0.624,
+      "onset_rate": 4.36,
+      "sub_share": 0.443,
+      "bass_share": 0.181,
+      "mid_share": 0.112,
+      "high_share": 0.054,
+      "air_share": 0.009,
+      "crest": -47.45,
+      "scale_deg_12": [
+        0.456,
+        0.0864,
+        0.0769,
+        0.0299,
+        0.0445,
+        0.0502,
+        0.0267,
+        0.0544,
+        0.0408,
+        0.0582,
+        0.0471,
+        0.0288
+      ],
+      "harmony_tag": "Microtonal / bell intervals",
+      "rhythm_tag": "Fast D&B breakbeats",
+      "cluster_id": "s5_dnb_breaks",
+      "cluster_label": "Complex drums & breaks",
+      "cluster_idx": 5,
+      "drum_pulse": 62.4
+    },
+    {
+      "id": "remixes_commissions_2",
+      "era": "remixes_commissions",
+      "slot": 2,
+      "source": "corpus",
+      "title": "Arc 110 (Remix)",
+      "shortTitle": "Arc 110",
+      "bpm": 110.0,
+      "energy": 5,
+      "energy_source": "mik",
+      "key_camelot": "7A",
+      "key_label": "Dm (7A)",
+      "harmonic_complexity": 44.6,
+      "chord_richness": 53.3,
+      "harmonic_motion": 21.1,
+      "modal_darkness": 64.5,
+      "microtonal_score": 99.0,
+      "drum_complexity": 54.6,
+      "perc_share": 0.22,
+      "pulse_clarity": 0.508,
+      "onset_rate": 4.37,
+      "sub_share": 0.305,
+      "bass_share": 0.25,
+      "mid_share": 0.137,
+      "high_share": 0.026,
+      "air_share": 0.002,
+      "crest": -47.49,
+      "scale_deg_12": [
+        0.3019,
+        0.0126,
+        0.1115,
+        0.0867,
+        0.0969,
+        0.0114,
+        0.0257,
+        0.1333,
+        0.0199,
+        0.021,
+        0.1615,
+        0.0175
+      ],
+      "harmony_tag": "Microtonal / bell intervals",
+      "rhythm_tag": "Chill downtempo groove",
+      "cluster_id": "s5_dnb_breaks",
+      "cluster_label": "Complex drums & breaks",
+      "cluster_idx": 5,
+      "drum_pulse": 50.8
+    },
+    {
+      "id": "remixes_commissions_3",
+      "era": "remixes_commissions",
+      "slot": 3,
+      "source": "corpus",
+      "title": "Te Vaka — Tatao (Remix)",
+      "shortTitle": "Te Vaka — Tatao",
+      "bpm": 162.0,
+      "energy": 6,
+      "energy_source": "mik_model",
+      "key_camelot": "8B",
+      "key_label": "C (8B)",
+      "harmonic_complexity": 39.6,
+      "chord_richness": 43.7,
+      "harmonic_motion": 48.3,
+      "modal_darkness": 18.9,
+      "microtonal_score": 57.0,
+      "drum_complexity": 75.0,
+      "perc_share": 0.329,
+      "pulse_clarity": 0.678,
+      "onset_rate": 5.57,
+      "sub_share": 0.219,
+      "bass_share": 0.073,
+      "mid_share": 0.166,
+      "high_share": 0.041,
+      "air_share": 0.004,
+      "crest": -45.84,
+      "scale_deg_12": [
+        0.3996,
+        0.0312,
+        0.0645,
+        0.0242,
+        0.1032,
+        0.0646,
+        0.0208,
+        0.1085,
+        0.0243,
+        0.0918,
+        0.019,
+        0.0484
+      ],
+      "harmony_tag": "Microtonal / bell intervals",
+      "rhythm_tag": "Fast D&B breakbeats",
+      "cluster_id": "s5_dnb_breaks",
+      "cluster_label": "Complex drums & breaks",
+      "cluster_idx": 5,
+      "drum_pulse": 67.8
+    },
+    {
+      "id": "sketches_2024_25_1",
+      "era": "sketches_2024_25",
+      "slot": 1,
+      "source": "corpus",
+      "title": "Granular Perc (Gamelanish)",
+      "shortTitle": "Granular Perc",
+      "bpm": 120.0,
+      "energy": 3,
+      "energy_source": "mik_model",
+      "key_camelot": "8B",
+      "key_label": "C (8B)",
+      "harmonic_complexity": 35.7,
+      "chord_richness": 14.0,
+      "harmonic_motion": 78.2,
+      "modal_darkness": 10.5,
+      "microtonal_score": 71.6,
+      "drum_complexity": 21.7,
+      "perc_share": 0.059,
+      "pulse_clarity": 0.34,
+      "onset_rate": 4.72,
+      "sub_share": 0.016,
+      "bass_share": 0.119,
+      "mid_share": 0.254,
+      "high_share": 0.049,
+      "air_share": 0.008,
+      "crest": -44.75,
+      "scale_deg_12": [
+        0.2185,
+        0.0313,
+        0.1308,
+        0.0126,
+        0.0856,
+        0.0955,
+        0.0203,
+        0.176,
+        0.0238,
+        0.1507,
+        0.0265,
+        0.0282
+      ],
+      "harmony_tag": "Microtonal / bell intervals",
+      "rhythm_tag": "Beatless ambient wash",
+      "cluster_id": "s0_ambient",
+      "cluster_label": "Ambient & meditative",
+      "cluster_idx": 0,
+      "drum_pulse": 11.0
+    },
+    {
+      "id": "sketches_2024_25_2",
+      "era": "sketches_2024_25",
+      "slot": 2,
+      "source": "corpus",
+      "title": "Shepard Tone 02",
+      "shortTitle": "Shepard Tone 02",
+      "bpm": 131.0,
+      "energy": 7,
+      "energy_source": "mik_model",
+      "key_camelot": "7B",
+      "key_label": "F (7B)",
+      "harmonic_complexity": 39.8,
+      "chord_richness": 58.4,
+      "harmonic_motion": 36.4,
+      "modal_darkness": 11.2,
+      "microtonal_score": 66.0,
+      "drum_complexity": 64.2,
+      "perc_share": 0.286,
+      "pulse_clarity": 0.678,
+      "onset_rate": 3.91,
+      "sub_share": 0.307,
+      "bass_share": 0.122,
+      "mid_share": 0.171,
+      "high_share": 0.081,
+      "air_share": 0.025,
+      "crest": -49.72,
+      "scale_deg_12": [
+        0.3587,
+        0.0271,
+        0.184,
+        0.0197,
+        0.0463,
+        0.053,
+        0.0161,
+        0.1045,
+        0.0193,
+        0.1215,
+        0.0229,
+        0.0268
+      ],
+      "harmony_tag": "Microtonal / bell intervals",
+      "rhythm_tag": "Driven 4/4 house groove",
+      "cluster_id": "s5_dnb_breaks",
+      "cluster_label": "Complex drums & breaks",
+      "cluster_idx": 5,
+      "drum_pulse": 67.8
+    },
+    {
+      "id": "sketches_2024_25_3",
+      "era": "sketches_2024_25",
+      "slot": 3,
+      "source": "corpus",
+      "title": "Afro Retro",
+      "shortTitle": "Afro Retro",
+      "bpm": 130.0,
+      "energy": 4,
+      "energy_source": "mik_model",
+      "key_camelot": "8B",
+      "key_label": "C (8B)",
+      "harmonic_complexity": 35.5,
+      "chord_richness": 44.6,
+      "harmonic_motion": 35.5,
+      "modal_darkness": 19.0,
+      "microtonal_score": 75.6,
+      "drum_complexity": 48.4,
+      "perc_share": 0.26,
+      "pulse_clarity": 0.463,
+      "onset_rate": 5.32,
+      "sub_share": 0.448,
+      "bass_share": 0.338,
+      "mid_share": 0.02,
+      "high_share": 0.051,
+      "air_share": 0.009,
+      "crest": -44.93,
+      "scale_deg_12": [
+        0.2742,
+        0.0405,
+        0.2533,
+        0.0004,
+        0.014,
+        0.1541,
+        0.0188,
+        0.107,
+        0.0386,
+        0.0851,
+        0.012,
+        0.0021
+      ],
+      "harmony_tag": "Microtonal / bell intervals",
+      "rhythm_tag": "Chill downtempo groove",
+      "cluster_id": "s3_hypnotic_micro",
+      "cluster_label": "Hypnotic electro & microtonal",
+      "cluster_idx": 3,
+      "drum_pulse": 46.3
+    },
+    {
+      "id": "sketches_2024_25_4",
+      "era": "sketches_2024_25",
+      "slot": 4,
+      "source": "corpus",
+      "title": "Techno Idea 02",
+      "shortTitle": "Techno Idea 02",
+      "bpm": 124.0,
+      "energy": 5,
+      "energy_source": "mik",
+      "key_camelot": "7A",
+      "key_label": "Dm (7A)",
+      "harmonic_complexity": 28.2,
+      "chord_richness": 11.5,
+      "harmonic_motion": 7.2,
+      "modal_darkness": 90.6,
+      "microtonal_score": 100.0,
+      "drum_complexity": 36.1,
+      "perc_share": 0.106,
+      "pulse_clarity": 0.732,
+      "onset_rate": 5.07,
+      "sub_share": 0.46,
+      "bass_share": 0.447,
+      "mid_share": 0.012,
+      "high_share": 0.034,
+      "air_share": 0.004,
+      "crest": -48.54,
+      "scale_deg_12": [
+        0.4911,
+        0.0004,
+        0.001,
+        0.0905,
+        0.0077,
+        0.0105,
+        0.0122,
+        0.0642,
+        0.0021,
+        0.0004,
+        0.2332,
+        0.0868
+      ],
+      "harmony_tag": "Microtonal / bell intervals",
+      "rhythm_tag": "Chill downtempo groove",
+      "cluster_id": "s3_hypnotic_micro",
+      "cluster_label": "Hypnotic electro & microtonal",
+      "cluster_idx": 3,
+      "drum_pulse": 52.5
+    },
+    {
+      "id": "ecstatic_wave_1",
+      "era": "ecstatic_wave",
+      "slot": 1,
+      "source": "corpus",
+      "title": "Flowing Wave",
+      "shortTitle": "Flowing Wave",
+      "bpm": 88.64,
+      "energy": 5,
+      "energy_source": "mik_model",
+      "key_camelot": "7B",
+      "key_label": "F (7B)",
+      "harmonic_complexity": 58.7,
+      "chord_richness": 78.5,
+      "harmonic_motion": 53.7,
+      "modal_darkness": 30.1,
+      "microtonal_score": 63.5,
+      "drum_complexity": 49.7,
+      "perc_share": 0.28,
+      "pulse_clarity": 0.609,
+      "onset_rate": 4.64,
+      "sub_share": 0.478,
+      "bass_share": 0.293,
+      "mid_share": 0.043,
+      "high_share": 0.011,
+      "air_share": 0.001,
+      "crest": -47.39,
+      "scale_deg_12": [
+        0.2776,
+        0.0448,
+        0.0982,
+        0.055,
+        0.0814,
+        0.0979,
+        0.0113,
+        0.1123,
+        0.0211,
+        0.0865,
+        0.0449,
+        0.0691
+      ],
+      "harmony_tag": "Rich extended voicings",
+      "rhythm_tag": "Chill downtempo groove",
+      "cluster_id": "s4_house_ecstatic",
+      "cluster_label": "House & ecstatic groove",
+      "cluster_idx": 4,
+      "drum_pulse": 60.9
+    },
+    {
+      "id": "ecstatic_wave_2",
+      "era": "ecstatic_wave",
+      "slot": 2,
+      "source": "corpus",
+      "title": "Mega Dark Bass",
+      "shortTitle": "Mega Dark Bass",
+      "bpm": 122.0,
+      "energy": 5,
+      "energy_source": "mik_model",
+      "key_camelot": "7B",
+      "key_label": "F (7B)",
+      "harmonic_complexity": 52.4,
+      "chord_richness": 55.9,
+      "harmonic_motion": 70.4,
+      "modal_darkness": 18.6,
+      "microtonal_score": 66.7,
+      "drum_complexity": 54.7,
+      "perc_share": 0.21,
+      "pulse_clarity": 0.781,
+      "onset_rate": 4.07,
+      "sub_share": 0.34,
+      "bass_share": 0.299,
+      "mid_share": 0.03,
+      "high_share": 0.052,
+      "air_share": 0.007,
+      "crest": -46.49,
+      "scale_deg_12": [
+        0.1367,
+        0.0242,
+        0.1039,
+        0.0461,
+        0.125,
+        0.0954,
+        0.013,
+        0.3152,
+        0.0307,
+        0.0872,
+        0.009,
+        0.0135
+      ],
+      "harmony_tag": "Active chord progressions",
+      "rhythm_tag": "Chill downtempo groove",
+      "cluster_id": "s4_house_ecstatic",
+      "cluster_label": "House & ecstatic groove",
+      "cluster_idx": 4,
+      "drum_pulse": 78.1
+    },
+    {
+      "id": "ecstatic_wave_3",
+      "era": "ecstatic_wave",
+      "slot": 3,
+      "source": "corpus",
+      "title": "Afro 06",
+      "shortTitle": "Afro 06",
+      "bpm": 121.99,
+      "energy": 6,
+      "energy_source": "mik_model",
+      "key_camelot": "5A",
+      "key_label": "Cm (5A)",
+      "harmonic_complexity": 56.0,
+      "chord_richness": 20.3,
+      "harmonic_motion": 72.6,
+      "modal_darkness": 95.9,
+      "microtonal_score": 36.5,
+      "drum_complexity": 54.1,
+      "perc_share": 0.239,
+      "pulse_clarity": 0.788,
+      "onset_rate": 5.54,
+      "sub_share": 0.315,
+      "bass_share": 0.156,
+      "mid_share": 0.158,
+      "high_share": 0.042,
+      "air_share": 0.008,
+      "crest": -45.21,
+      "scale_deg_12": [
+        0.3326,
+        0.0397,
+        0.0734,
+        0.0313,
+        0.0063,
+        0.0902,
+        0.0069,
+        0.1935,
+        0.1136,
+        0.0081,
+        0.1008,
+        0.0036
+      ],
+      "harmony_tag": "Active chord progressions",
+      "rhythm_tag": "Driven 4/4 house groove",
+      "cluster_id": "s4_house_ecstatic",
+      "cluster_label": "House & ecstatic groove",
+      "cluster_idx": 4,
+      "drum_pulse": 78.8
+    },
+    {
+      "id": "ecstatic_wave_4",
+      "era": "ecstatic_wave",
+      "slot": 4,
+      "source": "corpus",
+      "title": "Great Spirit 01",
+      "shortTitle": "Great Spirit 01",
+      "bpm": 74.66,
+      "energy": 3,
+      "energy_source": "mik_model",
+      "key_camelot": "8B",
+      "key_label": "C (8B)",
+      "harmonic_complexity": 53.7,
+      "chord_richness": 36.8,
+      "harmonic_motion": 100.0,
+      "modal_darkness": 14.3,
+      "microtonal_score": 82.8,
+      "drum_complexity": 30.0,
+      "perc_share": 0.105,
+      "pulse_clarity": 0.734,
+      "onset_rate": 4.49,
+      "sub_share": 0.678,
+      "bass_share": 0.269,
+      "mid_share": 0.001,
+      "high_share": 0.0,
+      "air_share": 0.0,
+      "crest": -49.12,
+      "scale_deg_12": [
+        0.2328,
+        0.0207,
+        0.2015,
+        0.0036,
+        0.0419,
+        0.1407,
+        0.0088,
+        0.1692,
+        0.0218,
+        0.0893,
+        0.0651,
+        0.0044
+      ],
+      "harmony_tag": "Active chord progressions",
+      "rhythm_tag": "Spacious / minimal pulse",
+      "cluster_id": "s3_hypnotic_micro",
+      "cluster_label": "Hypnotic electro & microtonal",
+      "cluster_idx": 3,
+      "drum_pulse": 52.0
+    },
+    {
+      "id": "sketches_2026_1",
+      "era": "sketches_2026",
+      "slot": 1,
+      "source": "corpus",
+      "title": "Arcadian Sunrise 05",
+      "shortTitle": "Arcadian Sunrise 05",
+      "bpm": 110.0,
+      "energy": 5,
+      "energy_source": "mik_model",
+      "key_camelot": "7B",
+      "key_label": "F (7B)",
+      "harmonic_complexity": 57.4,
+      "chord_richness": 53.4,
+      "harmonic_motion": 95.1,
+      "modal_darkness": 7.4,
+      "microtonal_score": 57.5,
+      "drum_complexity": 39.9,
+      "perc_share": 0.135,
+      "pulse_clarity": 0.712,
+      "onset_rate": 3.83,
+      "sub_share": 0.326,
+      "bass_share": 0.36,
+      "mid_share": 0.047,
+      "high_share": 0.031,
+      "air_share": 0.003,
+      "crest": -47.36,
+      "scale_deg_12": [
+        0.0852,
+        0.0173,
+        0.1106,
+        0.0216,
+        0.1297,
+        0.1682,
+        0.0089,
+        0.229,
+        0.0225,
+        0.1423,
+        0.0502,
+        0.0145
+      ],
+      "harmony_tag": "Active chord progressions",
+      "rhythm_tag": "Chill downtempo groove",
+      "cluster_id": "s4_house_ecstatic",
+      "cluster_label": "House & ecstatic groove",
+      "cluster_idx": 4,
+      "drum_pulse": 68.2
+    },
+    {
+      "id": "sketches_2026_2",
+      "era": "sketches_2026",
+      "slot": 2,
+      "source": "corpus",
+      "title": "Breath-Domi 05",
+      "shortTitle": "Breath-Domi 05",
+      "bpm": 129.0,
+      "energy": 4,
+      "energy_source": "mik_model",
+      "key_camelot": "7A",
+      "key_label": "Dm (7A)",
+      "harmonic_complexity": 51.1,
+      "chord_richness": 18.7,
+      "harmonic_motion": 65.7,
+      "modal_darkness": 88.2,
+      "microtonal_score": 89.8,
+      "drum_complexity": 46.3,
+      "perc_share": 0.174,
+      "pulse_clarity": 0.669,
+      "onset_rate": 4.16,
+      "sub_share": 0.37,
+      "bass_share": 0.223,
+      "mid_share": 0.029,
+      "high_share": 0.025,
+      "air_share": 0.003,
+      "crest": -45.16,
+      "scale_deg_12": [
+        0.3711,
+        0.069,
+        0.0635,
+        0.065,
+        0.0388,
+        0.0638,
+        0.0243,
+        0.0268,
+        0.0165,
+        0.0241,
+        0.2211,
+        0.016
+      ],
+      "harmony_tag": "Active chord progressions",
+      "rhythm_tag": "Chill downtempo groove",
+      "cluster_id": "s3_hypnotic_micro",
+      "cluster_label": "Hypnotic electro & microtonal",
+      "cluster_idx": 3,
+      "drum_pulse": 66.9
+    },
+    {
+      "id": "sketches_2026_3",
+      "era": "sketches_2026",
+      "slot": 3,
+      "source": "corpus",
+      "title": "Mya Moody Banger",
+      "shortTitle": "Mya Moody Banger",
+      "bpm": 90.0,
+      "energy": 4,
+      "energy_source": "mik_model",
+      "key_camelot": "7A",
+      "key_label": "Dm (7A)",
+      "harmonic_complexity": 34.1,
+      "chord_richness": 27.4,
+      "harmonic_motion": 0.7,
+      "modal_darkness": 97.0,
+      "microtonal_score": 88.3,
+      "drum_complexity": 54.4,
+      "perc_share": 0.381,
+      "pulse_clarity": 0.878,
+      "onset_rate": 3.44,
+      "sub_share": 0.752,
+      "bass_share": 0.18,
+      "mid_share": 0.001,
+      "high_share": 0.008,
+      "air_share": 0.003,
+      "crest": -45.42,
+      "scale_deg_12": [
+        0.3064,
+        0.0004,
+        0.0146,
+        0.4278,
+        0.0016,
+        0.0514,
+        0.0031,
+        0.0372,
+        0.0182,
+        0.0153,
+        0.0614,
+        0.0625
+      ],
+      "harmony_tag": "Dark modal pedal",
+      "rhythm_tag": "Chill downtempo groove",
+      "cluster_id": "s3_hypnotic_micro",
+      "cluster_label": "Hypnotic electro & microtonal",
+      "cluster_idx": 3,
+      "drum_pulse": 87.8
+    },
+    {
+      "id": "sketches_2026_4",
+      "era": "sketches_2026",
+      "slot": 4,
+      "source": "corpus",
+      "title": "Journey Domi 03",
+      "shortTitle": "Journey Domi 03",
+      "bpm": 120.0,
+      "energy": 2,
+      "energy_source": "mik_model",
+      "key_camelot": "10B",
+      "key_label": "D (10B)",
+      "harmonic_complexity": 68.3,
+      "chord_richness": 65.6,
+      "harmonic_motion": 81.8,
+      "modal_darkness": 52.7,
+      "microtonal_score": 54.3,
+      "drum_complexity": 41.9,
+      "perc_share": 0.139,
+      "pulse_clarity": 0.522,
+      "onset_rate": 3.89,
+      "sub_share": 0.304,
+      "bass_share": 0.333,
+      "mid_share": 0.025,
+      "high_share": 0.002,
+      "air_share": 0.001,
+      "crest": -45.64,
+      "scale_deg_12": [
+        0.1699,
+        0.0034,
+        0.0561,
+        0.1348,
+        0.0928,
+        0.1509,
+        0.055,
+        0.0962,
+        0.0265,
+        0.0779,
+        0.0746,
+        0.0618
+      ],
+      "harmony_tag": "Lush moving chords",
+      "rhythm_tag": "Chill downtempo groove",
+      "cluster_id": "s1_downtempo_lush",
+      "cluster_label": "Downtempo & lush chords",
+      "cluster_idx": 1,
+      "drum_pulse": 51.8
+    }
+  ]
+}

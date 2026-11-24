@@ -1,8 +1,356 @@
 {
-  "n_tracks": 24,
-  "total_bytes": 11305859,
-  "total_mb": 10.78,
+  "n_tracks": 66,
+  "total_bytes": 21393708,
+  "total_mb": 20.4,
   "tracks_by_era": {
+    "present_ambient": [
+      {
+        "id": "present_ambient_1",
+        "slot": 1,
+        "source": "archive",
+        "title": "1 Thing Led 2 Another",
+        "bpm": 60.04,
+        "file": "audio/present_ambient_1.mp3",
+        "bytes": 210080,
+        "duration_sec": 15.989,
+        "clip_bars": 4,
+        "beat_sec": 0.99933,
+        "bar_sec": 3.99734,
+        "beat_phase_sec": 0.0,
+        "cue_sec": 0.0,
+        "rms_db": -6.2,
+        "gain_trim": 0.55
+      },
+      {
+        "id": "present_ambient_2",
+        "slot": 2,
+        "source": "archive",
+        "title": "Sankhara 01",
+        "bpm": 82.94,
+        "file": "audio/present_ambient_2.mp3",
+        "bytes": 274339,
+        "duration_sec": 23.149,
+        "clip_bars": 8,
+        "beat_sec": 0.72341,
+        "bar_sec": 2.89366,
+        "beat_phase_sec": 0.0,
+        "cue_sec": 0.0,
+        "rms_db": -11.58,
+        "gain_trim": 0.715
+      },
+      {
+        "id": "present_ambient_3",
+        "slot": 3,
+        "source": "archive",
+        "title": "Saying Only Small Things",
+        "bpm": 93.68,
+        "file": "audio/present_ambient_3.mp3",
+        "bytes": 282870,
+        "duration_sec": 20.495,
+        "clip_bars": 8,
+        "beat_sec": 0.64048,
+        "bar_sec": 2.56191,
+        "beat_phase_sec": 0.0,
+        "cue_sec": 0.0,
+        "rms_db": -6.92,
+        "gain_trim": 0.55
+      },
+      {
+        "id": "present_ambient_4",
+        "slot": 4,
+        "source": "archive",
+        "title": "Do It Like a Robot",
+        "bpm": 97.62,
+        "file": "audio/present_ambient_4.mp3",
+        "bytes": 289326,
+        "duration_sec": 19.668,
+        "clip_bars": 8,
+        "beat_sec": 0.61463,
+        "bar_sec": 2.45851,
+        "beat_phase_sec": 0.0,
+        "cue_sec": 0.0,
+        "rms_db": -9.91,
+        "gain_trim": 0.59
+      }
+    ],
+    "present_electro": [
+      {
+        "id": "present_electro_1",
+        "slot": 1,
+        "source": "archive",
+        "title": "Disco Queen (C64)",
+        "bpm": 136.03,
+        "file": "audio/present_electro_1.mp3",
+        "bytes": 220168,
+        "duration_sec": 14.115,
+        "clip_bars": 8,
+        "beat_sec": 0.44108,
+        "bar_sec": 1.76432,
+        "beat_phase_sec": 0.0,
+        "cue_sec": 0.0,
+        "rms_db": -7.22,
+        "gain_trim": 0.55
+      },
+      {
+        "id": "present_electro_2",
+        "slot": 2,
+        "source": "archive",
+        "title": "UFO (People U Can Relax With)",
+        "bpm": 84.02,
+        "file": "audio/present_electro_2.mp3",
+        "bytes": 361168,
+        "duration_sec": 22.852,
+        "clip_bars": 8,
+        "beat_sec": 0.71412,
+        "bar_sec": 2.85646,
+        "beat_phase_sec": 0.0,
+        "cue_sec": 0.0,
+        "rms_db": -10.27,
+        "gain_trim": 0.615
+      },
+      {
+        "id": "present_electro_3",
+        "slot": 3,
+        "source": "archive",
+        "title": "Bethnal Green Sunset",
+        "bpm": 136.0,
+        "file": "audio/present_electro_3.mp3",
+        "bytes": 179735,
+        "duration_sec": 14.118,
+        "clip_bars": 8,
+        "beat_sec": 0.44118,
+        "bar_sec": 1.76471,
+        "beat_phase_sec": 0.0,
+        "cue_sec": 0.0,
+        "rms_db": -14.43,
+        "gain_trim": 0.991
+      },
+      {
+        "id": "present_electro_4",
+        "slot": 4,
+        "source": "archive",
+        "title": "Lime Angel Delight",
+        "bpm": 123.83,
+        "file": "audio/present_electro_4.mp3",
+        "bytes": 243235,
+        "duration_sec": 15.505,
+        "clip_bars": 8,
+        "beat_sec": 0.48454,
+        "bar_sec": 1.93814,
+        "beat_phase_sec": 0.0,
+        "cue_sec": 0.0,
+        "rms_db": -8.45,
+        "gain_trim": 0.55
+      },
+      {
+        "id": "present_electro_5",
+        "slot": 5,
+        "source": "archive",
+        "title": "As We Enter (PR3S3NT)",
+        "bpm": 155.0,
+        "file": "audio/present_electro_5.mp3",
+        "bytes": 223569,
+        "duration_sec": 12.387,
+        "clip_bars": 8,
+        "beat_sec": 0.3871,
+        "bar_sec": 1.54839,
+        "beat_phase_sec": 0.0,
+        "cue_sec": 0.0,
+        "rms_db": -8.55,
+        "gain_trim": 0.55
+      }
+    ],
+    "hd_2005": [
+      {
+        "id": "hd_2005_1",
+        "slot": 1,
+        "source": "archive",
+        "title": "Orch Synaesthesia",
+        "bpm": 114.85,
+        "file": "audio/hd_2005_1.mp3",
+        "bytes": 246936,
+        "duration_sec": 16.717,
+        "clip_bars": 8,
+        "beat_sec": 0.52242,
+        "bar_sec": 2.08968,
+        "beat_phase_sec": 0.0,
+        "cue_sec": 0.0,
+        "rms_db": -11.38,
+        "gain_trim": 0.698
+      },
+      {
+        "id": "hd_2005_2",
+        "slot": 2,
+        "source": "archive",
+        "title": "Sine Mix 01",
+        "bpm": 55.0,
+        "file": "audio/hd_2005_2.mp3",
+        "bytes": 204415,
+        "duration_sec": 17.455,
+        "clip_bars": 4,
+        "beat_sec": 1.09091,
+        "bar_sec": 4.36364,
+        "beat_phase_sec": 0.0,
+        "cue_sec": 0.0,
+        "rms_db": -9.76,
+        "gain_trim": 0.579
+      },
+      {
+        "id": "hd_2005_3",
+        "slot": 3,
+        "source": "archive",
+        "title": "Junglemassive",
+        "bpm": 170.0,
+        "file": "audio/hd_2005_3.mp3",
+        "bytes": 177453,
+        "duration_sec": 11.294,
+        "clip_bars": 8,
+        "beat_sec": 0.35294,
+        "bar_sec": 1.41176,
+        "beat_phase_sec": 0.0,
+        "cue_sec": 0.0,
+        "rms_db": -9.35,
+        "gain_trim": 0.553
+      },
+      {
+        "id": "hd_2005_4",
+        "slot": 4,
+        "source": "archive",
+        "title": "White Morning",
+        "bpm": 150.01,
+        "file": "audio/hd_2005_4.mp3",
+        "bytes": 183242,
+        "duration_sec": 12.799,
+        "clip_bars": 8,
+        "beat_sec": 0.39997,
+        "bar_sec": 1.59989,
+        "beat_phase_sec": 0.0,
+        "cue_sec": 0.0,
+        "rms_db": -13.63,
+        "gain_trim": 0.905
+      },
+      {
+        "id": "hd_2005_5",
+        "slot": 5,
+        "source": "archive",
+        "title": "Clor — Wolf (Remix)",
+        "bpm": 108.66,
+        "file": "audio/hd_2005_5.mp3",
+        "bytes": 245043,
+        "duration_sec": 17.67,
+        "clip_bars": 8,
+        "beat_sec": 0.55218,
+        "bar_sec": 2.20872,
+        "beat_phase_sec": 0.0,
+        "cue_sec": 0.0,
+        "rms_db": -9.28,
+        "gain_trim": 0.55
+      }
+    ],
+    "bands_archive": [
+      {
+        "id": "bands_archive_1",
+        "slot": 1,
+        "source": "archive",
+        "title": "Infants — Foam Party",
+        "bpm": 97.5,
+        "file": "audio/bands_archive_1.mp3",
+        "bytes": 280189,
+        "duration_sec": 19.692,
+        "clip_bars": 8,
+        "beat_sec": 0.61538,
+        "bar_sec": 2.46154,
+        "beat_phase_sec": 0.0,
+        "cue_sec": 0.0,
+        "rms_db": -11.92,
+        "gain_trim": 0.743
+      },
+      {
+        "id": "bands_archive_2",
+        "slot": 2,
+        "source": "archive",
+        "title": "Infants — Dark Hoist",
+        "bpm": 86.0,
+        "file": "audio/bands_archive_2.mp3",
+        "bytes": 311002,
+        "duration_sec": 22.326,
+        "clip_bars": 8,
+        "beat_sec": 0.69767,
+        "bar_sec": 2.7907,
+        "beat_phase_sec": 0.0,
+        "cue_sec": 0.0,
+        "rms_db": -12.48,
+        "gain_trim": 0.793
+      },
+      {
+        "id": "bands_archive_3",
+        "slot": 3,
+        "source": "archive",
+        "title": "Real Feal — Shout",
+        "bpm": 94.01,
+        "file": "audio/bands_archive_3.mp3",
+        "bytes": 302389,
+        "duration_sec": 20.423,
+        "clip_bars": 8,
+        "beat_sec": 0.63823,
+        "bar_sec": 2.55292,
+        "beat_phase_sec": 0.0,
+        "cue_sec": 0.0,
+        "rms_db": -5.34,
+        "gain_trim": 0.55
+      },
+      {
+        "id": "bands_archive_4",
+        "slot": 4,
+        "source": "archive",
+        "title": "Feal Real — Theogen Disco",
+        "bpm": 90.0,
+        "file": "audio/bands_archive_4.mp3",
+        "bytes": 305444,
+        "duration_sec": 21.333,
+        "clip_bars": 8,
+        "beat_sec": 0.66667,
+        "bar_sec": 2.66667,
+        "beat_phase_sec": 0.0,
+        "cue_sec": 0.0,
+        "rms_db": -12.08,
+        "gain_trim": 0.757
+      },
+      {
+        "id": "bands_archive_5",
+        "slot": 5,
+        "source": "archive",
+        "title": "Spudboy — Drone 2 Static",
+        "bpm": 60.09,
+        "file": "audio/bands_archive_5.mp3",
+        "bytes": 383242,
+        "duration_sec": 15.976,
+        "clip_bars": 4,
+        "beat_sec": 0.9985,
+        "bar_sec": 3.99401,
+        "beat_phase_sec": 0.0,
+        "cue_sec": 0.0,
+        "rms_db": -17.08,
+        "gain_trim": 1.346
+      },
+      {
+        "id": "bands_archive_6",
+        "slot": 6,
+        "source": "archive",
+        "title": "Make It Thru",
+        "bpm": 142.0,
+        "file": "audio/bands_archive_6.mp3",
+        "bytes": 116849,
+        "duration_sec": 13.521,
+        "clip_bars": 8,
+        "beat_sec": 0.42254,
+        "bar_sec": 1.69014,
+        "beat_phase_sec": 0.0,
+        "cue_sec": 0.0,
+        "rms_db": -13.52,
+        "gain_trim": 0.893
+      }
+    ],
     "archive_2013_18": [
       {
         "id": "archive_2013_18_1",
@@ -18,7 +366,8 @@
         "beat_phase_sec": 0.0,
         "cue_sec": 0.0,
         "rms_db": -9.14,
-        "gain_trim": 0.55
+        "gain_trim": 0.55,
+        "source": "corpus"
       },
       {
         "id": "archive_2013_18_2",
@@ -34,7 +383,42 @@
         "beat_phase_sec": 0.0,
         "cue_sec": 0.0,
         "rms_db": -18.18,
-        "gain_trim": 1.35
+        "gain_trim": 1.35,
+        "source": "corpus"
+      },
+      {
+        "id": "archive_2013_18_3",
+        "slot": 3,
+        "source": "corpus",
+        "title": "Acid Avenger 01",
+        "bpm": 139.99,
+        "file": "audio/archive_2013_18_3.mp3",
+        "bytes": 187597,
+        "duration_sec": 13.715,
+        "clip_bars": 8,
+        "beat_sec": 0.4286,
+        "bar_sec": 1.71441,
+        "beat_phase_sec": 0.0,
+        "cue_sec": 0.0,
+        "rms_db": -13.34,
+        "gain_trim": 0.875
+      },
+      {
+        "id": "archive_2013_18_4",
+        "slot": 4,
+        "source": "corpus",
+        "title": "Italo",
+        "bpm": 56.18,
+        "file": "audio/archive_2013_18_4.mp3",
+        "bytes": 324920,
+        "duration_sec": 17.088,
+        "clip_bars": 4,
+        "beat_sec": 1.068,
+        "bar_sec": 4.27198,
+        "beat_phase_sec": 0.0,
+        "cue_sec": 0.0,
+        "rms_db": -12.79,
+        "gain_trim": 0.821
       }
     ],
     "nihon_forever": [
@@ -52,7 +436,8 @@
         "beat_phase_sec": 0.0,
         "cue_sec": 0.0,
         "rms_db": -17.54,
-        "gain_trim": 1.35
+        "gain_trim": 1.35,
+        "source": "corpus"
       },
       {
         "id": "nihon_forever_2",
@@ -68,7 +453,42 @@
         "beat_phase_sec": 0.0,
         "cue_sec": 0.0,
         "rms_db": -16.03,
-        "gain_trim": 1.193
+        "gain_trim": 1.193,
+        "source": "corpus"
+      },
+      {
+        "id": "nihon_forever_3",
+        "slot": 3,
+        "source": "corpus",
+        "title": "01 Korogi Song",
+        "bpm": 98.1,
+        "file": "audio/nihon_forever_3.mp3",
+        "bytes": 259264,
+        "duration_sec": 19.572,
+        "clip_bars": 8,
+        "beat_sec": 0.61162,
+        "bar_sec": 2.44648,
+        "beat_phase_sec": 0.0,
+        "cue_sec": 0.0,
+        "rms_db": -15.0,
+        "gain_trim": 1.06
+      },
+      {
+        "id": "nihon_forever_4",
+        "slot": 4,
+        "source": "corpus",
+        "title": "03 Shibuya Flyover",
+        "bpm": 135.25,
+        "file": "audio/nihon_forever_4.mp3",
+        "bytes": 193998,
+        "duration_sec": 14.196,
+        "clip_bars": 8,
+        "beat_sec": 0.44362,
+        "bar_sec": 1.77449,
+        "beat_phase_sec": 0.0,
+        "cue_sec": 0.0,
+        "rms_db": -14.47,
+        "gain_trim": 0.996
       }
     ],
     "ep_concepts": [
@@ -86,7 +506,8 @@
         "beat_phase_sec": 0.0,
         "cue_sec": 0.0,
         "rms_db": -18.06,
-        "gain_trim": 1.35
+        "gain_trim": 1.35,
+        "source": "corpus"
       },
       {
         "id": "ep_concepts_2",
@@ -102,7 +523,42 @@
         "beat_phase_sec": 0.0,
         "cue_sec": 0.0,
         "rms_db": -16.72,
-        "gain_trim": 1.291
+        "gain_trim": 1.291,
+        "source": "corpus"
+      },
+      {
+        "id": "ep_concepts_3",
+        "slot": 3,
+        "source": "corpus",
+        "title": "06 Olga",
+        "bpm": 59.99,
+        "file": "audio/ep_concepts_3.mp3",
+        "bytes": 216041,
+        "duration_sec": 16.003,
+        "clip_bars": 4,
+        "beat_sec": 1.00017,
+        "bar_sec": 4.00067,
+        "beat_phase_sec": 0.0,
+        "cue_sec": 0.0,
+        "rms_db": -17.15,
+        "gain_trim": 1.35
+      },
+      {
+        "id": "ep_concepts_4",
+        "slot": 4,
+        "source": "corpus",
+        "title": "TempleGong City",
+        "bpm": 132.0,
+        "file": "audio/ep_concepts_4.mp3",
+        "bytes": 160530,
+        "duration_sec": 14.545,
+        "clip_bars": 8,
+        "beat_sec": 0.45455,
+        "bar_sec": 1.81818,
+        "beat_phase_sec": 0.0,
+        "cue_sec": 0.0,
+        "rms_db": -21.45,
+        "gain_trim": 1.35
       }
     ],
     "le_garage": [
@@ -120,7 +576,8 @@
         "beat_phase_sec": 0.0,
         "cue_sec": 0.0,
         "rms_db": -8.63,
-        "gain_trim": 0.55
+        "gain_trim": 0.55,
+        "source": "corpus"
       },
       {
         "id": "le_garage_2",
@@ -136,7 +593,42 @@
         "beat_phase_sec": 0.0,
         "cue_sec": 0.0,
         "rms_db": -14.43,
-        "gain_trim": 0.992
+        "gain_trim": 0.992,
+        "source": "corpus"
+      },
+      {
+        "id": "le_garage_3",
+        "slot": 3,
+        "source": "corpus",
+        "title": "03 Tar'Hai Bells",
+        "bpm": 150.0,
+        "file": "audio/le_garage_3.mp3",
+        "bytes": 209987,
+        "duration_sec": 12.8,
+        "clip_bars": 8,
+        "beat_sec": 0.4,
+        "bar_sec": 1.6,
+        "beat_phase_sec": 0.0,
+        "cue_sec": 0.0,
+        "rms_db": -8.84,
+        "gain_trim": 0.55
+      },
+      {
+        "id": "le_garage_4",
+        "slot": 4,
+        "source": "corpus",
+        "title": "07 Major Grubert's Enlightenment",
+        "bpm": 150.0,
+        "file": "audio/le_garage_4.mp3",
+        "bytes": 189066,
+        "duration_sec": 12.8,
+        "clip_bars": 8,
+        "beat_sec": 0.4,
+        "bar_sec": 1.6,
+        "beat_phase_sec": 0.0,
+        "cue_sec": 0.0,
+        "rms_db": -17.48,
+        "gain_trim": 1.35
       }
     ],
     "psychedailies": [
@@ -154,7 +646,8 @@
         "beat_phase_sec": 0.0,
         "cue_sec": 0.0,
         "rms_db": -10.98,
-        "gain_trim": 0.667
+        "gain_trim": 0.667,
+        "source": "corpus"
       },
       {
         "id": "psychedailies_2",
@@ -170,7 +663,42 @@
         "beat_phase_sec": 0.0,
         "cue_sec": 0.0,
         "rms_db": -12.81,
-        "gain_trim": 0.824
+        "gain_trim": 0.824,
+        "source": "corpus"
+      },
+      {
+        "id": "psychedailies_3",
+        "slot": 3,
+        "source": "corpus",
+        "title": "26 Fell in Love",
+        "bpm": 140.29,
+        "file": "audio/psychedailies_3.mp3",
+        "bytes": 159548,
+        "duration_sec": 13.686,
+        "clip_bars": 8,
+        "beat_sec": 0.42769,
+        "bar_sec": 1.71074,
+        "beat_phase_sec": 0.0,
+        "cue_sec": 0.0,
+        "rms_db": -12.62,
+        "gain_trim": 0.805
+      },
+      {
+        "id": "psychedailies_4",
+        "slot": 4,
+        "source": "corpus",
+        "title": "05 Summon",
+        "bpm": 59.69,
+        "file": "audio/psychedailies_4.mp3",
+        "bytes": 210280,
+        "duration_sec": 16.083,
+        "clip_bars": 4,
+        "beat_sec": 1.00519,
+        "bar_sec": 4.02077,
+        "beat_phase_sec": 0.0,
+        "cue_sec": 0.0,
+        "rms_db": -15.67,
+        "gain_trim": 1.144
       }
     ],
     "archive_2018_23": [
@@ -188,7 +716,8 @@
         "beat_phase_sec": 0.0,
         "cue_sec": 0.0,
         "rms_db": -14.97,
-        "gain_trim": 1.056
+        "gain_trim": 1.056,
+        "source": "corpus"
       },
       {
         "id": "archive_2018_23_2",
@@ -204,7 +733,25 @@
         "beat_phase_sec": 0.0,
         "cue_sec": 0.0,
         "rms_db": -14.86,
-        "gain_trim": 1.042
+        "gain_trim": 1.042,
+        "source": "corpus"
+      },
+      {
+        "id": "archive_2018_23_3",
+        "slot": 3,
+        "source": "corpus",
+        "title": "Who Are We",
+        "bpm": 142.69,
+        "file": "audio/archive_2018_23_3.mp3",
+        "bytes": 199848,
+        "duration_sec": 13.456,
+        "clip_bars": 8,
+        "beat_sec": 0.42049,
+        "bar_sec": 1.68197,
+        "beat_phase_sec": 0.0,
+        "cue_sec": 0.0,
+        "rms_db": -19.01,
+        "gain_trim": 1.35
       }
     ],
     "spirit_guides": [
@@ -222,7 +769,8 @@
         "beat_phase_sec": 0.0,
         "cue_sec": 0.0,
         "rms_db": -18.65,
-        "gain_trim": 1.35
+        "gain_trim": 1.35,
+        "source": "corpus"
       },
       {
         "id": "spirit_guides_2",
@@ -238,7 +786,42 @@
         "beat_phase_sec": 0.0,
         "cue_sec": 0.0,
         "rms_db": -17.79,
-        "gain_trim": 1.35
+        "gain_trim": 1.35,
+        "source": "corpus"
+      },
+      {
+        "id": "spirit_guides_3",
+        "slot": 3,
+        "source": "corpus",
+        "title": "02 Forest of Mysteries",
+        "bpm": 60.09,
+        "file": "audio/spirit_guides_3.mp3",
+        "bytes": 223112,
+        "duration_sec": 15.976,
+        "clip_bars": 4,
+        "beat_sec": 0.9985,
+        "bar_sec": 3.99401,
+        "beat_phase_sec": 0.0,
+        "cue_sec": 0.0,
+        "rms_db": -15.87,
+        "gain_trim": 1.171
+      },
+      {
+        "id": "spirit_guides_4",
+        "slot": 4,
+        "source": "corpus",
+        "title": "05 Dark Night of the Soul",
+        "bpm": 58.73,
+        "file": "audio/spirit_guides_4.mp3",
+        "bytes": 222322,
+        "duration_sec": 16.346,
+        "clip_bars": 4,
+        "beat_sec": 1.02162,
+        "bar_sec": 4.0865,
+        "beat_phase_sec": 0.0,
+        "cue_sec": 0.0,
+        "rms_db": -16.26,
+        "gain_trim": 1.224
       }
     ],
     "lucid_crystal": [
@@ -256,7 +839,8 @@
         "beat_phase_sec": 0.0,
         "cue_sec": 0.0,
         "rms_db": -13.66,
-        "gain_trim": 0.907
+        "gain_trim": 0.907,
+        "source": "corpus"
       },
       {
         "id": "lucid_crystal_2",
@@ -272,7 +856,42 @@
         "beat_phase_sec": 0.0,
         "cue_sec": 0.0,
         "rms_db": -15.46,
-        "gain_trim": 1.117
+        "gain_trim": 1.117,
+        "source": "corpus"
+      },
+      {
+        "id": "lucid_crystal_3",
+        "slot": 3,
+        "source": "corpus",
+        "title": "02 Chromacolor",
+        "bpm": 120.01,
+        "file": "audio/lucid_crystal_3.mp3",
+        "bytes": 231583,
+        "duration_sec": 15.999,
+        "clip_bars": 8,
+        "beat_sec": 0.49996,
+        "bar_sec": 1.99983,
+        "beat_phase_sec": 0.0,
+        "cue_sec": 0.0,
+        "rms_db": -12.58,
+        "gain_trim": 0.801
+      },
+      {
+        "id": "lucid_crystal_4",
+        "slot": 4,
+        "source": "corpus",
+        "title": "04 Procession of Eternal Gratitude",
+        "bpm": 64.6,
+        "file": "audio/lucid_crystal_4.mp3",
+        "bytes": 445720,
+        "duration_sec": 29.721,
+        "clip_bars": 8,
+        "beat_sec": 0.92879,
+        "bar_sec": 3.71517,
+        "beat_phase_sec": 0.0,
+        "cue_sec": 0.0,
+        "rms_db": -14.59,
+        "gain_trim": 1.01
       }
     ],
     "remixes_commissions": [
@@ -290,7 +909,8 @@
         "beat_phase_sec": 0.0,
         "cue_sec": 0.0,
         "rms_db": -10.14,
-        "gain_trim": 0.605
+        "gain_trim": 0.605,
+        "source": "corpus"
       },
       {
         "id": "remixes_commissions_2",
@@ -306,7 +926,25 @@
         "beat_phase_sec": 0.0,
         "cue_sec": 0.0,
         "rms_db": -10.0,
-        "gain_trim": 0.596
+        "gain_trim": 0.596,
+        "source": "corpus"
+      },
+      {
+        "id": "remixes_commissions_3",
+        "slot": 3,
+        "source": "corpus",
+        "title": "Te Vaka — Tatao (Remix)",
+        "bpm": 162.0,
+        "file": "audio/remixes_commissions_3.mp3",
+        "bytes": 191312,
+        "duration_sec": 11.852,
+        "clip_bars": 8,
+        "beat_sec": 0.37037,
+        "bar_sec": 1.48148,
+        "beat_phase_sec": 0.0,
+        "cue_sec": 0.0,
+        "rms_db": -10.85,
+        "gain_trim": 0.657
       }
     ],
     "sketches_2024_25": [
@@ -324,7 +962,8 @@
         "beat_phase_sec": 0.0,
         "cue_sec": 0.0,
         "rms_db": -31.94,
-        "gain_trim": 1.35
+        "gain_trim": 1.35,
+        "source": "corpus"
       },
       {
         "id": "sketches_2024_25_2",
@@ -340,7 +979,42 @@
         "beat_phase_sec": 0.0,
         "cue_sec": 0.0,
         "rms_db": -15.2,
-        "gain_trim": 1.084
+        "gain_trim": 1.084,
+        "source": "corpus"
+      },
+      {
+        "id": "sketches_2024_25_3",
+        "slot": 3,
+        "source": "corpus",
+        "title": "Afro Retro",
+        "bpm": 130.0,
+        "file": "audio/sketches_2024_25_3.mp3",
+        "bytes": 198368,
+        "duration_sec": 14.769,
+        "clip_bars": 8,
+        "beat_sec": 0.46154,
+        "bar_sec": 1.84615,
+        "beat_phase_sec": 0.0,
+        "cue_sec": 0.0,
+        "rms_db": -19.43,
+        "gain_trim": 1.35
+      },
+      {
+        "id": "sketches_2024_25_4",
+        "slot": 4,
+        "source": "corpus",
+        "title": "Techno Idea 02",
+        "bpm": 124.0,
+        "file": "audio/sketches_2024_25_4.mp3",
+        "bytes": 245974,
+        "duration_sec": 15.484,
+        "clip_bars": 8,
+        "beat_sec": 0.48387,
+        "bar_sec": 1.93548,
+        "beat_phase_sec": 0.0,
+        "cue_sec": 0.0,
+        "rms_db": -10.14,
+        "gain_trim": 0.605
       }
     ],
     "ecstatic_wave": [
@@ -358,7 +1032,8 @@
         "beat_phase_sec": 0.0,
         "cue_sec": 0.0,
         "rms_db": -15.14,
-        "gain_trim": 1.077
+        "gain_trim": 1.077,
+        "source": "corpus"
       },
       {
         "id": "ecstatic_wave_2",
@@ -374,7 +1049,42 @@
         "beat_phase_sec": 0.0,
         "cue_sec": 0.0,
         "rms_db": -10.41,
-        "gain_trim": 0.624
+        "gain_trim": 0.624,
+        "source": "corpus"
+      },
+      {
+        "id": "ecstatic_wave_3",
+        "slot": 3,
+        "source": "corpus",
+        "title": "Afro 06",
+        "bpm": 121.99,
+        "file": "audio/ecstatic_wave_3.mp3",
+        "bytes": 239469,
+        "duration_sec": 15.739,
+        "clip_bars": 8,
+        "beat_sec": 0.49184,
+        "bar_sec": 1.96737,
+        "beat_phase_sec": 0.0,
+        "cue_sec": 0.0,
+        "rms_db": -16.37,
+        "gain_trim": 1.24
+      },
+      {
+        "id": "ecstatic_wave_4",
+        "slot": 4,
+        "source": "corpus",
+        "title": "Great Spirit 01",
+        "bpm": 74.66,
+        "file": "audio/ecstatic_wave_4.mp3",
+        "bytes": 332790,
+        "duration_sec": 25.717,
+        "clip_bars": 8,
+        "beat_sec": 0.80364,
+        "bar_sec": 3.21457,
+        "beat_phase_sec": 0.0,
+        "cue_sec": 0.0,
+        "rms_db": -16.57,
+        "gain_trim": 1.269
       }
     ],
     "sketches_2026": [
@@ -392,7 +1102,8 @@
         "beat_phase_sec": 0.0,
         "cue_sec": 0.0,
         "rms_db": -8.73,
-        "gain_trim": 0.55
+        "gain_trim": 0.55,
+        "source": "corpus"
       },
       {
         "id": "sketches_2026_2",
@@ -408,7 +1119,42 @@
         "beat_phase_sec": 0.0,
         "cue_sec": 0.0,
         "rms_db": -14.93,
-        "gain_trim": 1.051
+        "gain_trim": 1.051,
+        "source": "corpus"
+      },
+      {
+        "id": "sketches_2026_3",
+        "slot": 3,
+        "source": "corpus",
+        "title": "Mya Moody Banger",
+        "bpm": 90.0,
+        "file": "audio/sketches_2026_3.mp3",
+        "bytes": 232502,
+        "duration_sec": 21.333,
+        "clip_bars": 8,
+        "beat_sec": 0.66667,
+        "bar_sec": 2.66667,
+        "beat_phase_sec": 0.0,
+        "cue_sec": 0.0,
+        "rms_db": -26.87,
+        "gain_trim": 1.35
+      },
+      {
+        "id": "sketches_2026_4",
+        "slot": 4,
+        "source": "corpus",
+        "title": "Journey Domi 03",
+        "bpm": 120.0,
+        "file": "audio/sketches_2026_4.mp3",
+        "bytes": 172924,
+        "duration_sec": 16.0,
+        "clip_bars": 8,
+        "beat_sec": 0.5,
+        "bar_sec": 2.0,
+        "beat_phase_sec": 0.0,
+        "cue_sec": 0.0,
+        "rms_db": -14.12,
+        "gain_trim": 0.957
       }
     ]
   }

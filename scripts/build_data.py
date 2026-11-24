@@ -1,29 +1,37 @@
 #!/usr/bin/env python3
-"""Pure-stdlib data builder for the Bill-Music Evolution Explorer web app.
+"""Pure-stdlib data builder for the Music Evolution Explorer web app.
 
-Reads precomputed corpus distributions and deduplicated MIDI clip JSONs from
-~/.agents/skills/bill-music/assets and emits a clean, self-contained data.js
-with zero local filesystem paths.
+Reads precomputed corpus distributions, deduplicated MIDI clip JSONs,
+Mixed In Key + DSP macro analysis (scripts/track_analysis.json), and
+audio_manifest.json, emitting js/data.js with zero local filesystem paths.
 """
 
 from __future__ import annotations
 
 import json
+import statistics
 from collections import Counter, defaultdict
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parent.parent
 ASSETS_DIR = Path.home() / ".agents" / "skills" / "bill-music" / "assets"
-OUT_JS = ROOT / "data.js"
+OUT_JS = ROOT / "js" / "data.js"
 
 PHASE_META = [
+    ("phase0_archive", "Phase 0: Archive", "P0 Archive", "2001–2014", "Early DAWs & Bands"),
     ("phase1_early", "Phase 1: Early", "P1 Early", "2013–2018", "Live 8–10"),
     ("phase2_mid", "Phase 2: Mid", "P2 Mid", "2018–2022", "Live 10"),
     ("phase3_ambient", "Phase 3: Ambient", "P3 Ambient", "2020–2024", "Live 10→12"),
     ("phase4_recent", "Phase 4: Recent", "P4 Recent", "2024–2026", "Live 12"),
 ]
 
+ARCHIVE_ERAS = ["present_ambient", "present_electro", "hd_2005", "bands_archive"]
+
 ERA_META = [
+    ("present_ambient", "Present Ambient", "Pres Amb", "2001–12", "phase0_archive", "P0", "Early ambient sketches"),
+    ("present_electro", "Present Electro", "Pres Elec", "2003–12", "phase0_archive", "P0", "Early electro & chiptune"),
+    ("hd_2005", "2005 Hard Drive", "2005 HD", "2005–10", "phase0_archive", "P0", "Archival bounces & mixes"),
+    ("bands_archive", "Early Bands", "Bands", "2006–14", "phase0_archive", "P0", "Infants, Real Feal, Spudboy"),
     ("archive_2013_18", "Archive 13–18", "Arch 13", "2013–18", "phase1_early", "P1", ""),
     ("nihon_forever", "Nihon Forever", "Nihon", "~2015–17", "phase1_early", "P1", ""),
     ("ep_concepts", "EP Concepts", "EP Conc", "~2016–18", "phase1_early", "P1", "Includes 'Le Garage ≤2018' folder"),
@@ -566,6 +574,150 @@ def extract_item(
     return out
 
 
+def compute_macro_harmony(t_list: list[dict]) -> dict:
+    if not t_list:
+        return {
+            "complexity": 0.0,
+            "chord_richness": 0.0,
+            "harmonic_motion": 0.0,
+            "modal_darkness": 0.0,
+            "microtonal": 0.0,
+            "mik_energy_med": 0.0,
+            "mik_energy_max": 0,
+            "drum_complexity_med": 0.0,
+            "drum_pulse_med": 0.0,
+            "n_analyzed": 0,
+        }
+    return {
+        "complexity": round(statistics.median(t["harmonic_complexity"] for t in t_list), 1),
+        "chord_richness": round(statistics.median(t["chord_richness"] for t in t_list), 1),
+        "harmonic_motion": round(statistics.median(t["harmonic_motion"] for t in t_list), 1),
+        "modal_darkness": round(statistics.median(t["modal_darkness"] for t in t_list), 1),
+        "microtonal": round(statistics.median(t["microtonal_score"] for t in t_list), 1),
+        "mik_energy_med": round(statistics.median(t["energy"] for t in t_list), 1),
+        "mik_energy_max": int(max(t["energy"] for t in t_list)),
+        "drum_complexity_med": round(statistics.median(t["drum_complexity"] for t in t_list), 1),
+        "drum_pulse_med": round(statistics.median(t.get("drum_pulse", 0.0) for t in t_list), 1),
+        "n_analyzed": len(t_list),
+    }
+
+
+def extract_archive_item(
+    key: str,
+    label: str,
+    short_label: str,
+    sublabel: str,
+    t_list: list[dict],
+    extra: dict | None = None,
+) -> dict:
+    bpms = sorted(float(t["bpm"]) for t in t_list)
+    n = len(bpms)
+    p25 = round(bpms[max(0, int((n - 1) * 0.25))], 1) if n else None
+    p50 = round(statistics.median(bpms), 1) if n else None
+    p75 = round(bpms[min(n - 1, int((n - 1) * 0.75))], 1) if n else None
+
+    deg_avg = [0.0] * 12
+    for t in t_list:
+        sd = t.get("scale_deg_12") or [0.0] * 12
+        for i in range(12):
+            deg_avg[i] += float(sd[i])
+    deg_tot = sum(deg_avg) or 1.0
+    combined_12 = [round(v * 100.0 / deg_tot, 1) for v in deg_avg]
+
+    roots_cnt: Counter = Counter()
+    minor_cnt = 0
+    for t in t_list:
+        raw_key = str(t.get("key_label", "C")).split(" (")[0].strip()
+        if raw_key.endswith("m"):
+            minor_cnt += 1
+            tonic = raw_key[:-1]
+        else:
+            tonic = raw_key
+        tonic = ENHARMONIC.get(tonic, tonic)
+        if tonic in COF_ORDER:
+            roots_cnt[tonic] += 1
+    roots_12 = [roots_cnt.get(k, 0) for k in COF_ORDER]
+
+    dark_pct = round(minor_cnt * 100.0 / max(1, n), 1)
+    bright_pct = round(100.0 - dark_pct, 1)
+    mean_micro = round(statistics.mean(t["microtonal_score"] for t in t_list), 1) if t_list else 0.0
+    macro = compute_macro_harmony(t_list)
+
+    out = {
+        "id": key,
+        "label": label,
+        "shortLabel": short_label,
+        "sublabel": sublabel,
+        "archive_only": True,
+        "projects": 0,
+        "midi_pitched_clips": 0,
+        "midi_drum_clips": 0,
+        "midi_pitched_notes": 0,
+        "audio_files": n,
+        "audio_notes": 0,
+        "audio_phrases": 0,
+        "midi_tracks_med": None,
+        "audio_tracks_med": None,
+        "minutes_med": None,
+        "bpm_p25": p25,
+        "bpm_p50": p50,
+        "bpm_p75": p75,
+        "quant_pitched_pct": None,
+        "quant_bass_pct": None,
+        "quant_drum_pct": None,
+        "jitter_ms": None,
+        "vel_std": None,
+        "syncopation_pct": None,
+        "lead_midi_p50": None,
+        "audio_midi_p50": None,
+        "bass_midi_p50": None,
+        "lead_step_pct": None,
+        "lead_gapfill_pct": None,
+        "lead_rest_pct": None,
+        "audio_rest_pct": None,
+        "dyad_pct": None,
+        "triad_pct": None,
+        "ext4_pct": None,
+        "voicing_span_st": None,
+        "dark_modal_pct": dark_pct,
+        "harm_min_pct": 0.0,
+        "bright_modal_pct": bright_pct,
+        "top_modes_midi": [],
+        "top_modes_audio": ["Minor" if minor_cnt >= n / 2 else "Major"],
+        "audio_legato_pct": None,
+        "midi_legato_pct": None,
+        "audio_vib_cents": None,
+        "audio_glide_cents": None,
+        "audio_step_pct": None,
+        "audio_sources": {},
+        "top_inst": [],
+        "top_fx": [],
+        "fine_harmony": {},
+        "voicing_register": {},
+        "root_motion": {},
+        "scale_degrees": {
+            "labels": DEGREE_LABELS,
+            "midi_12": [0.0] * 12,
+            "audio_12": combined_12,
+            "combined_12": combined_12,
+        },
+        "key_roots": {"order": COF_ORDER, "counts": roots_12},
+        "microtonal": {
+            "tuning_offset_p50": None,
+            "tuning_offset_p75": None,
+            "tuning_offset_mean": None,
+            "ji_retune_projects": 0,
+            "gamelan_projects": 0,
+            "distinct_projects": 0,
+            "evidence": [f"Pre-2013 audio archive ({n} tracks, mean microtonal shimmer {mean_micro})"],
+        },
+        "macro_harmony": macro,
+    }
+    if extra:
+        out.update(extra)
+    return out
+
+
 def main() -> None:
     midi = json.loads((ASSETS_DIR / "style_distributions.json").read_text(encoding="utf-8"))
     audio = json.loads((ASSETS_DIR / "audio_style_distributions.json").read_text(encoding="utf-8"))
@@ -573,7 +725,29 @@ def main() -> None:
 
     manifest_path = ROOT / "scripts" / "audio_manifest.json"
     audio_manifest = json.loads(manifest_path.read_text(encoding="utf-8")) if manifest_path.exists() else {}
-    tracks_by_era = audio_manifest.get("tracks_by_era", {})
+    raw_by_era = audio_manifest.get("tracks_by_era", {})
+    man_by_id = {
+        item["id"]: item
+        for lst in raw_by_era.values()
+        for item in lst
+    }
+
+    analysis_path = ROOT / "scripts" / "track_analysis.json"
+    ta = json.loads(analysis_path.read_text(encoding="utf-8")) if analysis_path.exists() else {}
+    ta_by_id = {t["id"]: t for t in ta.get("tracks", [])}
+
+    merged_tracks: list[dict] = []
+    tracks_by_era: dict[str, list[dict]] = defaultdict(list)
+    era_order_list = [e[0] for e in ERA_META]
+    for eid in era_order_list:
+        for m_item in raw_by_era.get(eid, []):
+            tid = m_item["id"]
+            a_item = ta_by_id.get(tid, {})
+            merged = dict(a_item)
+            merged.update(m_item)
+            merged["era"] = eid
+            merged_tracks.append(merged)
+            tracks_by_era[eid].append(merged)
 
     projects_by_era: dict[str, list[dict]] = defaultdict(list)
     for jf in sorted((ASSETS_DIR / "extracted").rglob("*.json")):
@@ -582,8 +756,30 @@ def main() -> None:
 
     phases_out = []
     for pkey, plabel, pshort, pyears, pdaw in PHASE_META:
+        if pkey == "phase0_archive":
+            eras_list = list(ARCHIVE_ERAS)
+            p_tracks = [t for e in eras_list for t in tracks_by_era[e]]
+            p_rep_tracks = []
+            for idx_e, e in enumerate(eras_list):
+                if tracks_by_era.get(e):
+                    t0 = dict(tracks_by_era[e][0])
+                    t0["slot"] = idx_e + 1
+                    p_rep_tracks.append(t0)
+            phases_out.append(
+                extract_archive_item(
+                    pkey,
+                    plabel,
+                    pshort,
+                    pyears,
+                    p_tracks,
+                    extra={"daw": pdaw, "note": "Pre-2013 audio bounces & bands", "tracks": p_rep_tracks},
+                )
+            )
+            continue
+
         eras_list = phase_map[pkey]
         p_projects = [proj for e in eras_list for proj in projects_by_era[e]]
+        p_all_tracks = [t for e in eras_list for t in tracks_by_era[e]]
         p_tracks = []
         for idx_e, e in enumerate(eras_list):
             if tracks_by_era.get(e):
@@ -600,12 +796,30 @@ def main() -> None:
                 audio["phases"].get(pkey),
                 p_projects,
                 eras_in_phase=eras_list,
-                extra={"daw": pdaw, "note": "", "tracks": p_tracks},
+                extra={
+                    "daw": pdaw,
+                    "note": "",
+                    "tracks": p_tracks,
+                    "macro_harmony": compute_macro_harmony(p_all_tracks),
+                },
             )
         )
 
     eras_out = []
     for ekey, elabel, eshort, eyears, ephase, ptag, enote in ERA_META:
+        e_tracks = tracks_by_era.get(ekey, [])
+        if ekey in ARCHIVE_ERAS:
+            eras_out.append(
+                extract_archive_item(
+                    ekey,
+                    elabel,
+                    eshort,
+                    eyears,
+                    e_tracks,
+                    extra={"phase": ephase, "phaseTag": ptag, "note": enote, "tracks": e_tracks},
+                )
+            )
+            continue
         eras_out.append(
             extract_item(
                 ekey,
@@ -616,7 +830,13 @@ def main() -> None:
                 audio["eras"].get(ekey),
                 projects_by_era[ekey],
                 eras_in_phase=None,
-                extra={"phase": ephase, "phaseTag": ptag, "note": enote, "tracks": tracks_by_era.get(ekey, [])},
+                extra={
+                    "phase": ephase,
+                    "phaseTag": ptag,
+                    "note": enote,
+                    "tracks": e_tracks,
+                    "macro_harmony": compute_macro_harmony(e_tracks),
+                },
             )
         )
 
@@ -626,21 +846,29 @@ def main() -> None:
             "total_midi_clips": 1543,
             "total_pitched_audio_files": 448,
             "total_pitched_audio_notes": 36761,
+            "total_map_tracks": len(merged_tracks),
+            "silhouette": ta.get("silhouette", 0.0),
             "tuning_scales": TUNING_SCALES,
             "cof_order": COF_ORDER,
             "degree_labels": DEGREE_LABELS,
             "fine_harmony_keys": FINE_HARMONY_KEYS,
+            "style_groups": ta.get("style_groups", []),
+            "era_anchors": ta.get("era_anchors", []),
+            "track_near": ta.get("track_near", {}),
+            "track_map": ta.get("track_map", {}),
         },
+        "tracks": merged_tracks,
         "phases": phases_out,
         "eras": eras_out,
     }
 
+    OUT_JS.parent.mkdir(parents=True, exist_ok=True)
     js_text = (
-        "// Auto-generated from Bill-Music main project corpus distributions.\n"
+        "// Auto-generated corpus, archive, MIK energy, macro harmony & node map data.\n"
         f"window.CORPUS_DATA = {json.dumps(payload, separators=(',', ':'), ensure_ascii=False)};\n"
     )
     OUT_JS.write_text(js_text, encoding="utf-8")
-    print(f"Wrote {OUT_JS} ({len(js_text):,} bytes)")
+    print(f"Wrote {OUT_JS} ({len(js_text):,} bytes, {len(merged_tracks)} tracks, {len(eras_out)} eras, {len(phases_out)} phases)")
 
 
 if __name__ == "__main__":
