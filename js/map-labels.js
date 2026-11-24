@@ -366,21 +366,34 @@
       const clampY = (y) => Math.max(hh + 10, Math.min(vh - hh - 10, y));
       const maxRad = zoomed ? 220 : (isWide ? 96 : 56);
 
+      const anchorTopX = zoomed ? topX : mx;
+      const anchorMinY = zoomed ? minY : cMinY;
+      const anchorMaxY = zoomed ? maxY : cMaxY;
+
       const cands = [
-        [topX, minY - hh - 7],
-        [mx, minY - hh - 7],
+        [anchorTopX, anchorMinY - hh - 7],
         [mx, cMinY - hh - 9],
         [cMaxX + hw * 0.45, cMinY - hh - 6],
-        [mx, cMaxY + hh + 8],
-        [mx, maxY + hh + 8],
+        [mx, anchorMaxY + hh + 8],
         [cMinX - hw - 6, my],
         [cMaxX + hw + 6, my],
       ];
+      for (let ui = 0; ui < uiBoxes.length; ui++) {
+        const ub = uiBoxes[ui];
+        if (my >= ub[1] - 12 && mx >= ub[0] - 32 && mx <= ub[2] + 32) {
+          const aboveCardY = ub[1] - hh - 8;
+          if (aboveCardY >= cMinY - 56 && aboveCardY <= cMaxY + 32) {
+            cands.push([mx, aboveCardY]);
+            cands.push([cMinX, aboveCardY]);
+            cands.push([cMaxX, aboveCardY]);
+          }
+        }
+      }
       RINGS.forEach((rad) => {
         if (rad > maxRad) return;
         ANGLES.forEach((ang) => {
           cands.push([mx + Math.cos(ang) * rad * 1.15, my + Math.sin(ang) * rad]);
-          cands.push([topX + Math.cos(ang) * rad * 1.1, minY + Math.sin(ang) * rad]);
+          cands.push([anchorTopX + Math.cos(ang) * rad * 1.1, anchorMinY + Math.sin(ang) * rad]);
         });
       });
 
@@ -412,7 +425,10 @@
         if (zoomed && dotCost > 0) continue;
 
         const distCore = Math.hypot(cx - mx, cy - my);
-        if (!zoomed && distCore > (isWide ? 150 : 80)) continue;
+        const dxCoreBox = cx < cMinX ? cMinX - cx : (cx > cMaxX ? cx - cMaxX : 0);
+        const dyCoreBox = cy < cMinY ? cMinY - cy : (cy > cMaxY ? cy - cMaxY : 0);
+        const distCoreBox = Math.hypot(dxCoreBox, dyCoreBox);
+        if (!zoomed && (distCore > (isWide ? 150 : 105) || distCoreBox > (isWide ? 95 : 56))) continue;
         let score =
           ownD * 1.2 +
           distCore * (isWide || zoomed ? 0.6 : 1.9) +
@@ -425,10 +441,7 @@
         }
       }
 
-      if (!best) {
-        if (zoomed) return;
-        best = [clampX(mx), clampY(minY - hh - 8)];
-      }
+      if (!best) return;
 
       placedFam.push([best[0] - hw - 6, best[1] - hh - 4, best[0] + hw + 6, best[1] + hh + 4]);
 
