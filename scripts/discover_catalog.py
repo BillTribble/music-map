@@ -48,6 +48,9 @@ EXCLUDED_DIR_NAMES = {
     "^ export medicine set 2023",
     "dj mixes",
     "reference tracks mastering",
+    "woodlands contributions",
+    "uridium",
+    "guitar sketches",
 }
 EXCLUDED_PATH_SUBSTRS = (
     "jomtones rules",
@@ -61,6 +64,19 @@ EXCLUDED_PATH_SUBSTRS = (
     "infants - first jam",
     "00 live samsara bitwig/recordings",
     "^ export medicine set 2023",
+    "diva-house",
+    "09 woodlands - ut 1",
+    "subtropic",
+    "03 kiosk - track 3",
+    "dj arry",
+    "selling_demo",
+    "urid-samples",
+    "afrobeat drums and amapiano bass",
+    "luca singing accidents happen",
+    "pansexual ritual",
+    "metally riff",
+    "pavementish",
+    "take it back vox idea",
 )
 EXCLUDED_FILE_TOKENS = ("stem", "backing", "drumloop")
 EXCLUDED_EXACT_FILES = {"bass.wav", "vocals.wav", "perc.wav", "other.wav"}
