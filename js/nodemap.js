@@ -21,6 +21,8 @@
     "--md-sys-color-cluster-5",
     "--md-sys-color-cluster-6",
     "--md-sys-color-cluster-7",
+    "--md-sys-color-cluster-8",
+    "--md-sys-color-cluster-9",
   ];
   const PHASE_VARS = {
     phase0_archive: "--md-sys-color-cluster-4",
@@ -341,7 +343,7 @@
     const sx = Number.isFinite(hn.px) ? hn.px : hn.x * zoom.k + zoom.x;
     const sy = Number.isFinite(hn.py) ? hn.py : hn.y * zoom.k + zoom.y;
     const r = nodeScreenRadius(hn.t);
-    hoverPill.textContent = hn.t.title;
+    hoverPill.textContent = hn.t.discogs_top ? `${hn.t.title} · ${hn.t.discogs_top}` : hn.t.title;
     hoverPill.style.left = `${sx.toFixed(1)}px`;
     hoverPill.style.top = `${Math.max(44, sy - r - 12).toFixed(1)}px`;
     hoverPill.hidden = false;
