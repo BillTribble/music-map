@@ -1,8 +1,8 @@
-# Bill-Music Evolution Explorer
+# Bill Tribble Music Map
 
 Interactive static web application visualizing how Bill's music-making evolved from 2013 to 2026 across **229 unique projects** (`1,543` deduplicated MIDI clips and `448` FFT-YIN pitched audio parts).
 
-- **Live site:** https://billtribble.github.io/music-evolution/
+- **Live site:** https://billtribble.github.io/music-map/
 - **Stack:** Vanilla HTML / CSS / SVG / WebAudio (`data.js` built from corpus JSON distributions using pure Python 3 stdlib; zero external CDNs).
 
 ## Interactive Views
