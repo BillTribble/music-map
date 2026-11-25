@@ -138,16 +138,16 @@
     const xC = (i) => padL + colW * (i + 0.5);
     const selX = padL + colW * selIdx;
     let out = `<rect x="${(selX + 2).toFixed(1)}" y="${padT}" width="${Math.max(4, colW - 4).toFixed(1)}" height="${plotH}" rx="4" fill="var(--primary)" fill-opacity="0.11" stroke="var(--primary)" stroke-opacity="${state.hoverIdx !== null ? 0.45 : 0.78}" stroke-width="1.2" />`;
-    const narrow = colW < 42;
+    const narrow = colW < 76;
     items.forEach((d, i) => {
       const cx = xC(i);
       const isSel = i === selIdx;
       const lbl = state.granularity === "phases" ? d.shortLabel : d.shortLabel;
       if (narrow) {
         const yAng = padT + plotH + 14;
-        out += `<text x="${(cx + 2).toFixed(1)}" y="${yAng.toFixed(1)}" text-anchor="end" transform="rotate(-28 ${(cx + 2).toFixed(1)} ${yAng.toFixed(1)})" font-size="10" font-weight="${isSel ? "700" : "500"}" fill="${isSel ? "var(--fg)" : "var(--fg-muted)"}">${esc(lbl)}</text>`;
+        out += `<text class="chart-xlab" x="${(cx + 3).toFixed(1)}" y="${yAng.toFixed(1)}" text-anchor="end" transform="rotate(-32 ${(cx + 3).toFixed(1)} ${yAng.toFixed(1)})" font-size="10" font-weight="${isSel ? "700" : "500"}" fill="${isSel ? "var(--fg)" : "var(--fg-muted)"}">${esc(lbl)}</text>`;
       } else {
-        out += `<text x="${cx.toFixed(1)}" y="${H - 8}" text-anchor="middle" font-size="11" font-weight="${isSel ? "700" : "500"}" fill="${isSel ? "var(--fg)" : "var(--fg-muted)"}">${esc(lbl)}</text>`;
+        out += `<text class="chart-xlab" x="${cx.toFixed(1)}" y="${H - 8}" text-anchor="middle" font-size="11" font-weight="${isSel ? "700" : "500"}" fill="${isSel ? "var(--fg)" : "var(--fg-muted)"}">${esc(lbl)}</text>`;
       }
       out += `<rect data-era-idx="${i}" x="${(padL + colW * i).toFixed(1)}" y="${padT}" width="${colW.toFixed(1)}" height="${plotH + 34}" fill="transparent" style="cursor:pointer"><title>${esc(d.label)} (${esc(d.sublabel)})</title></rect>`;
     });
@@ -287,10 +287,10 @@
   }
 
   function renderMacroHarmony(items, d, selIdx, state, playId) {
-    const insight = "Macro harmonic complexity (chord richness + chord motion + modal darkness) alongside Mixed In Key energy (1–10) and drum complexity across all 16 eras.";
+    const insight = `Macro harmonic complexity (chord richness + chord motion + modal darkness) alongside Mixed In Key energy (1–10) and drum complexity across all ${items.length} ${state.granularity}.`;
     const W = Math.max(460, measureStageWidth("mh-stage-wrap", 960));
     const H = items.length > 8 ? 316 : 300;
-    const padL = 44, padR = 44, padT = state.granularity === "eras" ? 26 : 16, padB = items.length > 8 ? 44 : 28;
+    const padL = 44, padR = 44, padT = state.granularity === "eras" ? 26 : 16, padB = items.length > 8 ? 54 : 28;
     const plotW = W - padL - padR, plotH = H - padT - padB;
     const colW = plotW / items.length;
     const xC = (i) => padL + colW * (i + 0.5);
@@ -360,12 +360,12 @@
   }
 
   function renderTimelinePlayer(sorted, state) {
-    const insight = "Press Play for bar-quantized tracks synced across all 16 eras — or scrub and hold on any era to switch on the downbeat.";
+    const insight = `Press Play for bar-quantized tracks synced across all ${sorted.length} eras — or scrub and hold on any era to switch on the downbeat.`;
     const barBtns = [2, 4, 8, 0].map((v) =>
       `<button type="button" data-sub="barsPerEra:${v}" class="btn-chip ${Number(state.barsPerEra) === v ? "is-active" : ""}">${v ? `${v} bars` : "Hold"}</button>`
     ).join("");
     const sortOpts = [
-      { id: "chrono", label: "Chronological (2001–2026)" },
+      { id: "chrono", label: "Chronological (1997–2026)" },
       { id: "energy", label: "MIK energy (1–10)" },
       { id: "harmonic", label: "Harmonic complexity" },
       { id: "drums", label: "Drum complexity" },
@@ -441,7 +441,7 @@
       <button type="button" data-sub="chordMode:count" class="btn-chip ${state.chordMode === "count" ? "is-active" : ""}">Chord count</button>`;
     const W = Math.max(420, measureStageWidth("cq-stage-wrap", 620));
     const H = items.length > 8 ? 316 : 300;
-    const padL = 46, padR = 16, padT = state.granularity === "eras" ? 26 : 16, padB = items.length > 8 ? 44 : 28;
+    const padL = 46, padR = 16, padT = state.granularity === "eras" ? 26 : 16, padB = items.length > 8 ? 54 : 28;
     const plotW = W - padL - padR, plotH = H - padT - padB;
     const colW = plotW / items.length;
     const xC = (i) => padL + colW * (i + 0.5);
@@ -494,7 +494,7 @@
     const insight = "Root progression DNA evolved from Nihon's ±1 semitone Phrygian slides and Le Garage mediants to Spirit Guides whole-step planing and 4th/5th gravity.";
     const W = Math.max(380, measureStageWidth("rm-stage-wrap", 540));
     const H = items.length > 8 ? 316 : 300;
-    const padL = 44, padR = 44, padT = state.granularity === "eras" ? 26 : 16, padB = items.length > 8 ? 44 : 28;
+    const padL = 44, padR = 44, padT = state.granularity === "eras" ? 26 : 16, padB = items.length > 8 ? 54 : 28;
     const plotW = W - padL - padR, plotH = H - padT - padB;
     const colW = plotW / items.length;
     const xC = (i) => padL + colW * (i + 0.5);
@@ -605,7 +605,7 @@
       <button type="button" data-sub="voicingMode:span" class="btn-chip ${state.voicingMode === "span" ? "is-active" : ""}">Semitone span</button>`;
     const W = Math.max(460, measureStageWidth("vs-stage-wrap", 960));
     const H = items.length > 8 ? 316 : 300;
-    const padL = 62, padR = 24, padT = state.granularity === "eras" ? 26 : 16, padB = items.length > 8 ? 44 : 28;
+    const padL = 62, padR = 24, padT = state.granularity === "eras" ? 26 : 16, padB = items.length > 8 ? 54 : 28;
     const plotW = W - padL - padR, plotH = H - padT - padB;
     const colW = plotW / items.length;
     const xC = (i) => padL + colW * (i + 0.5);
@@ -652,7 +652,7 @@
       `<button type="button" data-sub="tuningScaleId:${s.id}" class="btn-chip ${s.id === sc.id ? "is-active" : ""}">${esc(s.label || s.name || scaleNames[s.id] || s.id)}</button>`
     ).join("");
     const W = Math.max(360, measureStageWidth("ji-stage-wrap", 540));
-    const H = items.length > 8 ? 290 : 265, padL = 36, padR = 44, padT = state.granularity === "eras" ? 24 : 16, padB = items.length > 8 ? 44 : 28;
+    const H = items.length > 8 ? 290 : 265, padL = 36, padR = 44, padT = state.granularity === "eras" ? 24 : 16, padB = items.length > 8 ? 54 : 28;
     const plotW = W - padL - padR, plotH = H - padT - padB;
     const colW = plotW / items.length, xC = (i) => padL + colW * (i + 0.5), bw = Math.max(8, Math.min(30, colW * 0.54));
     const maxProj = Math.max(8, ...items.map((it) => (it.microtonal.ji_retune_projects || 0) + (it.microtonal.gamelan_projects || 0)));

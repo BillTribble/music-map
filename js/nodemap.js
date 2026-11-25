@@ -356,11 +356,31 @@
           const t = list[i];
           const tTerr = territoryOf(t);
           const ek = eraKeyOf(t);
-          const near = (trackNear[t.id] || []).find(([nid]) => {
+          let near = (trackNear[t.id] || []).find(([nid]) => {
             if (!visSet.has(nid)) return false;
             const nt = byId.get(nid);
             return nt && eraKeyOf(nt) === ek && territoryOf(nt) === tTerr;
           });
+          if (!near && Array.isArray(t.feat_vec) && t.feat_vec.length) {
+            let bestId = null;
+            let bestSim = 0.45;
+            const va = t.feat_vec;
+            let na = 0;
+            for (let k = 0; k < va.length; k++) na += va[k] * va[k];
+            na = Math.sqrt(na) || 1;
+            for (let j = 0; j < list.length; j++) {
+              if (i === j) continue;
+              const cand = list[j];
+              if (territoryOf(cand) !== tTerr || !Array.isArray(cand.feat_vec)) continue;
+              const vb = cand.feat_vec;
+              let dot = 0, nb = 0;
+              const len = Math.min(va.length, vb.length);
+              for (let k = 0; k < len; k++) { dot += va[k] * vb[k]; nb += vb[k] * vb[k]; }
+              const sim = dot / (na * (Math.sqrt(nb) || 1));
+              if (sim > bestSim) { bestSim = sim; bestId = cand.id; }
+            }
+            if (bestId) near = [bestId, bestSim];
+          }
           if (near) {
             const k = keyFor(t.id, near[0]);
             if (!pairs.has(k)) pairs.set(k, { a: t.id, b: near[0], w: near[1], weak: true });

@@ -3,7 +3,10 @@
   "use strict";
 
   const YEAR_MARKERS = [
-    { eraId: "present_ambient", year: "2001" },
+    { eraId: "present_early_97", year: "1997" },
+    { eraId: "present_breaks_99", year: "1999" },
+    { eraId: "present_med_house_01", year: "2001" },
+    { eraId: "present_arcadian_03", year: "2003" },
     { eraId: "hd_2005", year: "2005" },
     { eraId: "archive_2013_18", year: "2013" },
     { eraId: "le_garage", year: "2018" },
@@ -366,8 +369,14 @@
           g.appendChild(yr);
         }
 
-        const displayLbl = sw < 130 ? b.shortLabel : b.label;
-        const pillW = Math.max(40, Math.min(sw - 4, displayLbl.length * 6.8 + 14));
+        let displayLbl = sw < 130 ? b.shortLabel : b.label;
+        if (sw < 88 && b.yearMark) {
+          displayLbl = displayLbl.replace(/\s*'\d{2}$/, "");
+        }
+        if (sw < 78) {
+          displayLbl = displayLbl.replace(/\s*&\s*/g, "/");
+        }
+        const pillW = Math.max(36, Math.min(sw - 4, displayLbl.length * (sw < 66 ? 5.6 : 6.4) + 12));
         const rect = document.createElementNS(NS, "rect");
         rect.setAttribute("class", "map-family-hit");
         rect.setAttribute("x", (cx - pillW * 0.5).toFixed(1));
@@ -378,7 +387,8 @@
 
         const txt = document.createElementNS(NS, "text");
         txt.setAttribute("class", "era-wave-title");
-        if (sw < 78) txt.setAttribute("style", "font-size:10.5px");
+        if (sw < 66) txt.setAttribute("style", "font-size:9.5px");
+        else if (sw < 82) txt.setAttribute("style", "font-size:10.5px");
         txt.setAttribute("x", cx.toFixed(1));
         txt.setAttribute("y", (headerY + 11).toFixed(1));
         txt.setAttribute("text-anchor", "middle");
@@ -390,12 +400,16 @@
         const cy = sy + sh * 0.5;
         if (cy < 48 || cy > vh + 24) return;
         const compactRow = sh < 36;
+        let mobLbl = b.shortLabel;
+        if (compactRow && b.yearMark) {
+          mobLbl = mobLbl.replace(/\s*'\d{2}$/, "").replace(/\s*&\s*/g, "/");
+        }
         const txt = document.createElementNS(NS, "text");
         txt.setAttribute("class", "era-wave-title");
-        if (compactRow) txt.setAttribute("style", "font-size:10.5px");
+        if (compactRow) txt.setAttribute("style", "font-size:10px");
         txt.setAttribute("x", "10");
         txt.setAttribute("y", (compactRow ? cy + 3.5 : cy - 2).toFixed(1));
-        txt.textContent = b.shortLabel;
+        txt.textContent = mobLbl;
         g.appendChild(txt);
 
         if (!compactRow) {

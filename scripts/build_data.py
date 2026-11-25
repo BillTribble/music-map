@@ -21,18 +21,27 @@ STAGING_DIR = Path.home() / "tmp" / "music_map_staging"
 OUT_JS = ROOT / "js" / "data.js"
 
 PHASE_META = [
-    ("phase0_archive", "Phase 0: Archive", "P0 Archive", "2001–2014", "Early DAWs & Archive"),
+    ("phase0_archive", "Phase 0: Archive", "P0 Archive", "1997–2014", "Early DAWs & Archive"),
     ("phase1_early", "Phase 1: Early", "P1 Early", "2013–2018", "Live 8–10"),
     ("phase2_mid", "Phase 2: Mid", "P2 Mid", "2018–2022", "Live 10"),
     ("phase3_ambient", "Phase 3: Ambient", "P3 Ambient", "2020–2024", "Live 10→12"),
     ("phase4_recent", "Phase 4: Recent", "P4 Recent", "2024–2026", "Live 12"),
 ]
 
-ARCHIVE_ERAS = ["present_ambient", "present_electro", "hd_2005", "bands_archive"]
+ARCHIVE_ERAS = [
+    "present_early_97",
+    "present_breaks_99",
+    "present_med_house_01",
+    "present_arcadian_03",
+    "hd_2005",
+    "bands_archive",
+]
 
 ERA_META = [
-    ("present_ambient", "Present Ambient", "Pres Amb", "2001–12", "phase0_archive", "P0", "Early ambient sketches"),
-    ("present_electro", "Present Electro", "Pres Elec", "2003–12", "phase0_archive", "P0", "Early electro & chiptune"),
+    ("present_early_97", "Early Roots", "Early '97", "1997–98", "phase0_archive", "P0", "Huskies & earliest raw ambient/downtempo experiments"),
+    ("present_breaks_99", "Distorted Breaks", "Breaks '99", "1999–00", "phase0_archive", "P0", "Gritty breakbeat, big beat & distorted jungle-breaks"),
+    ("present_med_house_01", "Meditative & House", "Med & House", "2001–02", "phase0_archive", "P0", "Edgeware Rd meditative pulse & Disco Queen house experiments"),
+    ("present_arcadian_03", "Arcadian & 8-Bit", "Arcadian '03", "2003–04", "phase0_archive", "P0", "C64/video-game synth, Arcadian & 2004 PR3S3NT electro"),
     ("hd_2005", "2005 Hard Drive", "2005 HD", "2005–10", "phase0_archive", "P0", "Archival bounces & mixes"),
     ("bands_archive", "Archive 2006–14", "Arch 06", "2006–14", "phase0_archive", "P0", "Spudboy & 2006–14 solo archive"),
     ("archive_2013_18", "Archive 13–18", "Arch 13", "2013–18", "phase1_early", "P1", ""),
@@ -48,6 +57,101 @@ ERA_META = [
     ("ecstatic_wave", "Ecstatic Wave", "Ecstatic", "2024–25", "phase4_recent", "P4", ""),
     ("sketches_2026", "Sketches 2026", "Sk 26", "2026", "phase4_recent", "P4", ""),
 ]
+
+# Ordered 1997–2004 stylistic & archival partition (anchor tracks placed at slot 1 for Timeline Animator)
+PRESENT_1997_2004_ORDERED_TRACKS: dict[str, tuple[int, list[str]]] = {
+    "present_early_97": (1998, [
+        "present_electro_41",  # Huskies Ultra (explicit 1997–98 anchor)
+        "present_ambient_1",   # 1 Thing Led 2 Another
+        "present_ambient_2",   # Sankhara 01
+        "present_ambient_9",   # Trying
+        "present_electro_65",  # You Just Know
+        "present_electro_38",  # Having a Fake
+        "present_electro_55",  # Raymonds Rebirthing in the Rotating Restuarant
+        "present_electro_48",  # New Beginnings 4 Veronica + Vernice
+        "present_electro_31",  # Compassion
+        "present_electro_59",  # The Importance of Having Compassion for Humans
+        "present_electro_36",  # Finding Your Sincerity Whilst Travelling
+        "present_electro_35",  # Finding your..Pt 4
+        "present_electro_42",  # I Never Knew Why ... (brick Lane)
+    ]),
+    "present_breaks_99": (2000, [
+        "present_electro_20",  # Rock the Discotek
+        "present_electro_63",  # Turbocat
+        "present_electro_40",  # Horus and the
+        "present_electro_49",  # No Need 2 Worry
+        "present_electro_43",  # Jesus Walking
+        "present_electro_21",  # Ruffneck
+        "present_electro_61",  # Tripping
+        "present_electro_62",  # tripping with Raymond and Stanley at cheese and wine parties
+        "present_electro_24",  # Thankyou
+        "present_electro_15",  # Jump Up Cru
+        "present_electro_22",  # Shake It
+        "present_electro_2",   # UFO (People U Can Relax With)
+        "present_ambient_5",   # Having a Fake Little Smile Even When You're on Your Own
+        "present_electro_54",  # 02 Present - Heron - Track 2
+        "present_electro_32",  # 4 D
+        "present_electro_37",  # Getting Emotional Over Small Things
+        "present_electro_26",  # Vocalcore
+        "present_electro_16",  # Kitchen Song #2
+        "present_electro_47",  # Ruff Neck (sketch)
+    ]),
+    "present_med_house_01": (2001, [
+        "present_ambient_7",   # Edgeware Rd (explicit meditative anchor)
+        "present_electro_11",  # Disco Queen Human Version (explicit Disco Queen house anchor)
+        "present_ambient_4",   # Do It Like a Robot
+        "present_ambient_3",   # Saying Only Small Things
+        "present_electro_1",   # Disco Queen (C64)
+        "present_electro_10",  # Disco Queen C64 Version
+        "present_ambient_8",   # Plodding
+        "present_ambient_6",   # Buick
+        "present_ambient_10",  # Ultra Fx2
+        "present_electro_30",  # Caribbean Hotel At Night ... (le Garcon)
+        "present_electro_8",   # Collaboration
+        "present_electro_23",  # Spiritual Quest
+        "present_electro_34",  # Fatter Than U
+        "present_electro_27",  # We Can Go Dao
+        "present_electro_39",  # Horus
+        "present_electro_56",  # Space Bandits
+        "present_electro_29",  # Buick Beats (sketch)
+    ]),
+    "present_arcadian_03": (2003, [
+        "present_electro_6",   # Arcadian (explicit video-game/Arcadian anchor)
+        "present_electro_19",  # Robotron
+        "present_electro_64",  # Yellow
+        "present_electro_12",  # I Don't Believe in Myself
+        "present_electro_46",  # Nameless (--new2004)
+        "present_electro_4",   # Lime Angel Delight (--new2004)
+        "present_electro_17",  # Pitstop II
+        "present_electro_7",   # Blame It on the Boogie
+        "present_electro_9",   # Computer Ryhmes
+        "present_electro_18",  # Pork Gelatin
+        "present_electro_14",  # Ichi Ban
+        "present_electro_3",   # Bethnal Green Sunset
+        "present_electro_13",  # I Want 2 Rock Out
+        "present_electro_25",  # Ultra Fx
+        "present_electro_51",  # pr3s3nt - Grimy
+        "present_electro_53",  # pr3s3nt - WAR hard mix
+        "present_electro_60",  # The Pills
+        "present_electro_28",  # 1st Idea (sketch)
+    ]),
+}
+
+PRESENT_1997_2004_ERA_MAP: dict[str, tuple[str, int, int]] = {}
+for _era_id, (_era_yr, _tids) in PRESENT_1997_2004_ORDERED_TRACKS.items():
+    for _slot_idx, _tid in enumerate(_tids, start=1):
+        _yr = 1997 if _tid == "present_electro_41" else (2004 if _tid in {"present_electro_4", "present_electro_46", "present_electro_51", "present_electro_53", "present_electro_60"} else _era_yr)
+        PRESENT_1997_2004_ERA_MAP[_tid] = (_era_id, _yr, _slot_idx)
+
+
+def resolve_present_1997_2004_era(tid: str, cur_era: str, cur_year: int | None, cur_slot: int | None = None) -> tuple[str, int, int]:
+    if tid in PRESENT_1997_2004_ERA_MAP:
+        return PRESENT_1997_2004_ERA_MAP[tid]
+    if cur_era == "present_ambient":
+        return "present_med_house_01", 2001, int(cur_slot or 99)
+    if cur_era == "present_electro":
+        return "present_arcadian_03", 2003, int(cur_slot or 99)
+    return cur_era, int(cur_year or 2016), int(cur_slot or 0)
 
 FINE_HARMONY_KEYS = [
     "dyad_5th",
@@ -1078,6 +1182,15 @@ def build_from_full_analysis(
 
         for pk in PRIVATE_TRACK_KEYS:
             t.pop(pk, None)
+
+        if not t.get("is_ai"):
+            new_era, new_yr, new_slot = resolve_present_1997_2004_era(
+                str(t["id"]), str(t.get("era") or ""), t.get("year"), t.get("slot")
+            )
+            if new_era != t.get("era") or str(t["id"]) in PRESENT_1997_2004_ERA_MAP:
+                t["era"] = new_era
+                t["year"] = new_yr
+                t["slot"] = new_slot
 
         merged_tracks.append(t)
 

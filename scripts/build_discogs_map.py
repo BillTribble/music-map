@@ -7,6 +7,7 @@ import json
 import math
 import os
 import re
+import sys
 
 import numpy as np
 from sklearn.cluster import KMeans
@@ -15,6 +16,11 @@ from sklearn.manifold import TSNE
 from sklearn.metrics import silhouette_score
 from sklearn.preprocessing import StandardScaler, normalize
 import umap
+
+_SCRIPTS_DIR = os.path.dirname(os.path.abspath(__file__))
+if _SCRIPTS_DIR not in sys.path:
+  sys.path.insert(0, _SCRIPTS_DIR)
+import build_data as bd  # noqa: E402
 
 _ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 DEFAULT_DATA_JS = os.path.join(_ROOT, "js", "data.js")
@@ -1432,6 +1438,14 @@ def build_dataset(
     if tid in TITLE_OVERRIDES:
       upd["title"] = TITLE_OVERRIDES[tid]
       upd["shortTitle"] = TITLE_OVERRIDES[tid][:26]
+    if not is_ai:
+      res_era, res_yr, res_slot = bd.resolve_present_1997_2004_era(
+          tid, str(t.get("era") or ""), t.get("year"), t.get("slot")
+      )
+      if res_era != t.get("era") or tid in bd.PRESENT_1997_2004_ERA_MAP:
+        upd["era"] = res_era
+        upd["year"] = res_yr
+        upd["slot"] = res_slot
 
     t.update(upd)
     t.pop("track_near", None)
@@ -1484,6 +1498,76 @@ def build_dataset(
           yt_copy.update(track_updates["bands_archive_21"])
           kept_sub.append(yt_copy)
       item["tracks"] = kept_sub
+
+  # Rebuild the 4 chronological 1997–2004 sub-eras + Phase 0: Archive ("1997–2014") + era_anchors cleanly
+  hc_tracks_by_era = {}
+  for t in tracks:
+    if t.get("is_ai"):
+      continue
+    hc_tracks_by_era.setdefault(str(t.get("era") or ""), []).append(t)
+  for ek, elist in hc_tracks_by_era.items():
+    elist.sort(key=lambda r: (int(r.get("slot") or 999), str(r.get("id") or "")))
+
+  existing_eras_by_id = {
+      str(item.get("id")): item
+      for item in data.get("eras", [])
+      if isinstance(item, dict) and item.get("id") not in {"present_ambient", "present_electro"}
+  }
+  present_4_ids = {"present_early_97", "present_breaks_99", "present_med_house_01", "present_arcadian_03"}
+  rebuilt_eras = []
+  for ekey, elabel, eshort, eyears, ephase, ptag, enote in bd.ERA_META:
+    if ekey in present_4_ids or ekey not in existing_eras_by_id:
+      e_trks = [dict(x) for x in hc_tracks_by_era.get(ekey, [])]
+      rebuilt_eras.append(
+          bd.extract_archive_item(
+              ekey,
+              elabel,
+              eshort,
+              eyears,
+              e_trks,
+              extra={"phase": ephase, "phaseTag": ptag, "note": enote, "tracks": e_trks},
+          )
+      )
+    else:
+      rebuilt_eras.append(existing_eras_by_id[ekey])
+  data["eras"] = rebuilt_eras
+
+  p0_all_tracks = [t for ek in bd.ARCHIVE_ERAS for t in hc_tracks_by_era.get(ek, [])]
+  p0_rep_tracks = []
+  for ek in bd.ARCHIVE_ERAS:
+    for rep_t in hc_tracks_by_era.get(ek, [])[:2]:
+      t_rep = dict(rep_t)
+      t_rep["slot"] = len(p0_rep_tracks) + 1
+      p0_rep_tracks.append(t_rep)
+  rebuilt_phases = []
+  for item in data.get("phases", []):
+    if isinstance(item, dict) and item.get("id") == "phase0_archive":
+      rebuilt_phases.append(
+          bd.extract_archive_item(
+              "phase0_archive",
+              "Phase 0: Archive",
+              "P0 Archive",
+              "1997–2014",
+              p0_all_tracks,
+              extra={"daw": "Early DAWs & Archive", "note": "Pre-2013 audio archive bounces", "tracks": p0_rep_tracks},
+          )
+      )
+    else:
+      rebuilt_phases.append(item)
+  data["phases"] = rebuilt_phases
+
+  n_eras_tot = max(1, len(rebuilt_eras))
+  rebuilt_anchors = []
+  for e_idx, er_obj in enumerate(rebuilt_eras):
+    eid = str(er_obj["id"])
+    ax = round(0.045 + (0.91 * e_idx / max(1, n_eras_tot - 1)), 4)
+    e_trks = hc_tracks_by_era.get(eid, [])
+    mean_ey = (
+        round(sum(max(0.05, min(0.95, 1.0 - (float(x.get("energy") or 5.0) - 1.0) / 9.0)) for x in e_trks) / len(e_trks), 4)
+        if e_trks else 0.5
+    )
+    rebuilt_anchors.append({"id": eid, "idx": e_idx, "x": ax, "y": 0.9, "cx": ax, "cy": mean_ey})
+  data["meta"]["era_anchors"] = rebuilt_anchors
 
   style_groups = []
   for cidx in range(10):

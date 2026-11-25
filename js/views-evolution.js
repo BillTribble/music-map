@@ -3,8 +3,8 @@
   "use strict";
 
   const COMPARE_PRESETS = [
-    { id: "arch_ecstatic", label: "Present Electro → Ecstatic Wave", eraA: "present_electro", eraB: "ecstatic_wave", phA: "phase0_archive", phB: "phase4_recent" },
-    { id: "bands_sk26", label: "Archive 2006–14 → Sketches 2026", eraA: "bands_archive", eraB: "sketches_2026", phA: "phase0_archive", phB: "phase4_recent" },
+    { id: "arch_ecstatic", label: "Early Roots '97 → Ecstatic Wave", eraA: "present_early_97", eraB: "ecstatic_wave", phA: "phase0_archive", phB: "phase4_recent" },
+    { id: "arcadian_ecstatic", label: "Arcadian '03 → Ecstatic Wave", eraA: "present_arcadian_03", eraB: "ecstatic_wave", phA: "phase0_archive", phB: "phase4_recent" },
     { id: "garage_ecstatic", label: "Le Garage → Ecstatic Wave", eraA: "le_garage", eraB: "ecstatic_wave", phA: "phase2_mid", phB: "phase4_recent" },
     { id: "spirit_lucid", label: "Spirit Guides → Lucid Crystal", eraA: "spirit_guides", eraB: "lucid_crystal", phA: "phase3_ambient", phB: "phase3_ambient" },
   ];
@@ -67,7 +67,7 @@
     const C = window.ME_CHARTS;
     const insight = "From pre-2013 audio archives through MIDI-heavy 2013–18 production, pivoting to multi-track audio assemblies in 2018–22 and hybrid studio balance in 2024–26.";
     const W = Math.max(460, C.measureStageWidth("wf-stage-wrap", 960));
-    const H = items.length > 8 ? 316 : 300, padL = 48, padR = 46, padT = state.granularity === "eras" ? 26 : 16, padB = items.length > 8 ? 44 : 28;
+    const H = items.length > 8 ? 316 : 300, padL = 48, padR = 46, padT = state.granularity === "eras" ? 26 : 16, padB = items.length > 8 ? 54 : 28;
     const plotW = W - padL - padR, plotH = H - padT - padB;
     const colW = plotW / items.length, xC = (i) => padL + colW * (i + 0.5);
     const bw = Math.max(4, Math.min(20, (colW - 8) / 2));
@@ -97,9 +97,9 @@
 
   function renderGroove(items, d, selIdx, state) {
     const C = window.ME_CHARTS;
-    const insight = "Median BPM (with IQR range), MIDI quantization lock (2013+), and audio-measured Drum Complexity across all 16 eras.";
+    const insight = `Median BPM (with IQR range), MIDI quantization lock (2013+), and audio-measured Drum Complexity across all ${items.length} ${state.granularity}.`;
     const W = Math.max(460, C.measureStageWidth("gr-stage-wrap", 960));
-    const H = items.length > 8 ? 316 : 300, padL = 46, padR = 46, padT = state.granularity === "eras" ? 26 : 16, padB = items.length > 8 ? 44 : 28;
+    const H = items.length > 8 ? 316 : 300, padL = 46, padR = 46, padT = state.granularity === "eras" ? 26 : 16, padB = items.length > 8 ? 54 : 28;
     const plotW = W - padL - padR, plotH = H - padT - padB;
     const colW = plotW / items.length, xC = (i) => padL + colW * (i + 0.5);
     const bpmMin = 50, bpmMax = 180;
@@ -139,7 +139,7 @@
     const C = window.ME_CHARTS;
     const insight = "Stepwise lyricism and post-leap gap-fill rose dramatically in Ecstatic Wave & Sketches 2026 while preserving melodic breathing space.";
     const W = Math.max(460, C.measureStageWidth("mel-stage-wrap", 960));
-    const H = items.length > 8 ? 316 : 300, padL = 46, padR = 52, padT = state.granularity === "eras" ? 26 : 16, padB = items.length > 8 ? 44 : 28;
+    const H = items.length > 8 ? 316 : 300, padL = 46, padR = 52, padT = state.granularity === "eras" ? 26 : 16, padB = items.length > 8 ? 54 : 28;
     const plotW = W - padL - padR, plotH = H - padT - padB, colW = plotW / items.length, xC = (i) => padL + colW * (i + 0.5);
     const yPct = (p) => (p === null || !Number.isFinite(p) ? null : padT + plotH * (1 - Math.min(1, p / 50)));
     const yMidi = (m) => (m === null || !Number.isFinite(m) ? null : padT + plotH * (1 - Math.max(0, Math.min(1, (m - 42) / 34))));
@@ -168,7 +168,7 @@
     const C = window.ME_CHARTS;
     const insight = "Expressive phrasing in audio stems (2013+): audio legato climbed from 31% to 52% (80.5% in Spirit Guides) with 48–74¢ vibrato & pitch bends.";
     const W = Math.max(460, C.measureStageWidth("au-stage-wrap", 960));
-    const H = items.length > 8 ? 316 : 300, padL = 46, padR = 48, padT = state.granularity === "eras" ? 26 : 16, padB = items.length > 8 ? 44 : 28;
+    const H = items.length > 8 ? 316 : 300, padL = 46, padR = 48, padT = state.granularity === "eras" ? 26 : 16, padB = items.length > 8 ? 54 : 28;
     const plotW = W - padL - padR, plotH = H - padT - padB, colW = plotW / items.length, xC = (i) => padL + colW * (i + 0.5);
     const yPct = (p) => (p === null || !Number.isFinite(p) ? null : padT + plotH * (1 - p / 100));
     const yCents = (c) => (c === null || !Number.isFinite(c) ? null : padT + plotH * (1 - Math.min(1, c / 90)));
