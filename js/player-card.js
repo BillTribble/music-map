@@ -123,8 +123,13 @@
     return Boolean(t && (t.released === true || (t.links && t.links.bandcamp)));
   }
 
-  const FORCE_SKETCH_IDS = new Set(["archive_2013_18_97"]);
-  const FORCE_SKETCH_TITLES = new Set(["massive dune patch"]);
+  const FORCE_SKETCH_IDS = new Set(["archive_2013_18_97", "sketches_2024_25_24"]);
+  const FORCE_SKETCH_TITLES = new Set([
+    "massive dune patch",
+    "granular perc fun",
+    "granular perc fun gamelanish",
+    "granular perc (gamelanish)",
+  ]);
 
   function isSketch(t) {
     if (!t || t.is_ai) return false;

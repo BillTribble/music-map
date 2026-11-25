@@ -157,9 +157,13 @@ def resolve_present_1997_2004_era(tid: str, cur_era: str, cur_year: int | None, 
 
 FORCE_SKETCH_IDS = {
     "archive_2013_18_97",  # Massive Dune Patch (post-023356: sketch despite >= 75s)
+    "sketches_2024_25_24",  # Granular Perc Fun Gamelanish (post-023452: sketch despite >= 75s)
 }
 FORCE_SKETCH_TITLES = {
     "massive dune patch",
+    "granular perc fun",
+    "granular perc fun gamelanish",
+    "granular perc (gamelanish)",
 }
 
 FINE_HARMONY_KEYS = [

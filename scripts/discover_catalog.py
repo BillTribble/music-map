@@ -519,10 +519,15 @@ def build_manifest(raw_items: list[dict], ffprobe_bin: str | None = None, check_
             or "/ai afrohouse" in w_low
             or "ai_test_kitchen" in w_low
         )
-        # User rules (post-022787, post-023035, post-023356): 100% of GenAI tracks and full-length (>= 75s) tracks have is_sketch = False unless explicitly overridden
+        # User rules (post-022787, post-023035, post-023356, post-023452): 100% of GenAI tracks and full-length (>= 75s) tracks have is_sketch = False unless explicitly overridden
         is_forced_sketch = (
-            tid in {"archive_2013_18_97"}
-            or title.strip().lower() in {"massive dune patch"}
+            tid in {"archive_2013_18_97", "sketches_2024_25_24"}
+            or title.strip().lower() in {
+                "massive dune patch",
+                "granular perc fun",
+                "granular perc fun gamelanish",
+                "granular perc (gamelanish)",
+            }
         )
         is_sketch = False if is_ai_track else bool(is_forced_sketch or (not released and dur_sec is not None and dur_sec < 75.0))
         tier = "released" if released else ("free_download" if is_ai_track else ("archive_dl" if year < 2015 else "request"))

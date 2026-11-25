@@ -1426,8 +1426,13 @@ def enrich_track_tiers(t: dict, rel_repo: str = "BillTribble/music-map") -> None
         year = int(rel_match["year"])
     full_dur = t.get("full_duration_sec")
     is_forced_sketch = (
-        tid in {"archive_2013_18_97"}
-        or str(t.get("title") or "").strip().lower() in {"massive dune patch"}
+        tid in {"archive_2013_18_97", "sketches_2024_25_24"}
+        or str(t.get("title") or "").strip().lower() in {
+            "massive dune patch",
+            "granular perc fun",
+            "granular perc fun gamelanish",
+            "granular perc (gamelanish)",
+        }
     )
     is_sketch = False if t.get("is_ai") else bool(
         is_forced_sketch
