@@ -763,16 +763,26 @@
             const shw = Math.ceil(stw * 0.56 + 6);
             const shh = Math.ceil(subFs * 0.64 + 3);
 
-            const sCands = [
-              [smx, sMinY - shh - 10],
-              [smx, sMinY - shh - 19],
+            const clampLoX = Math.max(shw + 6, bx0 + shw + 5);
+            const clampHiX = Math.min(vw - shw - 6, bx1 - shw - 5);
+            const clampLoY = Math.max(shh + 8, by0 + shh + 12);
+            const clampHiY = Math.min(vh - shh - 8, by1 - shh - 10);
+
+            const sCands = [];
+            if (sMinY - shh - 10 >= clampLoY) {
+              sCands.push([smx, sMinY - shh - 10]);
+            }
+            if (sMinY - shh - 19 >= clampLoY) {
+              sCands.push([smx, sMinY - shh - 19]);
+            }
+            sCands.push(
               [smx, sMaxY + shh + 10],
               [smx, sMaxY + shh + 19],
               [sMinX - shw - 9, smy],
               [sMaxX + shw + 9, smy],
-              [smx, by0 + shh + 4],
-              [smx, by1 - shh - 4],
-            ];
+              [smx, clampLoY],
+              [smx, clampHiY]
+            );
             [14, 24, 36, 50, 68, 88].forEach((rad) => {
               ANGLES.forEach((ang) => {
                 sCands.push([smx + Math.cos(ang) * rad * 1.15, smy + Math.sin(ang) * rad]);
@@ -786,10 +796,6 @@
             for (let di = 0; di < dotLen; di++) {
               if (sOwn.has(allDots[di][2])) sIsOwn[di] = 1;
             }
-            const clampLoX = Math.max(shw + 6, bx0 + shw + 5);
-            const clampHiX = Math.min(vw - shw - 6, bx1 - shw - 5);
-            const clampLoY = Math.max(shh + 8, by0 + shh + 4);
-            const clampHiY = Math.min(vh - shh - 8, by1 - shh - 4);
             for (let sci = 0; sci < sCands.length; sci++) {
               const scx = clampLoX <= clampHiX ? Math.max(clampLoX, Math.min(clampHiX, sCands[sci][0])) : Math.max(shw + 6, Math.min(vw - shw - 6, sCands[sci][0]));
               const scy = clampLoY <= clampHiY ? Math.max(clampLoY, Math.min(clampHiY, sCands[sci][1])) : Math.max(shh + 8, Math.min(vh - shh - 8, sCands[sci][1]));

@@ -658,6 +658,36 @@ DEFAULT_EXCLUDED_IDS = {
     "archive_2013_18_26",
     "bands_archive_11",
     "archive_2018_23_43",
+    # AI Music Sandbox tests — excluded by owner (post-022956)
+    "ai_music_040_c5fc24",
+    "ai_music_041_528d02",
+    "ai_music_042_76bf86",
+    "ai_music_043_c65702",
+    "ai_music_044_59712b",
+    "ai_music_045_e6724a",
+    "ai_music_046_98a2b8",
+    "ai_music_047_a5f4b0",
+    "ai_music_048_f6c999",
+    "ai_music_049_d48364",
+    "ai_music_050_9ad44e",
+    "ai_music_051_405598",
+    "ai_music_052_fdbda2",
+    "ai_music_053_f76764",
+    "ai_music_054_979585",
+    "ai_music_055_1da212",
+    "ai_music_056_39d1b9",
+    "ai_music_057_e6639c",
+    "ai_music_058_0b7730",
+    "ai_music_059_e206b2",
+    "ai_music_060_efa3b3",
+    "ai_music_061_c77efc",
+    "ai_music_062_d207d6",
+    "ai_music_063_cfb329",
+    "ai_music_064_1c73ac",
+    "ai_music_065_b79945",
+    "ai_music_066_84ef36",
+    "ai_music_067_30817a",
+    "ai_music_068_69176c",
 }
 
 CANONICAL_ARCHETYPES: list[tuple[str, str, int]] = [
@@ -1434,7 +1464,10 @@ def reanalyze_track_worker(ffmpeg_bin: str, base_dir: Path, t_in: dict) -> dict:
 def is_excluded_by_folder_rule(path_str: str) -> bool:
     if not path_str:
         return False
-    parts = [p.strip() for p in path_str.lower().split("/") if p.strip()]
+    low_p = path_str.lower()
+    if "ai music sandbox" in low_p:
+        return True
+    parts = [p.strip() for p in low_p.split("/") if p.strip()]
     for idx, p in enumerate(parts[:-1]):
         if p in ("^ exports - reflective album", "exports - reflective album", "exports-reflective album"):
             next_sub = parts[idx + 1] if idx + 1 < len(parts) - 1 else ""

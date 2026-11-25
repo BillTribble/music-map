@@ -19,7 +19,7 @@ import umap
 _ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 DEFAULT_DATA_JS = os.path.join(_ROOT, "js", "data.js")
 DEFAULT_FEATURES = "/tmp/music_map_discogs_features.npz"
-DEFAULT_GENAI_BUNDLE = os.path.join(_ROOT, "scripts", "genai_catalog_227.json")
+DEFAULT_GENAI_BUNDLE = os.path.join(_ROOT, "scripts", "genai_catalog_198.json")
 DEFAULT_YON_BUNDLE = os.path.join(_ROOT, "scripts", "yon_recovered_track.json")
 DEFAULT_CATALOG = os.path.expanduser("~/tmp/music_map_staging/catalog_587_enriched.json")
 DEFAULT_EXCLUSIONS = os.path.expanduser("~/tmp/music_map_staging/exclusions.json")
@@ -157,6 +157,36 @@ DEFAULT_EXCLUDED_IDS = {
     "archive_2013_18_26",
     "bands_archive_11",
     "archive_2018_23_43",
+    # AI Music Sandbox tests — excluded by owner (post-022956)
+    "ai_music_040_c5fc24",
+    "ai_music_041_528d02",
+    "ai_music_042_76bf86",
+    "ai_music_043_c65702",
+    "ai_music_044_59712b",
+    "ai_music_045_e6724a",
+    "ai_music_046_98a2b8",
+    "ai_music_047_a5f4b0",
+    "ai_music_048_f6c999",
+    "ai_music_049_d48364",
+    "ai_music_050_9ad44e",
+    "ai_music_051_405598",
+    "ai_music_052_fdbda2",
+    "ai_music_053_f76764",
+    "ai_music_054_979585",
+    "ai_music_055_1da212",
+    "ai_music_056_39d1b9",
+    "ai_music_057_e6639c",
+    "ai_music_058_0b7730",
+    "ai_music_059_e206b2",
+    "ai_music_060_efa3b3",
+    "ai_music_061_c77efc",
+    "ai_music_062_d207d6",
+    "ai_music_063_cfb329",
+    "ai_music_064_1c73ac",
+    "ai_music_065_b79945",
+    "ai_music_066_84ef36",
+    "ai_music_067_30817a",
+    "ai_music_068_69176c",
 }
 
 TITLE_OVERRIDES = {
@@ -192,7 +222,10 @@ FORCE_NON_SKETCH_IDS = INDIE_GUITAR_KEEPER_IDS | SPOKEN_WORD_IDS | {
 def is_excluded_by_folder_rule(path_str: str) -> bool:
   if not path_str:
     return False
-  parts = [p.strip() for p in path_str.lower().split("/") if p.strip()]
+  low_p = path_str.lower()
+  if "ai music sandbox" in low_p:
+    return True
+  parts = [p.strip() for p in low_p.split("/") if p.strip()]
   for idx, p in enumerate(parts[:-1]):
     if p in ("^ exports - reflective album", "exports - reflective album", "exports-reflective album"):
       next_sub = parts[idx + 1] if idx + 1 < len(parts) - 1 else ""
@@ -995,13 +1028,13 @@ def compute_organic_continuum_and_ai_layout(
         random_state=42,
     ).fit_transform(X_ai).astype(np.float64)
 
-    # 5-region sub-archipelago inside Generative AI reserve (distinct mini-islands with breathing channels for sub-labels)
+    # 5-region sub-archipelago inside Generative AI reserve proportioned for 198 non-Sandbox tracks
     sub_pockets = {
-        "ai_sub_orch":      (np.array([0.768, 0.302]), (0.720, 0.822), (0.252, 0.366)),
-        "ai_sub_world_exp": (np.array([0.904, 0.335]), (0.842, 0.964), (0.252, 0.436)),
-        "ai_sub_downtempo": (np.array([0.770, 0.536]), (0.720, 0.824), (0.456, 0.625)),
-        "ai_sub_house":     (np.array([0.903, 0.644]), (0.838, 0.966), (0.516, 0.778)),
-        "ai_sub_bass":      (np.array([0.785, 0.802]), (0.722, 0.858), (0.708, 0.894)),
+        "ai_sub_orch":      (np.array([0.770, 0.308]), (0.722, 0.822), (0.258, 0.366)),
+        "ai_sub_world_exp": (np.array([0.904, 0.324]), (0.844, 0.962), (0.258, 0.394)),
+        "ai_sub_downtempo": (np.array([0.770, 0.526]), (0.722, 0.824), (0.448, 0.612)),
+        "ai_sub_house":     (np.array([0.903, 0.618]), (0.838, 0.966), (0.486, 0.750)),
+        "ai_sub_bass":      (np.array([0.786, 0.784]), (0.722, 0.858), (0.692, 0.876)),
     }
     sub_members_local = {k: [] for k in sub_pockets}
     for local_i, global_i in enumerate(ai_idx):
@@ -1069,7 +1102,7 @@ def build_dataset(
         if is_excluded_by_folder_rule(str(ct.get("local_path") or "")):
           excluded_ids.add(tid)
 
-  # Merge full 227-track trimmed Generative AI catalog bundle (updating existing 24 + adding 203 new)
+  # Merge 198-track trimmed Generative AI catalog bundle (non-Sandbox tracks only, post-022956)
   genai_by_id = {}
   if genai_bundle_path and os.path.exists(genai_bundle_path):
     g_obj = json.load(open(genai_bundle_path, "r", encoding="utf-8"))
@@ -1515,7 +1548,15 @@ def build_dataset(
   data["meta"]["classifier_label"] = "Folder-Guided Essentia Discogs-400"
   data["meta"]["silhouette"] = round(sil_2d, 3)
   data["meta"]["silhouette_feature"] = round(sil_hybrid, 3)
-  data["meta"]["ai_territory_box"] = [0.716, 0.245, 0.966, 0.885]
+  if len(ai_indices) > 0:
+    data["meta"]["ai_territory_box"] = [
+        round(float(np.min(coords[ai_indices, 0])) - 0.006, 3),
+        round(float(np.min(coords[ai_indices, 1])) - 0.012, 3),
+        round(float(np.max(coords[ai_indices, 0])) + 0.006, 3),
+        round(float(np.max(coords[ai_indices, 1])) + 0.010, 3),
+    ]
+  else:
+    data["meta"]["ai_territory_box"] = [0.716, 0.245, 0.966, 0.885]
   data["meta"]["style_groups"] = style_groups
   data["meta"]["track_map"] = new_track_map
   data["meta"]["track_near"] = new_track_near
