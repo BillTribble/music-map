@@ -33,7 +33,7 @@ TRACK_SPECS = [
     ("archive", "present_electro", 2, "UFO (People U Can Relax With)", 126.0, "me archive/present trax/- present mp3s/highlights/ufo (people u can relax with even when you're not relaxed).mp3"),
     ("archive", "present_electro", 3, "Bethnal Green Sunset", 124.0, "me archive/present trax/- present mp3s/recent/bethnal green sunset.mp3"),
     ("archive", "present_electro", 4, "Lime Angel Delight", 122.0, "me archive/present trax/- present mp3s/mid tempo/Lime Angel Delight.mp3"),
-    ("archive", "present_electro", 5, "As We Enter (PR3S3NT)", 130.0, "me archive/present trax/- present mp3s/PR3S3NT/pr3s3nt  - As we Enter.mp3"),
+    ("archive", "present_electro", 5, "As We Enter", 130.0, "me archive/present trax/- present mp3s/PR3S3NT/pr3s3nt  - As we Enter.mp3"),
 
     ("archive", "hd_2005", 1, "Orch Synaesthesia", 122.0, "me music - 2005 hard drive/Orch Synaesthesia.m4a"),
     ("archive", "hd_2005", 2, "Sine Mix 01", 125.0, "me music - 2005 hard drive/sine mix 01.m4a"),

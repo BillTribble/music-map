@@ -1029,12 +1029,126 @@ DEFAULT_EXCLUDED_IDS = {
 }
 
 TITLE_OVERRIDES = {
-    "hd_2005_10": "pr3s3nt - As we Enter",
+    "hd_2005_10": "As we Enter",
     "present_electro_31": "The Importance of Having Compassion for Humans",
     "present_electro_61": "tripping with Raymond and Stanley at cheese and wine parties",
-    "hd_2005_23": "pr3s3nt - Grimy",
-    "hd_2005_48": "pr3s3nt - WAR hard mix",
+    "hd_2005_23": "Grimy",
+    "hd_2005_48": "WAR hard mix",
 }
+
+_PRESENT_LEET_MAP = str.maketrans({
+    "3": "e", "0": "o", "1": "i", "4": "a", "5": "s", "7": "t", "z": "s",
+})
+_PRESENT_PROTECTED_WORDS = {
+    "crescent", "crescents", "omnipresent", "percent", "percents",
+    "precept", "precepts", "preen", "preens", "prefect", "prefects",
+    "preheat", "preheats", "prescient", "presence", "presences",
+    "preset", "presets", "president", "presidents", "pretend", "pretends",
+    "pretext", "pretexts", "prevent", "prevents", "prudent", "recent",
+    "regent", "regents", "relent", "relents", "repent", "repents",
+    "represent", "represents", "resend", "resent", "resents", "reset", "resets",
+}
+_PRESENT_EXACT_NORMS = {
+    "present", "presents", "presnt", "presnet", "prsent", "prezent",
+    "presant", "presen", "prsnt", "pesent", "prznt",
+}
+_COMPOUND_PRESENT_SUFFIX_RE = re.compile(
+    r"^([A-Za-z0-9]{5,10}?)(mix\d*|remix\d*|edit\d*|dub\d*|vip\d*|ver\d*)$",
+    re.IGNORECASE,
+)
+
+
+def _damerau_levenshtein(a: str, b: str) -> int:
+    la, lb = len(a), len(b)
+    d = [[0] * (lb + 1) for _ in range(la + 1)]
+    for i in range(la + 1):
+        d[i][0] = i
+    for j in range(lb + 1):
+        d[0][j] = j
+    for i in range(1, la + 1):
+        for j in range(1, lb + 1):
+            cost = 0 if a[i - 1] == b[j - 1] else 1
+            d[i][j] = min(
+                d[i - 1][j] + 1,
+                d[i][j - 1] + 1,
+                d[i - 1][j - 1] + cost,
+            )
+            if i > 1 and j > 1 and a[i - 1] == b[j - 2] and a[i - 2] == b[j - 1]:
+                d[i][j] = min(d[i][j], d[i - 2][j - 2] + 1)
+    return d[la][lb]
+
+
+def is_present_token(tok: str) -> bool:
+    """Return True if `tok` is 'present'/'presents' under any spelling, typo (Damerau-Levenshtein <= 2),
+    or leetspeak variant (e.g. 'pr3s3nt', 'Pr3s3nT', 'presnt', 'presnet', 'prsent', 'prezent', 'presant'),
+    while protecting genuine English words like 'Represent', 'Omnipresent', 'Preset', or 'Reset'."""
+    raw = re.sub(r"[^A-Za-z0-9]", "", tok or "")
+    if len(raw) < 5 or len(raw) > 10:
+        return False
+    raw_low = raw.lower()
+    if raw_low in _PRESENT_PROTECTED_WORDS:
+        return False
+    norm = raw_low.translate(_PRESENT_LEET_MAP)
+    if norm in _PRESENT_PROTECTED_WORDS:
+        return False
+    if norm in _PRESENT_EXACT_NORMS:
+        return True
+    if not norm.startswith(("pr", "pe")):
+        return False
+    return min(_damerau_levenshtein(norm, "present"), _damerau_levenshtein(norm, "presents")) <= 2
+
+
+def strip_present_references(title: str) -> str:
+    """Remove all references to the 'Present' / 'pr3s3nt' alias (any spelling, typo, leetspeak, or
+    compound like 'Pr3s3nTmix') and clean up any leftover separators while never returning empty."""
+    orig = re.sub(r"\s+", " ", str(title or "")).strip()
+    if not orig:
+        return orig
+    s = orig
+
+    def _clean_group(m: re.Match) -> str:
+        open_b, inner, close_b = m.group(1), m.group(2).strip(), m.group(3)
+        cleaned_inner = strip_present_references(inner)
+        if not cleaned_inner or cleaned_inner.lower() == "bill":
+            return ""
+        return f"{open_b}{cleaned_inner}{close_b}"
+
+    s = re.sub(r"([(\[])([^\)\]]+)([)\]])", _clean_group, s)
+
+    stripped_lead = False
+    m_lead_bill = re.match(r"^bill\s+([A-Za-z0-9]+)(?:\s*[-_–—:]+\s*|\s+)(.+)$", s, re.IGNORECASE)
+    if m_lead_bill and is_present_token(m_lead_bill.group(1)):
+        s = m_lead_bill.group(2).strip()
+        stripped_lead = True
+
+    parts = re.split(r"(\s+|[-_–—]+)", s)
+    non_sep_idx = [idx for idx, p in enumerate(parts) if p and not re.fullmatch(r"\s+|[-_–—]+", p)]
+    first_word_idx = non_sep_idx[0] if non_sep_idx else -1
+    out_parts = []
+    for idx, p in enumerate(parts):
+        if not p or re.fullmatch(r"\s+|[-_–—]+", p):
+            out_parts.append(p)
+            continue
+        if is_present_token(p):
+            if idx == first_word_idx:
+                stripped_lead = True
+            continue
+        m_comp = _COMPOUND_PRESENT_SUFFIX_RE.match(p)
+        if m_comp and is_present_token(m_comp.group(1)):
+            out_parts.append(m_comp.group(2))
+            continue
+        out_parts.append(p)
+
+    s = "".join(out_parts)
+    s = re.sub(r"^(?:\s*[-_–—:]+\s*)+", "", s)
+    s = re.sub(r"(?:\s*[-_–—:]+\s*)+$", "", s)
+    s = re.sub(r"(\s*[-_–—]+\s*){2,}", " - ", s)
+    s = re.sub(r"\s+", " ", s).strip()
+    if re.fullmatch(r"\([^()]+\)|\[[^\[\]]+\]", s) and not re.fullmatch(r"\([^()]+\)|\[[^\[\]]+\]", orig):
+        s = s[1:-1].strip()
+    if stripped_lead and s and s[0].islower():
+        s = s[0].upper() + s[1:]
+    return s if s else orig
 
 _TITLE_SEMANTIC_PREV_WORDS = {
     "part", "pt", "pt.", "vol", "vol.", "volume", "phase", "season", "act", "chapter", "no", "no.",
@@ -1117,9 +1231,9 @@ def clean_track_title(raw_title: str) -> str:
         if s == prev:
             break
 
-    if stripped_prefix and s and s[0].islower() and not s.startswith("pr3s3nt"):
+    if stripped_prefix and s and s[0].islower():
         s = s[0].upper() + s[1:]
-    return s
+    return strip_present_references(s)
 
 PRIVATE_TRACK_KEYS = (
     "local_path",
@@ -1297,7 +1411,7 @@ def build_from_full_analysis(
         t = dict(base_track_by_id.get(tid, {}))
         t.update(src_t)
         if tid in TITLE_OVERRIDES:
-            t["title"] = TITLE_OVERRIDES[tid]
+            t["title"] = strip_present_references(TITLE_OVERRIDES[tid])
         else:
             t["title"] = clean_track_title(str(t.get("title") or ""))
         t["shortTitle"] = (

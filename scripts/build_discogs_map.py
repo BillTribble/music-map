@@ -260,11 +260,11 @@ NON_WIP_REMASTER_IDS = {
 }
 
 TITLE_OVERRIDES = {
-    "hd_2005_10": "pr3s3nt - As we Enter",
+    "hd_2005_10": "As we Enter",
     "present_electro_31": "The Importance of Having Compassion for Humans",
     "present_electro_61": "tripping with Raymond and Stanley at cheese and wine parties",
-    "hd_2005_23": "pr3s3nt - Grimy",
-    "hd_2005_48": "pr3s3nt - WAR hard mix",
+    "hd_2005_23": "Grimy",
+    "hd_2005_48": "WAR hard mix",
 }
 
 INDIE_GUITAR_KEEPER_IDS = {
@@ -1746,8 +1746,9 @@ def build_dataset(
         for fk in ("flac_url", "flac_bytes", "flac_size_mb", "flac_mb"):
           t.pop(fk, None)
     if tid in TITLE_OVERRIDES:
-      t["title"] = TITLE_OVERRIDES[tid]
-      t["shortTitle"] = TITLE_OVERRIDES[tid][:26]
+      cleaned_ov = bd.strip_present_references(TITLE_OVERRIDES[tid])
+      t["title"] = cleaned_ov
+      t["shortTitle"] = cleaned_ov[:26]
 
   new_ai_tracks = []
   for gid, gt in genai_by_id.items():
@@ -2069,7 +2070,7 @@ def build_dataset(
         upd["ai_sub_id"] = ai_sub_id
         upd["ai_sub_label"] = ai_sub_label
     if tid in TITLE_OVERRIDES:
-      upd["title"] = TITLE_OVERRIDES[tid]
+      upd["title"] = bd.strip_present_references(TITLE_OVERRIDES[tid])
     else:
       upd["title"] = bd.clean_track_title(str(t.get("title") or ""))
     ct_disp = upd["title"]

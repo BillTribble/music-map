@@ -207,11 +207,11 @@ EXCLUDED_EXACT_REL_PATHS = {
     "^ music sketches 2024/simple mics setup for ecstatic/bounce/wireless-bounce-1.wav",
 }
 TITLE_OVERRIDES_BY_REL_PATH = {
-    "me music - 2005 hard drive/as we enter mix2.m4a": "pr3s3nt - As we Enter",
+    "me music - 2005 hard drive/as we enter mix2.m4a": "As we Enter",
     "me archive/present trax/epic/compassion.wav": "The Importance of Having Compassion for Humans",
     "me archive/present trax/mid tempo/tripping.wav": "tripping with Raymond and Stanley at cheese and wine parties",
-    "me music - 2005 hard drive/grimy ruffmix.m4a": "pr3s3nt - Grimy",
-    "me music - 2005 hard drive/war pr3s3nt mix hard.m4a": "pr3s3nt - WAR hard mix",
+    "me music - 2005 hard drive/grimy ruffmix.m4a": "Grimy",
+    "me music - 2005 hard drive/war pr3s3nt mix hard.m4a": "WAR hard mix",
 }
 EXCLUDED_FILE_TOKENS = ("stem", "backing", "drumloop")
 EXCLUDED_EXACT_FILES = {"bass.wav", "vocals.wav", "perc.wav", "other.wav"}
@@ -405,6 +405,12 @@ def normalize_song_key(rel_path: str) -> str:
 
 
 def clean_title(rel_path: str) -> str:
+    try:
+        from build_data import strip_present_references
+    except ImportError:
+        sys.path.insert(0, str(Path(__file__).resolve().parent))
+        from build_data import strip_present_references
+
     stem = Path(norm_nfc(rel_path)).stem
     t = re.sub(r"^(?:Bill\s+Tribble\s*[-–]+\s*)", "", stem, flags=re.IGNORECASE)
     t = re.sub(r"_\(Matched\).*$", "", t, flags=re.IGNORECASE)
@@ -412,7 +418,8 @@ def clean_title(rel_path: str) -> str:
     t = re.sub(r"\s+20\d{2}-\d{2}-\d{2}(?:\s+\d{4})?\b", "", t)
     t = re.sub(r"\s+_(\d+)$", r" (\1)", t)
     t = re.sub(r"\s+-\s+remaster\s+\d+$", "", t, flags=re.IGNORECASE)
-    return re.sub(r"\s+", " ", t).strip() or stem
+    cleaned = re.sub(r"\s+", " ", t).strip() or stem
+    return strip_present_references(cleaned)
 
 
 def version_rank(rel_path: str, size_bytes: int) -> tuple:
