@@ -5,10 +5,9 @@
   const STAR_KEY = "btmm.starred";
   const COLLAPSE_KEY = "btmm.playerCollapsed";
   const AUTOPLAY_KEY = "btmm.autoPlay";
+  const REQ_EMAIL_KEY = "btmm_req_email";
   const LEGACY_STAR_KEY = "me.starred";
-  // Public opaque Web3Forms UUID (zero email address in client bundle; paste key from web3forms.com)
-  let web3FormsKey = "";
-  const WEB3FORMS_URL = "https://api.web3forms.com/submit";
+  const REQ_EMAIL_RE = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
   const DEFAULT_PEAK_BARS = 160;
 
   // Official inline brand SVG paths (zero external icon CDNs)
@@ -51,6 +50,7 @@
   let waveRafId = null;
   let lastRenderedTrackId = null;
   let lastRenderedCollapsed = null;
+  let lastRenderedFormState = "";
   let copiedForId = null;
   let copiedTimer = null;
   let cachedThemeKey = "";
@@ -77,7 +77,26 @@
       const savedAuto = localStorage.getItem(AUTOPLAY_KEY);
       if (savedAuto === "false") localAutoPlay = false;
       else if (savedAuto === "true") localAutoPlay = true;
+      const savedEmail = localStorage.getItem(REQ_EMAIL_KEY);
+      if (typeof savedEmail === "string" && savedEmail.trim()) {
+        draftEmail = savedEmail.trim();
+      }
     } catch (_) {}
+  }
+
+  function loadSavedRequestEmail() {
+    try {
+      const saved = localStorage.getItem(REQ_EMAIL_KEY);
+      return typeof saved === "string" ? saved.trim() : "";
+    } catch (_) {
+      return "";
+    }
+  }
+
+  function saveRequestEmail(email) {
+    const clean = String(email || "").trim();
+    if (!clean) return;
+    try { localStorage.setItem(REQ_EMAIL_KEY, clean); } catch (_) {}
   }
 
   function saveStars() {
@@ -989,24 +1008,65 @@
         </div>`;
     }
 
-    // Tier C: Unreleased >= 2015 -> Zero-email-exposure request flow (Web3Forms + private GoatCounter)
+    // Tier C: Unreleased >= 2015 -> First-class in-app GM3 request sheet backed by Cloudflare D1 & Worker
     const sent = requestedIds.has(t.id);
-    const hasRelay = Boolean((web3FormsKey || "").trim());
-    if (formOpenForId === t.id && !sent && hasRelay) {
+    if (sent) {
+      return `
+        <div class="player-actions">
+          <div class="req-confirm" id="mp-request-confirm" role="status" aria-live="polite">
+            <span class="ms filled" aria-hidden="true">check_circle</span>
+            <span>Request sent — Bill will be in touch!</span>
+          </div>
+        </div>`;
+    }
+    if (formOpenForId === t.id) {
       const busy = sendingId === t.id;
       return `
         <div class="player-actions">
-          <form class="req-form" data-req-form="${esc(t.id)}">
+          <form class="req-sheet req-form" id="mp-req-form" data-req-form="${esc(t.id)}" novalidate aria-labelledby="mp-req-heading">
+            <div class="req-sheet-head">
+              <span class="ms" aria-hidden="true">mail</span>
+              <span id="mp-req-heading" class="req-sheet-title">Request track</span>
+            </div>
             <input type="checkbox" name="botcheck" tabindex="-1" autocomplete="off" hidden />
-            <input class="req-input" type="email" name="email" required placeholder="Your email so Bill can reply" value="${esc(draftEmail)}" ${busy ? "disabled" : ""} />
-            <input class="req-input" type="text" name="note" maxlength="280" placeholder="Optional note (DJ set, licensing, mix…)" value="${esc(draftNote)}" ${busy ? "disabled" : ""} />
-            ${reqError ? `<div class="req-err">${esc(reqError)}</div>` : ""}
+            <div class="req-field">
+              <label class="req-label" for="mp-req-email">Your email <span class="req-required" aria-hidden="true">*</span></label>
+              <input
+                id="mp-req-email"
+                class="req-input ${reqError ? "is-invalid" : ""}"
+                type="email"
+                name="email"
+                autocomplete="email"
+                inputmode="email"
+                required
+                aria-required="true"
+                aria-invalid="${reqError ? "true" : "false"}"
+                ${reqError ? 'aria-describedby="mp-req-error"' : ""}
+                placeholder="you@example.com"
+                value="${esc(draftEmail)}"
+                ${busy ? "disabled" : ""}
+              />
+            </div>
+            <div class="req-field">
+              <label class="req-label" for="mp-req-note">What is it for? <span class="req-opt">(DJ set, licensing, listening — optional)</span></label>
+              <input
+                id="mp-req-note"
+                class="req-input"
+                type="text"
+                name="note"
+                maxlength="500"
+                placeholder="Optional note (DJ set, licensing, lossless…)"
+                value="${esc(draftNote)}"
+                ${busy ? "disabled" : ""}
+              />
+            </div>
+            ${reqError ? `<div class="req-err" id="mp-req-error" role="alert">${esc(reqError)}</div>` : ""}
             <div class="req-actions">
-              <button type="submit" class="btn" ${busy ? "disabled" : ""}>
-                <span class="ms">send</span>
+              <button type="button" id="mp-req-cancel" class="req-cancel-btn" data-cancel-req="${esc(t.id)}" ${busy ? "disabled" : ""}>Cancel</button>
+              <button type="submit" id="mp-req-submit" class="btn req-submit-btn" ${busy ? "disabled" : ""}>
+                <span class="ms" aria-hidden="true">${busy ? "hourglass_top" : "send"}</span>
                 <span>${busy ? "Sending…" : "Send request"}</span>
               </button>
-              <button type="button" class="req-cancel-btn" data-cancel-req="${esc(t.id)}" ${busy ? "disabled" : ""}>Cancel</button>
             </div>
           </form>
         </div>`;
@@ -1014,9 +1074,9 @@
     return `
       <div class="player-actions">
         <div class="player-cta-row">
-          <button type="button" class="btn ${sent ? "is-sent" : ""}" data-request-track="${esc(t.id)}">
-            <span class="ms">${sent ? "check" : "mail"}</span>
-            <span>${sent ? (hasRelay ? "Request sent" : "Requested") : "Request track"}</span>
+          <button type="button" id="mp-request-btn" class="btn" data-request-track="${esc(t.id)}" aria-expanded="false">
+            <span class="ms" aria-hidden="true">mail</span>
+            <span>Request track</span>
           </button>
         </div>
       </div>`;
@@ -1071,8 +1131,10 @@
     if (!cardEl || !hooks) return;
     if (!selectedId || !byId.has(selectedId)) {
       cardEl.hidden = true;
+      cardEl.classList.remove("is-requesting");
       lastRenderedTrackId = null;
       lastRenderedCollapsed = null;
+      lastRenderedFormState = "";
       stopWaveRaf();
       return;
     }
@@ -1083,10 +1145,13 @@
     const isPlaying = snap.isPlaying;
     const isPend = snap.isPend;
     const isStar = starred.has(t.id);
+    const isReqSheetOpen = !collapsed && formOpenForId === t.id && !requestedIds.has(t.id);
+    const formStateKey = `${formOpenForId || ""}|${sendingId || ""}|${reqError}|${requestedIds.has(t.id) ? 1 : 0}|${infoOpen ? 1 : 0}`;
 
     if (
       lastRenderedTrackId === t.id &&
       lastRenderedCollapsed === collapsed &&
+      lastRenderedFormState === formStateKey &&
       (collapsed ||
         isWaveScrubbing ||
         (formOpenForId === t.id &&
@@ -1103,6 +1168,7 @@
 
     cardEl.hidden = false;
     cardEl.classList.toggle("is-collapsed", collapsed);
+    cardEl.classList.toggle("is-requesting", isReqSheetOpen);
 
     if (collapsed) {
       cardEl.innerHTML = `
@@ -1122,6 +1188,7 @@
         </div>`;
       lastRenderedTrackId = t.id;
       lastRenderedCollapsed = true;
+      lastRenderedFormState = formStateKey;
       observeWaveWrap();
       syncWaveVisuals();
       if (isPlaying || isPend) ensureWaveRaf();
@@ -1206,6 +1273,7 @@
 
     lastRenderedTrackId = t.id;
     lastRenderedCollapsed = false;
+    lastRenderedFormState = formStateKey;
     observeWaveWrap();
     syncWaveVisuals();
     if (isPlaying || isPend) ensureWaveRaf();
@@ -1374,22 +1442,37 @@
   }
 
   function handleRequestTrack(t) {
-    if (!t) return;
-    logPrivateTrackEvent("track-request", t);
-    const hasRelay = Boolean((web3FormsKey || "").trim());
-    if (!hasRelay) {
-      if (typeof window !== "undefined" && window.BTMM_EVENTS && typeof window.BTMM_EVENTS.recordRequest === "function") {
-        window.BTMM_EVENTS.recordRequest(t, { source: "player-request" });
-      }
-      requestedIds.add(t.id);
-      render();
-      return;
+    if (!t || requestedIds.has(t.id)) return;
+    if (!draftEmail) {
+      draftEmail = loadSavedRequestEmail();
     }
     reqError = "";
     formOpenForId = t.id;
+    if (collapsed) {
+      collapsed = false;
+      saveCollapsed();
+    }
     render();
-    const emailInput = cardEl && cardEl.querySelector('input[name="email"]');
-    if (emailInput) emailInput.focus();
+    if (cardEl) {
+      const formEl = cardEl.querySelector("#mp-req-form");
+      if (formEl && typeof formEl.scrollIntoView === "function") {
+        try { formEl.scrollIntoView({ block: "nearest" }); } catch (_) {}
+      }
+      const emailInput = cardEl.querySelector("#mp-req-email");
+      if (emailInput) {
+        try { emailInput.focus({ preventScroll: true }); } catch (_) { emailInput.focus(); }
+      }
+    }
+  }
+
+  function cancelRequestForm() {
+    formOpenForId = null;
+    reqError = "";
+    render();
+    const reqBtn = cardEl && cardEl.querySelector("#mp-request-btn");
+    if (reqBtn) {
+      try { reqBtn.focus({ preventScroll: true }); } catch (_) {}
+    }
   }
 
   async function submitRequestForm(formEl) {
@@ -1403,59 +1486,85 @@
       render();
       return;
     }
+    const emailInputEl = formEl.querySelector('input[name="email"]');
     const visitorEmail = String(fd.get("email") || "").trim();
-    const note = String(fd.get("note") || "").trim();
+    const note = String(fd.get("note") || "").trim().slice(0, 500);
     draftEmail = visitorEmail;
     draftNote = note;
-    if (!visitorEmail || visitorEmail.indexOf("@") < 1) {
-      reqError = "Please enter a valid reply email.";
+
+    if (!visitorEmail) {
+      reqError = "Please enter your email address.";
       render();
+      const el = cardEl && cardEl.querySelector("#mp-req-email");
+      if (el) el.focus();
       return;
     }
+    const html5Valid = emailInputEl && typeof emailInputEl.checkValidity === "function"
+      ? emailInputEl.checkValidity()
+      : true;
+    if (!html5Valid || !REQ_EMAIL_RE.test(visitorEmail) || /[<>]/.test(visitorEmail) || visitorEmail.length > 254) {
+      reqError = "Please enter a valid email address (e.g. you@example.com).";
+      render();
+      const el = cardEl && cardEl.querySelector("#mp-req-email");
+      if (el) el.focus();
+      return;
+    }
+
     reqError = "";
     sendingId = t.id;
     render();
-    const er = erasById.get(t.era);
-    const eraLabel = er ? er.label : t.era;
+
     try {
-      const resp = await fetch(WEB3FORMS_URL, {
-        method: "POST",
-        headers: { "Content-Type": "application/json", Accept: "application/json" },
-        body: JSON.stringify({
-          access_key: web3FormsKey.trim(),
-          subject: `Track Request: ${t.title}`,
-          from_name: "Bill Tribble Music Map",
-          email: visitorEmail,
-          track_title: t.title,
-          track_id: t.id,
-          era: eraLabel,
-          key_tempo: `${formatSimpleKey(t) || "—"} · ${Math.round(t.bpm || 0)} BPM`,
-          message: note || `Requesting "${t.title}" (${eraLabel}).`,
-          botcheck: "",
-        }),
-      });
-      const json = await resp.json().catch(() => ({}));
-      if (!resp.ok || json.success === false) {
-        throw new Error(json.message || "Could not send request right now.");
-      }
-      requestedIds.add(t.id);
+      let result = null;
       if (typeof window !== "undefined" && window.BTMM_EVENTS && typeof window.BTMM_EVENTS.recordRequest === "function") {
-        window.BTMM_EVENTS.recordRequest(t, { email: visitorEmail, note, source: "player-request-form" });
+        result = await window.BTMM_EVENTS.recordRequest(t, {
+          email: visitorEmail,
+          note,
+          source: "player-request-form",
+        });
+      } else {
+        throw new Error("Request service is currently unavailable.");
       }
-      formOpenForId = null;
+
+      if (!result || !result.ok) {
+        throw new Error((result && result.error) || "Could not send request right now. Please try again.");
+      }
+
+      saveRequestEmail(visitorEmail);
+      draftEmail = visitorEmail;
       draftNote = "";
+      requestedIds.add(t.id);
+      formOpenForId = null;
+      logPrivateTrackEvent("track-request", t);
     } catch (err) {
       reqError = (err && err.message) || "Network error — please try again.";
     } finally {
       sendingId = null;
       render();
+      if (reqError && cardEl) {
+        const el = cardEl.querySelector("#mp-req-email");
+        if (el) el.focus();
+      }
     }
   }
 
   function bindCardEvents() {
     if (!cardEl) return;
     cardEl.addEventListener("input", (ev) => {
-      if (ev.target.name === "email") draftEmail = ev.target.value;
+      if (ev.target.name === "email") {
+        draftEmail = ev.target.value;
+        if (reqError) {
+          reqError = "";
+          ev.target.classList.remove("is-invalid");
+          ev.target.setAttribute("aria-invalid", "false");
+          ev.target.removeAttribute("aria-describedby");
+          const errEl = cardEl.querySelector("#mp-req-error");
+          if (errEl) errEl.remove();
+          if (selectedId && byId.has(selectedId)) {
+            lastRenderedFormState = `${formOpenForId || ""}|${sendingId || ""}|${reqError}|${requestedIds.has(selectedId) ? 1 : 0}|${infoOpen ? 1 : 0}`;
+          }
+        }
+      }
       if (ev.target.name === "note") draftNote = ev.target.value;
     });
     cardEl.addEventListener("submit", (ev) => {
@@ -1533,6 +1642,16 @@
     });
 
     cardEl.addEventListener("keydown", (ev) => {
+      if (ev.target && typeof ev.target.matches === "function" && ev.target.matches("input, textarea")) {
+        if (ev.key === "Escape") {
+          ev.preventDefault();
+          ev.stopPropagation();
+          cancelRequestForm();
+          return;
+        }
+        ev.stopPropagation();
+        return;
+      }
       const wrap = ev.target.closest("#mp-wave-wrap");
       if (!wrap || !selectedId || !byId.has(selectedId)) return;
       const t = byId.get(selectedId);
@@ -1599,9 +1718,7 @@
       }
       const cancelBtn = ev.target.closest("[data-cancel-req]");
       if (cancelBtn) {
-        formOpenForId = null;
-        reqError = "";
-        render();
+        cancelRequestForm();
         return;
       }
       const dlLink = ev.target.closest("[data-dl-kind]");
@@ -1662,9 +1779,6 @@
     hooks = cfg || {};
     byId = hooks.byId || new Map();
     erasById = hooks.erasById || new Map();
-    if (typeof window !== "undefined" && window.BTMM_WEB3FORMS_KEY) {
-      web3FormsKey = String(window.BTMM_WEB3FORMS_KEY);
-    }
     cardEl = typeof document !== "undefined" ? document.getElementById("track-player-card") : null;
     loadPrefs();
     if (typeof window !== "undefined" && window.ME_AUDIO && typeof window.ME_AUDIO.setAutoPlay === "function") {
@@ -1708,7 +1822,7 @@
     setCollapsed(v) { collapsed = Boolean(v); waveHoverFrac = null; saveCollapsed(); render(); },
     isInfoOpen: () => infoOpen,
     setInfoOpen(v) { infoOpen = Boolean(v); render(); },
-    setWeb3FormsKey(k) { web3FormsKey = String(k || ""); render(); },
+    setWeb3FormsKey() {},
     refreshWaveform: syncWaveVisuals,
     getPreviewStart,
     getShareUrl: (tid) => buildTrackShareUrl(tid || selectedId),

@@ -310,20 +310,56 @@
     });
   }
 
-  function recordRequest(trackOrId, opts = {}) {
+  async function recordRequest(trackOrId, opts = {}) {
     const track = resolveTrack(trackOrId);
-    if (!track || !track.id) return null;
-    const parts = [];
-    if (opts.email) parts.push(`Reply: ${opts.email}`);
-    if (opts.note) parts.push(opts.note);
-    return postEventPayload({
+    if (!track || !track.id) {
+      return { ok: false, status: 400, error: "Unknown track." };
+    }
+    const base = getApiBase();
+    if (!base) {
+      return { ok: false, status: 0, error: "Request service is currently unavailable." };
+    }
+    const requesterEmail = String(opts.email || opts.requester_email || "").trim();
+    const note = String(opts.note || "").trim().slice(0, 500);
+    const hash = sessionHashSync || (await ensureSessionHash());
+    const endpoint = `${base}/api/events`;
+    const bodyObj = {
       track_id: track.id,
       track_title: track.title || track.id,
       era: resolveEraLabel(track),
       event_type: "request",
       source: opts.source || "player-request",
-      note: parts.join(" — ").slice(0, 340),
-    });
+      requester_email: requesterEmail,
+      note,
+      session_hash: hash,
+      referrer: (typeof document !== "undefined" && document.referrer) || "",
+    };
+
+    try {
+      const resp = await fetch(endpoint, {
+        method: "POST",
+        mode: "cors",
+        credentials: "omit",
+        keepalive: true,
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(bodyObj),
+      });
+      const data = await resp.json().catch(() => ({}));
+      if (!resp.ok || (data && data.ok === false)) {
+        return {
+          ok: false,
+          status: resp.status,
+          error: (data && data.error) || "Could not send request right now. Please try again.",
+        };
+      }
+      return { ok: true, status: resp.status, data };
+    } catch (_) {
+      return {
+        ok: false,
+        status: 0,
+        error: "Network error — please check your connection and try again.",
+      };
+    }
   }
 
   function handleDelegatedAnchorDownload(ev) {

@@ -13,6 +13,7 @@ ALLOWED_ORIGINS = "https://billtribble.github.io,https://billtribble.com,https:/
 binding = "DB"
 database_name = "music-map-db"
 database_id = "67a04f02-fb3a-46d8-8382-369d223f0797"
+migrations_dir = "migrations"
 
 # Secrets configured via `wrangler secret put` (never committed in plaintext):
 #   - NOTIFY_TO_EMAIL      (recipient address for instant Star & Download alerts)

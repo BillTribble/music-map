@@ -9,10 +9,11 @@
 const VALID_EVENT_TYPES = new Set(["star", "unstar", "download", "request"]);
 const TRACK_ID_RE = /^[a-zA-Z0-9_.:-]{1,120}$/;
 const SESSION_HASH_RE = /^[a-f0-9]{12,64}$/i;
+const EMAIL_RE = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
 
 const STAR_EMAIL_COOLDOWN_SEC = 12 * 3600;     // 12h per (session_hash, track_id) prevents ★/☆ toggle spam
 const DOWNLOAD_EMAIL_COOLDOWN_SEC = 10 * 60;   // 10m per (session_hash, track_id, format) prevents double-click dupes
-const REQUEST_EMAIL_COOLDOWN_SEC = 3600;       // 1h per (session_hash, track_id)
+const REQUEST_EMAIL_COOLDOWN_SEC = 300;        // 5m per (session_hash, track_id, requester_email) prevents accidental double-submit
 const IP_EMAIL_HOURLY_CAP = 15;                // Max 15 notification emails/hr per hashed IP
 const IP_EVENTS_PER_MIN_CAP = 60;              // Max 60 event writes/min per hashed IP
 
@@ -149,6 +150,21 @@ async function ensureSchema(db) {
       )
     `),
     db.prepare(`CREATE INDEX IF NOT EXISTS idx_mm_dedup_epoch ON music_map_email_dedup(sent_at_epoch)`),
+    db.prepare(`
+      CREATE TABLE IF NOT EXISTS music_map_requests (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        track_id TEXT NOT NULL,
+        track_title TEXT NOT NULL,
+        era TEXT NOT NULL DEFAULT '',
+        requester_email TEXT NOT NULL,
+        note TEXT NOT NULL DEFAULT '',
+        session_hash TEXT NOT NULL DEFAULT '',
+        country TEXT NOT NULL DEFAULT '',
+        created_at TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%SZ', 'now'))
+      )
+    `),
+    db.prepare(`CREATE INDEX IF NOT EXISTS idx_mm_requests_created ON music_map_requests(created_at DESC, id DESC)`),
+    db.prepare(`CREATE INDEX IF NOT EXISTS idx_mm_requests_track ON music_map_requests(track_id, created_at DESC)`),
   ]);
   schemaInitialized = true;
 }
@@ -193,34 +209,39 @@ function buildNotificationEmail(ev, totals, env) {
   const fmtLabel = formatHumanLabel(ev.format);
   const eraDisplay = ev.era || "Catalog";
   const countryDisplay = ev.country || "Unknown";
+  const replyTo = ev.event_type === "request" ? stripCrLf(ev.requester_email || "", 254) : "";
+  const noteDisplay = stripCrLf(ev.note || "", 500);
 
   let subject = "";
   let headline = "";
-  let actionLine = "";
+  const extraLines = [];
 
   if (ev.event_type === "star") {
     subject = `Starred on Music Map: ${ev.track_title}`;
     headline = `Someone starred "${ev.track_title}"`;
-    actionLine = `Event: Track Starred`;
+    extraLines.push("Event: Track Starred");
   } else if (ev.event_type === "download") {
     subject = `Downloaded on Music Map: ${ev.track_title} (${fmtLabel})`;
     headline = `Someone downloaded "${ev.track_title}"`;
-    actionLine = `Format: ${fmtLabel}${ev.source ? ` (${ev.source})` : ""}`;
+    extraLines.push(`Format: ${fmtLabel}${ev.source ? ` (${ev.source})` : ""}`);
   } else {
     subject = `Track Request on Music Map: ${ev.track_title}`;
     headline = `Track requested: "${ev.track_title}"`;
-    actionLine = ev.note ? `Visitor note: ${ev.note}` : `Event: Unreleased track request`;
+    if (replyTo) extraLines.push(`Requester: ${replyTo}`);
+    extraLines.push(`Note: ${noteDisplay || "(none)"}`);
   }
 
   subject = stripCrLf(subject, 160);
+  const reqCount = Number(totals.total_requests || 0);
+  const reqSummaryText = reqCount > 0 ? ` · ${reqCount} request${reqCount === 1 ? "" : "s"}` : "";
 
   const textLines = [
     headline,
     "",
     `Track: ${ev.track_title}`,
     `Era: ${eraDisplay}`,
-    actionLine,
-    `Cumulative totals: ${totals.active_stars} active star${totals.active_stars === 1 ? "" : "s"} · ${totals.total_downloads} download${totals.total_downloads === 1 ? "" : "s"}`,
+    ...extraLines,
+    `Cumulative totals: ${totals.active_stars} active star${totals.active_stars === 1 ? "" : "s"} · ${totals.total_downloads} download${totals.total_downloads === 1 ? "" : "s"}${reqSummaryText}`,
     `Location: ${countryDisplay}`,
     `Time (UTC): ${ev.created_at}`,
     "",
@@ -228,6 +249,10 @@ function buildNotificationEmail(ev, totals, env) {
     `View Hot List on Stats: ${statsUrl}`,
   ];
   const text = textLines.join("\n");
+
+  const replyMailtoHref = replyTo
+    ? `mailto:${encodeURIComponent(replyTo)}?subject=${encodeURIComponent(`Re: ${ev.track_title} (Bill Tribble Music Map)`)}`
+    : "";
 
   const html = `<!doctype html>
 <html>
@@ -243,19 +268,21 @@ function buildNotificationEmail(ev, totals, env) {
       <tr><td style="padding:4px 0;color:#444746;width:130px;">Track</td><td style="padding:4px 0;font-weight:600;">${escHtml(ev.track_title)}</td></tr>
       <tr><td style="padding:4px 0;color:#444746;">Era</td><td style="padding:4px 0;">${escHtml(eraDisplay)}</td></tr>
       ${ev.event_type === "download" ? `<tr><td style="padding:4px 0;color:#444746;">Format</td><td style="padding:4px 0;font-weight:600;">${escHtml(fmtLabel)}</td></tr>` : ""}
-      ${ev.note ? `<tr><td style="padding:4px 0;color:#444746;">Visitor note</td><td style="padding:4px 0;">${escHtml(ev.note)}</td></tr>` : ""}
-      <tr><td style="padding:4px 0;color:#444746;">Track totals</td><td style="padding:4px 0;font-weight:600;">${Number(totals.active_stars || 0)} star${totals.active_stars === 1 ? "" : "s"} &middot; ${Number(totals.total_downloads || 0)} download${totals.total_downloads === 1 ? "" : "s"}</td></tr>
+      ${replyTo ? `<tr><td style="padding:4px 0;color:#444746;">Requester</td><td style="padding:4px 0;font-weight:600;"><a href="mailto:${escHtml(replyTo)}" style="color:#0b57d0;text-decoration:none;">${escHtml(replyTo)}</a></td></tr>` : ""}
+      ${ev.event_type === "request" || noteDisplay ? `<tr><td style="padding:4px 0;color:#444746;">Note</td><td style="padding:4px 0;">${escHtml(noteDisplay || "—")}</td></tr>` : ""}
+      <tr><td style="padding:4px 0;color:#444746;">Track totals</td><td style="padding:4px 0;font-weight:600;">${Number(totals.active_stars || 0)} star${totals.active_stars === 1 ? "" : "s"} &middot; ${Number(totals.total_downloads || 0)} download${totals.total_downloads === 1 ? "" : "s"}${reqCount > 0 ? ` &middot; ${reqCount} request${reqCount === 1 ? "" : "s"}` : ""}</td></tr>
       <tr><td style="padding:4px 0;color:#444746;">Country &middot; Time</td><td style="padding:4px 0;">${escHtml(countryDisplay)} &middot; ${escHtml(ev.created_at)}</td></tr>
     </table>
     <div style="margin-top:18px;">
-      <a href="${escHtml(deepLink)}" style="display:inline-block;padding:10px 18px;border-radius:9999px;background:#0b57d0;color:#ffffff;text-decoration:none;font-size:14px;font-weight:600;margin-right:8px;">Open track on Music Map</a>
-      <a href="${escHtml(statsUrl)}" style="display:inline-block;padding:10px 16px;border-radius:9999px;background:#e8f0fe;color:#0b57d0;text-decoration:none;font-size:14px;font-weight:600;">Open Stats Hot List</a>
+      ${replyMailtoHref ? `<a href="${escHtml(replyMailtoHref)}" style="display:inline-block;padding:10px 18px;border-radius:9999px;background:#0b57d0;color:#ffffff;text-decoration:none;font-size:14px;font-weight:600;margin-right:8px;margin-bottom:8px;">Reply to requester</a>` : ""}
+      <a href="${escHtml(deepLink)}" style="display:inline-block;padding:10px 18px;border-radius:9999px;background:${replyMailtoHref ? "#e8f0fe" : "#0b57d0"};color:${replyMailtoHref ? "#0b57d0" : "#ffffff"};text-decoration:none;font-size:14px;font-weight:600;margin-right:8px;margin-bottom:8px;">Open track on Music Map</a>
+      <a href="${escHtml(statsUrl)}" style="display:inline-block;padding:10px 16px;border-radius:9999px;background:#e8f0fe;color:#0b57d0;text-decoration:none;font-size:14px;font-weight:600;margin-bottom:8px;">Open Stats Hot List</a>
     </div>
   </div>
 </body>
 </html>`;
 
-  return { subject, text, html, deepLink };
+  return { subject, text, html, deepLink, replyTo };
 }
 
 function utf8ToBase64(str) {
@@ -270,16 +297,22 @@ function encodeMimeSubject(subject) {
   return `=?UTF-8?B?${utf8ToBase64(clean)}?=`;
 }
 
-function buildMimeMessage({ from, to, subject, text, html }) {
+function buildMimeMessage({ from, to, replyTo, subject, text, html }) {
   const boundary = `btmm_${crypto.randomUUID().replace(/-/g, "")}`;
   const msgId = `<${crypto.randomUUID()}@music-map.workers.dev>`;
   const dateHdr = new Date().toUTCString();
   const crlfText = text.replace(/\r?\n/g, "\r\n");
   const crlfHtml = html.replace(/\r?\n/g, "\r\n");
+  const cleanReplyTo = stripCrLf(replyTo || "", 254);
 
-  return [
+  const headers = [
     `From: ${stripCrLf(from, 160)}`,
     `To: ${stripCrLf(to, 160)}`,
+  ];
+  if (cleanReplyTo && EMAIL_RE.test(cleanReplyTo) && !/[<>]/.test(cleanReplyTo)) {
+    headers.push(`Reply-To: ${cleanReplyTo}`);
+  }
+  headers.push(
     `Subject: ${encodeMimeSubject(subject)}`,
     `Message-ID: ${msgId}`,
     `Date: ${dateHdr}`,
@@ -299,8 +332,10 @@ function buildMimeMessage({ from, to, subject, text, html }) {
     crlfHtml,
     ``,
     `--${boundary}--`,
-    ``,
-  ].join("\r\n");
+    ``
+  );
+
+  return headers.join("\r\n");
 }
 
 function parseRecipients(raw) {
@@ -364,6 +399,7 @@ async function sendViaSmtps(mail, recipients, env) {
     const rawMime = buildMimeMessage({
       from: `Music Map <${fromAddr}>`,
       to: recipients.join(", "),
+      replyTo: mail.replyTo,
       subject: mail.subject,
       text: mail.text,
       html: mail.html,
@@ -384,19 +420,21 @@ async function deliverEmailPayload(mail, env) {
   if (env.RESEND_API_KEY && recipients.length) {
     const fromAddr = stripCrLf(env.NOTIFY_FROM_EMAIL || "Music Map <onboarding@resend.dev>", 160);
     const apiKey = String(env.RESEND_API_KEY).trim();
+    const batchPayload = {
+      from: fromAddr,
+      to: recipients,
+      subject: mail.subject,
+      text: mail.text,
+      html: mail.html,
+      ...(mail.replyTo ? { reply_to: mail.replyTo } : {}),
+    };
     const batchResp = await fetch("https://api.resend.com/emails", {
       method: "POST",
       headers: {
         Authorization: `Bearer ${apiKey}`,
         "Content-Type": "application/json",
       },
-      body: JSON.stringify({
-        from: fromAddr,
-        to: recipients,
-        subject: mail.subject,
-        text: mail.text,
-        html: mail.html,
-      }),
+      body: JSON.stringify(batchPayload),
     });
     if (batchResp.ok) {
       statuses.push(`resend:sent:${recipients.length}`);
@@ -417,6 +455,7 @@ async function deliverEmailPayload(mail, env) {
             subject: mail.subject,
             text: mail.text,
             html: mail.html,
+            ...(mail.replyTo ? { reply_to: mail.replyTo } : {}),
           }),
         });
         if (r.ok) okCount++;
@@ -454,6 +493,7 @@ async function deliverEmailPayload(mail, env) {
         const rawMime = buildMimeMessage({
           from: `Music Map <${cleanFrom}>`,
           to: rcpt,
+          replyTo: mail.replyTo,
           subject: mail.subject,
           text: mail.text,
           html: mail.html,
@@ -480,6 +520,7 @@ async function deliverEmailPayload(mail, env) {
         from_name: "Bill Tribble Music Map",
         subject: mail.subject,
         message: mail.text,
+        ...(mail.replyTo ? { email: mail.replyTo, replyto: mail.replyTo } : {}),
         botcheck: "",
       }),
     });
@@ -520,7 +561,7 @@ async function maybeSendNotification(ev, totals, wasNewlyStarred, env) {
     dedupKey = `download:${ev.session_hash}:${ev.track_id}:${ev.format || "audio"}`;
     cooldownSec = DOWNLOAD_EMAIL_COOLDOWN_SEC;
   } else if (ev.event_type === "request") {
-    dedupKey = `request:${ev.session_hash}:${ev.track_id}`;
+    dedupKey = `req_v2:${ev.session_hash}:${ev.track_id}:${ev.requester_email || ""}`;
     cooldownSec = REQUEST_EMAIL_COOLDOWN_SEC;
   } else {
     return;
@@ -598,6 +639,7 @@ async function maybeSendNotification(ev, totals, wasNewlyStarred, env) {
       did_deliver: didDeliver,
       delivery_status: deliveryStatus,
       to_configured: Boolean(env.NOTIFY_TO_EMAIL),
+      reply_to: mail.replyTo || "",
       subject: mail.subject,
       mime_subject: encodeMimeSubject(mail.subject),
       deep_link: mail.deepLink,
@@ -606,8 +648,11 @@ async function maybeSendNotification(ev, totals, wasNewlyStarred, env) {
       track_title: ev.track_title,
       era: ev.era,
       format: ev.format,
+      requester_email: ev.requester_email || "",
+      note: ev.note || "",
       active_stars: Number(totals.active_stars || 0),
       total_downloads: Number(totals.total_downloads || 0),
+      total_requests: Number(totals.total_requests || 0),
       text: mail.text,
       html: mail.html,
       created_at: ev.created_at,
@@ -638,7 +683,8 @@ async function handlePostEvent(request, env, ctx, corsHeaders) {
   const era = stripCrLf(body.era, 120);
   const eventType = stripCrLf(body.event_type, 24).toLowerCase();
   const source = stripCrLf(body.source, 64);
-  const note = stripCrLf(body.note, 360);
+  const rawNote = stripCrLf(body.note, 500);
+  const requesterEmail = stripCrLf(body.requester_email || body.email || "", 254).toLowerCase();
   const clientReferrer = stripCrLf(body.referrer || request.headers.get("referer") || "", 240);
 
   if (!trackId || !TRACK_ID_RE.test(trackId)) {
@@ -647,8 +693,14 @@ async function handlePostEvent(request, env, ctx, corsHeaders) {
   if (!VALID_EVENT_TYPES.has(eventType)) {
     return jsonResponse({ ok: false, error: "Invalid event_type" }, 400, corsHeaders);
   }
+  if (eventType === "request") {
+    if (!requesterEmail || !EMAIL_RE.test(requesterEmail) || /[<>]/.test(requesterEmail)) {
+      return jsonResponse({ ok: false, error: "Please enter a valid email address." }, 400, corsHeaders);
+    }
+  }
 
   const format = normalizeFormat(body.format, eventType);
+  const publicEventNote = eventType === "request" ? "" : rawNote.slice(0, 360);
 
   const ipRaw = request.headers.get("cf-connecting-ip") || "0.0.0.0";
   const salt = String(env.IP_HASH_SALT || "btmm-d1-default-salt-v1");
@@ -743,6 +795,14 @@ async function handlePostEvent(request, env, ctx, corsHeaders) {
       .run();
   } else if (eventType === "request") {
     await env.DB.prepare(
+      `INSERT INTO music_map_requests
+         (track_id, track_title, era, requester_email, note, session_hash, country, created_at)
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?)`
+    )
+      .bind(trackId, trackTitle, era, requesterEmail, rawNote, sessionHash, country, nowIso)
+      .run();
+
+    await env.DB.prepare(
       `UPDATE music_map_track_totals
        SET total_requests = total_requests + 1,
            updated_at = ?
@@ -768,7 +828,7 @@ async function handlePostEvent(request, env, ctx, corsHeaders) {
       ipHash,
       country,
       clientReferrer,
-      note,
+      publicEventNote,
       nowIso
     )
     .run();
@@ -798,7 +858,8 @@ async function handlePostEvent(request, env, ctx, corsHeaders) {
     session_hash: sessionHash,
     ip_hash: ipHash,
     country,
-    note,
+    requester_email: requesterEmail,
+    note: rawNote,
     created_at: nowIso,
   };
 
