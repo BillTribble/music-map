@@ -1132,15 +1132,21 @@ def build_dataset(
     tid = str(t.get("id") or "")
     existing_ids.add(tid)
     if tid in genai_by_id:
-      # Refresh trimmed duration, peaks, cue_sec, URLs, and AI flags while keeping existing slot/era
+      # Refresh trimmed duration, peaks, cue_sec, URLs, free_download metadata, and AI flags while keeping existing slot/era
       gt = genai_by_id[tid]
       for k in (
           "title", "shortTitle", "full_duration_sec", "is_sketch", "is_ai", "ai_cat",
           "peaks", "cue_sec", "preview_start_sec", "preview_dur_sec", "duration_sec",
           "bytes", "rms_db", "gain_trim", "stream_url", "preview_url", "preview_release_url", "file",
+          "tier", "has_lossless", "dl_ready",
+          "mp3_320_url", "mp3_url", "mp3_320_bytes", "mp3_size_mb", "mp3_mb", "mp3_kbps",
+          "flac_url", "flac_bytes", "flac_size_mb", "flac_mb",
       ):
         if k in gt:
           t[k] = gt[k]
+      if not gt.get("has_lossless"):
+        for fk in ("flac_url", "flac_bytes", "flac_size_mb", "flac_mb"):
+          t.pop(fk, None)
     if tid in TITLE_OVERRIDES:
       t["title"] = TITLE_OVERRIDES[tid]
       t["shortTitle"] = TITLE_OVERRIDES[tid][:26]

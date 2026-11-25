@@ -1055,8 +1055,8 @@ def build_from_full_analysis(
 
         # Merge Tier B 320k MP3 / lossless FLAC download metadata when available
         dl_entry = archive_dl.get(tid) if isinstance(archive_dl, dict) else None
-        if isinstance(dl_entry, dict) and t.get("tier") == "archive_dl":
-            for dk in ("mp3_320_url", "mp3_320_bytes", "mp3_size_mb", "has_lossless", "flac_url", "flac_bytes", "flac_size_mb", "dl_ready"):
+        if isinstance(dl_entry, dict) and t.get("tier") in ("archive_dl", "free_download"):
+            for dk in ("mp3_320_url", "mp3_url", "mp3_320_bytes", "mp3_size_mb", "mp3_mb", "mp3_kbps", "has_lossless", "flac_url", "flac_bytes", "flac_size_mb", "flac_mb", "dl_ready"):
                 if dk in dl_entry and dl_entry[dk] not in (None, ""):
                     t[dk] = dl_entry[dk]
 

@@ -511,7 +511,7 @@ def build_manifest(raw_items: list[dict], ffprobe_bin: str | None = None, check_
             (dur_sec is not None and dur_sec < 120.0)
             or (not released and (folder_sketch or SKETCH_WORD_RE.search(title) or SKETCH_WORD_RE.search(winner["rel_path"])))
         )
-        tier = "released" if released else ("archive_dl" if year < 2015 else "request")
+        tier = "released" if released else ("free_download" if is_ai_track else ("archive_dl" if year < 2015 else "request"))
 
         selected.append({
             "id": tid,
@@ -544,6 +544,7 @@ def build_manifest(raw_items: list[dict], ffprobe_bin: str | None = None, check_
         "tier_counts": {
             "released": sum(1 for t in selected if t["tier"] == "released"),
             "archive_dl": sum(1 for t in selected if t["tier"] == "archive_dl"),
+            "free_download": sum(1 for t in selected if t["tier"] == "free_download"),
             "request": sum(1 for t in selected if t["tier"] == "request"),
         },
         "tracks": selected,

@@ -111,11 +111,15 @@
 
   function resolveTier(t) {
     if (isReleased(t)) return "A";
+    const mp3Url = t && (t.mp3_320_url || t.mp3_url);
     if (
       t &&
-      t.tier === "archive_dl" &&
-      Boolean(t.mp3_320_url) &&
-      !(typeof t.year === "number" && t.year >= 2015)
+      Boolean(mp3Url) &&
+      (
+        t.tier === "free_download" ||
+        t.is_ai === true ||
+        (t.tier === "archive_dl" && !(typeof t.year === "number" && t.year >= 2015))
+      )
     ) {
       return "B";
     }
@@ -275,7 +279,7 @@
       ? st.autoPlay
       : getAutoPlayEnabled();
 
-    const hasFullAsset = Boolean(t.stream_url || t.mp3_320_url);
+    const hasFullAsset = Boolean(t.stream_url || t.mp3_320_url || t.mp3_url);
     const catalogFullDur = Number(t.full_duration_sec) || 0;
     const catalogClipDur = Number(t.duration_sec) || 22;
 
@@ -685,7 +689,7 @@
     }
 
     if (tier === "B") {
-      const mp3Url = t.mp3_320_url;
+      const mp3Url = t.mp3_320_url || t.mp3_url;
       const flacUrl = t.flac_url || "";
       const safeFilename = `Bill Tribble - ${(t.title || t.id).replace(/[\\/:*?"<>|]/g, "")}.mp3`;
       const estKbps = Number(t.mp3_kbps) || (t.mp3_320_bytes && t.full_duration_sec ? Math.round((t.mp3_320_bytes * 8) / 1000 / t.full_duration_sec) : 320);

@@ -1416,13 +1416,13 @@ def enrich_track_tiers(t: dict, rel_repo: str = "BillTribble/music-map") -> None
         or (full_dur is not None and float(full_dur) < 120.0)
         or (not released and (era in ("sketches_2024_25", "sketches_2026") or SKETCH_RE.search(t["title"])))
     )
-    tier = "released" if released else ("archive_dl" if year < 2015 else "request")
+    tier = "released" if released else ("free_download" if t.get("is_ai") else ("archive_dl" if year < 2015 else "request"))
     t.update({"year": year, "released": released, "is_sketch": is_sketch, "tier": tier})
     if links:
         t["links"] = links
     else:
         t.pop("links", None)
-    if tier == "archive_dl":
+    if tier in ("archive_dl", "free_download"):
         slug = t.get("slug") or re.sub(r"[^A-Za-z0-9]+", "_", t["title"]).strip("_")[:72]
         t["mp3_320_url"] = t.get("mp3_320_url") or f"https://github.com/{rel_repo}/releases/download/archive-downloads-v1/Bill_Tribble_-_{slug}.mp3"
         t["has_lossless"] = bool(t.get("has_lossless", False))
@@ -1565,7 +1565,8 @@ def main() -> None:
     preview_keep_keys = (
         "bytes", "duration_sec", "clip_bars", "beat_sec", "bar_sec",
         "beat_phase_sec", "cue_sec", "rms_db", "gain_trim", "preview_url", "file",
-        "mp3_320_bytes", "mp3_size_mb", "flac_url", "flac_bytes", "flac_size_mb",
+        "mp3_320_url", "mp3_url", "mp3_320_bytes", "mp3_size_mb", "mp3_mb", "mp3_kbps",
+        "flac_url", "flac_bytes", "flac_size_mb", "flac_mb",
     )
     for t in analyzed:
         tid = t["id"]

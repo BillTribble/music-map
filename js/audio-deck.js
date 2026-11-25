@@ -56,7 +56,7 @@
 
   function resolveTrackUrls(t) {
     if (!t) return [];
-    const raw = [t.stream_url, t.mp3_320_url, t.preview_url, t.file];
+    const raw = [t.stream_url, t.mp3_320_url, t.mp3_url, t.preview_url, t.file];
     const out = [];
     for (let i = 0; i < raw.length; i++) {
       const u = raw[i];
@@ -69,7 +69,11 @@
 
   function isUrlFullTrack(t, url) {
     if (!t || !url) return false;
-    return Boolean((t.stream_url && url === t.stream_url) || (t.mp3_320_url && url === t.mp3_320_url));
+    return Boolean(
+      (t.stream_url && url === t.stream_url) ||
+      (t.mp3_320_url && url === t.mp3_320_url) ||
+      (t.mp3_url && url === t.mp3_url)
+    );
   }
 
   function trackAudioUrl(t) {
