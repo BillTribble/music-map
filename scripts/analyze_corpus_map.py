@@ -699,6 +699,9 @@ DEFAULT_EXCLUDED_IDS = {
     "present_electro_51", "present_electro_53", "present_electro_62", "hd_2005_6", "psychedailies_6",
     "archive_2013_18_5", "archive_2013_18_60", "archive_2013_18_84", "archive_2018_23_53",
     "archive_2013_18_93", "archive_2013_18_94", "archive_2018_23_63",
+    # MusicFX AI test — excluded by owner (post-023266)
+    "archive_2018_23_45",
+    "archive_2018_23_46",
 }
 
 CANONICAL_ARCHETYPES: list[tuple[str, str, int]] = [
@@ -1474,7 +1477,7 @@ def is_excluded_by_folder_rule(path_str: str) -> bool:
     if not path_str:
         return False
     low_p = path_str.lower()
-    if "ai music sandbox" in low_p or "bill in china" in low_p:
+    if "ai music sandbox" in low_p or "musicfx ai test" in low_p or "bill in china" in low_p:
         return True
     parts = [p.strip() for p in low_p.split("/") if p.strip()]
     for idx, p in enumerate(parts[:-1]):

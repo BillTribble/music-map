@@ -12,7 +12,7 @@ import sys
 import numpy as np
 from sklearn.cluster import KMeans
 from sklearn.decomposition import PCA
-from sklearn.manifold import TSNE
+from sklearn.manifold import MDS, TSNE
 from sklearn.metrics import silhouette_score
 from sklearn.preprocessing import StandardScaler, normalize
 import umap
@@ -211,6 +211,9 @@ DEFAULT_EXCLUDED_IDS = {
     "present_electro_51", "present_electro_53", "present_electro_62", "hd_2005_6", "psychedailies_6",
     "archive_2013_18_5", "archive_2013_18_60", "archive_2013_18_84", "archive_2018_23_53",
     "archive_2013_18_93", "archive_2013_18_94", "archive_2018_23_63",
+    # MusicFX AI test — excluded by owner (post-023266)
+    "archive_2018_23_45",
+    "archive_2018_23_46",
 }
 
 # Tracks genuinely rendered in 2026 move to the '2026' Era column (post-023035),
@@ -278,7 +281,7 @@ def is_excluded_by_folder_rule(path_str: str) -> bool:
   if not path_str:
     return False
   low_p = path_str.lower()
-  if "ai music sandbox" in low_p:
+  if "ai music sandbox" in low_p or "musicfx ai test" in low_p or "bill in china" in low_p:
     return True
   parts = [p.strip() for p in low_p.split("/") if p.strip()]
   for idx, p in enumerate(parts[:-1]):
@@ -445,7 +448,7 @@ STYLE_SLOTS = [
         "idx": 8,
         "id": "d8_meditative_beats",
         "label": "Meditative beats",
-        "short_label": "Meditative beats",
+        "short_label": "Meditative",
         "hue": 190,
         "discogs_kw": {
             "Electronic---Ambient": 2.8,
@@ -497,7 +500,8 @@ AI_SUBFAMILIES = [
     ("ai_sub_world_exp", "Gamelan & experimental", "Gamelan & exp.", {0, 1, 6}, 210),
     ("ai_sub_downtempo", "Downtempo & melodic", "Downtempo", {2}, 170),
     ("ai_sub_house", "Afro, house & cumbia", "Afro & house", {3, 5}, 140),
-    ("ai_sub_bass", "Bass, drill & DnB", "Bass & DnB", {7, 9, 4}, 84),
+    ("ai_sub_bass", "UK bass & dubstep", "UK bass & dubstep", {9, 4}, 84),
+    ("ai_sub_dnb", "Drum & bass", "Drum & bass", {7}, 345),
 ]
 
 EXCLUDED_STYLES = {
@@ -710,6 +714,7 @@ def classify_folder_guidance(
     glitch_idm_vibe: float = 0.0,
     downtempo_prob: float = 0.0,
     dnb_prob: float = 0.0,
+    ukb_prob: float = 0.0,
 ) -> dict:
   """Evaluate author folder priority, Generative AI / Spoken Word membership, and clean Sketch status."""
   tid = str(t.get("id") or "")
@@ -731,7 +736,6 @@ def classify_folder_guidance(
           bool(t.get("is_ai"))
           or tid.startswith("ai_music_")
           or low.startswith("ai music 2025")
-          or "musicfx ai test" in low
           or "/ai gamelan/" in low
           or "/ai afrohouse" in low
       )
@@ -768,15 +772,29 @@ def classify_folder_guidance(
     elif ai_cat == "afro_house_cumbia":
       prior[3] += 0.22
       prior[5] += 0.10
-      allowed = {3, 5, 2, 7, 9}
+      allowed = {3, 5, 2, 9}
       rule = "ai_folder:afro_house_cumbia"
     elif ai_cat == "bass_drill_dnb":
-      prior[7] += 0.18
-      prior[9] += 0.18
-      allowed = {7, 9, 6, 5, 3}
-      rule = "ai_folder:bass_drill_dnb"
+      is_true_ai_dnb = dnb_prob >= 0.25 or any(
+          kw in title_low for kw in ("d&b", "dnb", "d+b", "qzb")
+      )
+      is_true_uk_bass = ukb_prob >= 0.13 or any(
+          kw in title_low for kw in ("drill", "grime", "dubstep", "bmore", "fong", "amanati", "droganos")
+      )
+      if is_true_ai_dnb:
+        prior[7] += 0.34
+        allowed = {7}
+        rule = "ai_folder:dnb"
+      elif is_true_uk_bass:
+        prior[9] += 0.24
+        allowed = {9}
+        rule = "ai_folder:uk_bass_dubstep"
+      else:
+        prior[9] += 0.06
+        allowed = {0, 1, 2, 3, 5, 6, 8, 9}
+        rule = "ai_folder:bass_eclectic"
     else:
-      allowed = {0, 1, 2, 3, 5, 6, 7, 8, 9}
+      allowed = {0, 1, 2, 3, 5, 6, 8, 9}
       rule = "ai_folder:general"
     return {
         "is_ai": True,
@@ -974,12 +992,18 @@ def _deoverlap_points(
 
 
 def compute_organic_continuum_and_ai_layout(
-    X_hybrid, proto_centers, priors, cluster_idx, is_ai_mask, is_spoken_mask
+    X_hybrid,
+    proto_centers,
+    priors,
+    cluster_idx,
+    is_ai_mask,
+    is_spoken_mask,
+    is_sketch_mask=None,
 ):
-  """Project handcrafted tracks onto a coherent Target-Guided Cosine UMAP archipelago (each genre forms a distinct,
-  non-interleaved territory touching along clean organic borders without radial cookie-cutter clamping),
-  place Generative AI tracks into a rounded 2D genre-subdivided archipelago on the right,
-  and isolate Spoken Word tracks onto their own quiet mini-island in the upper-right bay."""
+  """Project handcrafted tracks onto a cohesive, airy genre archipelago (spreading out intra-cluster
+  nodes into organic de-ribboned clouds while pulling islands closer across crisp, label-friendly channels
+  with facing-shore cross-genre cousin alignment), place Generative AI tracks into a rounded 2D
+  genre-subdivided archipelago on the right, and isolate Spoken Word tracks if present."""
   n = len(X_hybrid)
   coords = np.zeros((n, 2), dtype=np.float64)
 
@@ -987,135 +1011,312 @@ def compute_organic_continuum_and_ai_layout(
   ai_idx = np.where(is_ai_mask)[0]
   sp_idx = np.where(is_spoken_mask)[0]
 
-  # 1. Handcrafted Music: Target-Guided Cosine UMAP on rhythm-enriched X_hybrid (coherent non-interleaved peninsulas!)
-  hc_clusters = cluster_idx[hc_idx]
-  reducer = umap.UMAP(
-      n_neighbors=20,
-      min_dist=0.22,
-      metric="cosine",
-      target_metric="categorical",
-      target_weight=0.38,
-      compatibility_layout=True,
-      random_state=42,
-  )
-  u_hc = reducer.fit_transform(X_hybrid[hc_idx], y=hc_clusters).astype(np.float64)
+  # 1. Handcrafted Music: Spread-Cluster + Cohesive-Archipelago Layout in 1:1 Desktop Screen Space [1130x596]
+  if len(hc_idx) > 0:
+    W_BOX, H_BOX = 1130.0, 596.0
+    X_LO, X_HI = 0.062, 0.650
+    Y_LO, Y_HI = 0.118, 0.874
 
-  # Orient principal axis horizontally (ambient/meditative beats on left -> club/bass/breaks across core & right)
-  u_centered = u_hc - u_hc.mean(axis=0)
-  cov = np.cov(u_centered.T)
-  eigvals, eigvecs = np.linalg.eigh(cov)
-  order = np.argsort(-eigvals)
-  rot = u_centered @ eigvecs[:, order]
+    X_hc = X_hybrid[hc_idx]
+    hc_clusters = cluster_idx[hc_idx]
+    hc_sketch = (
+        is_sketch_mask[hc_idx]
+        if is_sketch_mask is not None
+        else np.zeros(len(hc_idx), dtype=bool)
+    )
+    vis_mask = ~hc_sketch
+    S_hc = X_hc @ X_hc.T
 
-  amb_mask = np.isin(hc_clusters, [0, 8])
-  if np.any(amb_mask) and rot[amb_mask, 0].mean() > 0:
-    rot[:, 0] = -rot[:, 0]
-  house_mask = np.isin(hc_clusters, [3, 9])
-  if np.any(house_mask) and rot[house_mask, 1].mean() > 0:
-    rot[:, 1] = -rot[:, 1]
+    # 1a. Deterministic PCA-seeded UMAP for local acoustic manifold structure
+    pca2 = PCA(n_components=2, random_state=42).fit_transform(X_hc).astype(np.float64)
+    amb_m = np.isin(hc_clusters, [0, 8])
+    if np.any(amb_m) and pca2[amb_m, 0].mean() > 0:
+      pca2[:, 0] = -pca2[:, 0]
+    top_m = np.isin(hc_clusters, [3, 5])
+    bot_m = np.isin(hc_clusters, [4, 6])
+    if np.any(top_m) and np.any(bot_m) and pca2[top_m, 1].mean() > pca2[bot_m, 1].mean():
+      pca2[:, 1] = -pca2[:, 1]
+    pca_init = (pca2 / (np.std(pca2[:, 0]) + 1e-6) * 8.0).astype(np.float32)
 
-  # Gentle local UMAP radius + acoustic coastal nestling so all 10 genres hug closely as one continuous continent without interleaving!
-  global_med = np.median(rot, axis=0)
-  rot_cozy = rot.copy()
-  for c in range(10):
-    m = hc_clusters == c
-    if np.sum(m) >= 2:
-      c_med = np.median(rot[m], axis=0)
-      local_delta = rot[m] - c_med
-      d_norm = np.linalg.norm(local_delta, axis=1)
-      if c == 4:
-        d_cap = max(0.32, float(np.percentile(d_norm, 85)) * 1.28)
-        scale_out = np.where(d_norm > d_cap, d_cap / np.maximum(d_norm, 1e-6), 1.0)
-      else:
-        d_cap = max(0.35, float(np.percentile(d_norm, 88)) * 1.28)
-        scale_out = np.where(d_norm > d_cap, (d_cap + 0.16 * (d_norm - d_cap)) / np.maximum(d_norm, 1e-6), 1.0)
-      local_delta = local_delta * scale_out[:, None]
-      c_pulled = global_med + 0.72 * (c_med - global_med)
-      rot_cozy[m] = c_pulled + 0.74 * local_delta
-  rot = rot_cozy
+    reducer = umap.UMAP(
+        n_neighbors=22,
+        min_dist=0.36,
+        metric="cosine",
+        target_metric="categorical",
+        target_weight=0.22,
+        init=pca_init,
+        compatibility_layout=True,
+        random_state=42,
+    )
+    u_hc = reducer.fit_transform(X_hc, y=hc_clusters).astype(np.float64)
+    u_hc = u_hc - np.median(u_hc, axis=0)
+    if np.any(amb_m) and u_hc[amb_m, 0].mean() > 0:
+      u_hc[:, 0] = -u_hc[:, 0]
+    if np.any(top_m) and np.any(bot_m) and u_hc[top_m, 1].mean() > u_hc[bot_m, 1].mean():
+      u_hc[:, 1] = -u_hc[:, 1]
 
-  # Soft tail knee only on extreme >1.85-sigma outliers so no single stray dot stretches the bounding box
-  center = np.median(rot, axis=0)
-  rel = rot - center
-  radii = np.hypot(rel[:, 0] / (np.std(rel[:, 0]) + 1e-6), rel[:, 1] / (np.std(rel[:, 1]) + 1e-6))
-  r_knee = 1.85
-  compress = np.where(radii > r_knee, (r_knee + 0.45 * (radii - r_knee)) / np.maximum(radii, 1e-6), 1.0)
-  rot = center + rel * compress[:, None]
+    # 1b. Cross-genre acoustic affinity & target island radii (proportional to sqrt(visible count))
+    present_clusters = sorted(int(c) for c in set(hc_clusters))
+    c_radii = {}
+    c_centers_feat = {}
+    for c in present_clusters:
+      m_all = hc_clusters == c
+      m_v = m_all & vis_mask
+      n_eff = int(np.sum(m_v)) if np.sum(m_v) >= 4 else int(np.sum(m_all))
+      c_radii[c] = 66.0 * math.sqrt(max(10.0, float(n_eff)) / 27.0)
+      c_centers_feat[c] = normalize(X_hc[m_all].mean(axis=0, keepdims=True), norm="l2")[0]
 
-  hc_pts = np.zeros_like(rot)
-  for dim, (lo, hi) in enumerate(((0.082, 0.625), (0.135, 0.855))):
-    v = rot[:, dim]
-    p1, p99 = np.percentile(v, 0.8), np.percentile(v, 99.2)
-    lin = np.clip((v - p1) / max(1e-6, p99 - p1), 0.0, 1.0)
-    hc_pts[:, dim] = lo + lin * (hi - lo)
+    aff = np.zeros((10, 10), dtype=np.float64)
+    cross_links = np.zeros((10, 10), dtype=np.float64)
+    for ca in present_clusters:
+      ia = np.where((hc_clusters == ca) & vis_mask)[0]
+      if len(ia) == 0:
+        ia = np.where(hc_clusters == ca)[0]
+      for cb in present_clusters:
+        if ca >= cb:
+          continue
+        ib = np.where((hc_clusters == cb) & vis_mask)[0]
+        if len(ib) == 0:
+          ib = np.where(hc_clusters == cb)[0]
+        sub = S_hc[np.ix_(ia, ib)].ravel()
+        top_k = np.sort(sub)[::-1][: min(8, len(sub))]
+        c_cos = float(np.dot(c_centers_feat[ca], c_centers_feat[cb]))
+        n_strong = float(np.sum(sub >= 0.65))
+        aff[ca, cb] = aff[cb, ca] = 0.55 * float(np.mean(top_k)) + 0.45 * c_cos
+        cross_links[ca, cb] = cross_links[cb, ca] = n_strong
 
-  # Rigid-cluster acoustic coastal nestling in 1440x900 stage aspect space so wide empty gulfs close into narrow ~28-44px channels
-  S_hc = X_hybrid[hc_idx] @ X_hybrid[hc_idx].T
-  aff = np.zeros((10, 10), dtype=np.float64)
-  for ca in range(10):
-    ia = np.where(hc_clusters == ca)[0]
-    for cb in range(ca + 1, 10):
-      ib = np.where(hc_clusters == cb)[0]
-      if len(ia) > 0 and len(ib) > 0:
-        top_s = np.sort(S_hc[np.ix_(ia, ib)].ravel())[::-1][:6]
-        aff[ca, cb] = aff[cb, ca] = float(np.mean(top_s))
+    K = len(present_clusters)
+    dissim = np.zeros((K, K), dtype=np.float64)
+    for ia, ca in enumerate(present_clusters):
+      for ib, cb in enumerate(present_clusters):
+        if ia == ib:
+          continue
+        dissim[ia, ib] = max(0.05, 1.0 - aff[ca, cb])
 
-  scale_xy = np.array([1328.0, 788.0], dtype=np.float64)
-  for _ in range(110):
-    shifts = np.zeros((10, 2), dtype=np.float64)
-    for ca in range(10):
-      pa = hc_pts[hc_clusters == ca] * scale_xy
-      if len(pa) == 0:
+    mds_xy = MDS(
+        n_components=2,
+        metric="precomputed",
+        init="classical_mds",
+        random_state=42,
+        n_init=1,
+        max_iter=500,
+        normalized_stress="auto",
+    ).fit_transform(dissim)
+
+    # Canonical compass preserving intuitive genre geography (Ambient/Meditative West, Electro/House North,
+    # Hypnotic/Downtempo Center, UK bass/DnB East, IDM South-East, Indie outer South coast)
+    compass_targets = {
+        0: np.array([-1.34,  0.34]),
+        8: np.array([-0.60,  0.06]),
+        5: np.array([-0.96, -0.64]),
+        3: np.array([-0.26, -1.06]),
+        1: np.array([ 0.06, -0.46]),
+        2: np.array([ 0.10,  0.16]),
+        9: np.array([ 0.68, -0.24]),
+        7: np.array([ 1.32,  0.06]),
+        6: np.array([ 0.62,  0.86]),
+        4: np.array([-0.32,  0.98]),
+    }
+    T_comp = np.array([compass_targets.get(c, np.zeros(2)) for c in present_clusters], dtype=np.float64)
+    mds_c = mds_xy - mds_xy.mean(axis=0)
+    T_c = T_comp - T_comp.mean(axis=0)
+    U_p, _, Vt_p = np.linalg.svd(mds_c.T @ T_c)
+    R_p = U_p @ Vt_p
+    if np.linalg.det(R_p) < 0:
+      Vt_p[-1, :] *= -1
+      R_p = U_p @ Vt_p
+    mds_aligned = (mds_c @ R_p) / (np.std(mds_c) + 1e-6)
+
+    center_stage = np.array([W_BOX * 0.50, H_BOX * 0.50], dtype=np.float64)
+    c_pos = {}
+    for ia, c in enumerate(present_clusters):
+      init_dir = 0.25 * mds_aligned[ia] + 0.75 * T_comp[ia]
+      c_pos[c] = center_stage + init_dir * np.array([345.0, 212.0])
+
+    # Equilibrate island centroids across crisp ~54-68px channels (closing dead gulfs while keeping distinct borders)
+    CHANNEL_TARGET_PX = 68.0
+    MIN_CENTROID_CLEAR_PX = 78.0
+    for _ in range(280):
+      forces = {c: np.zeros(2, dtype=np.float64) for c in present_clusters}
+      for ia, ca in enumerate(present_clusters):
+        nbr_order = sorted(
+            [cb for cb in present_clusters if cb != ca],
+            key=lambda cb: -(aff[ca, cb] + 0.035 * math.log1p(cross_links[ca, cb])),
+        )
+        top_nbrs = set(nbr_order[:3])
+        for ib, cb in enumerate(present_clusters):
+          if ia >= ib:
+            continue
+          delta = c_pos[cb] - c_pos[ca]
+          eff_delta = np.array([delta[0], delta[1] * 1.16], dtype=np.float64)
+          dist = float(np.linalg.norm(eff_delta)) + 1e-6
+          u = delta / (float(np.linalg.norm(delta)) + 1e-6)
+          sum_r = c_radii[ca] + c_radii[cb]
+          is_top = (cb in top_nbrs) or (ca in sorted(
+              [ck for ck in present_clusters if ck != cb],
+              key=lambda ck: -(aff[cb, ck] + 0.035 * math.log1p(cross_links[cb, ck])),
+          )[:3])
+
+          min_d = sum_r + (CHANNEL_TARGET_PX if is_top else MIN_CENTROID_CLEAR_PX)
+          if dist < min_d:
+            push = (min_d - dist) * 0.36
+            forces[ca] -= u * push
+            forces[cb] += u * push
+          elif is_top:
+            w_spring = 0.068 * (0.5 + aff[ca, cb]) * (1.0 + 0.12 * math.log1p(cross_links[ca, cb]))
+            pull = (dist - (sum_r + CHANNEL_TARGET_PX)) * w_spring
+            forces[ca] += u * pull
+            forces[cb] -= u * pull
+
+        compass_anchor = center_stage + T_comp[ia] * np.array([350.0, 214.0])
+        forces[ca] += (compass_anchor - c_pos[ca]) * 0.065
+
+      for c in present_clusters:
+        c_pos[c] += np.clip(forces[c], -15.0, 15.0)
+        r_x = c_radii[c] * 1.04
+        r_y = c_radii[c] * 0.88
+        c_pos[c][0] = float(np.clip(c_pos[c][0], r_x + 8.0, W_BOX - r_x - 8.0))
+        c_pos[c][1] = float(np.clip(c_pos[c][1], r_y + 8.0, H_BOX - r_y - 8.0))
+
+    # 1c. Intra-cluster expansion, soft de-ribboning & facing-shore cross-genre cousin alignment
+    pts_px = np.zeros((len(hc_idx), 2), dtype=np.float64)
+    for c in present_clusters:
+      m = np.where(hc_clusters == c)[0]
+      if len(m) == 0:
         continue
-      neigh_list = []
-      for cb in range(10):
-        if ca == cb:
-          continue
-        pb = hc_pts[hc_clusters == cb] * scale_xy
-        if len(pb) == 0:
-          continue
-        diff = pb[None, :, :] - pa[:, None, :]
-        dist = np.hypot(diff[:, :, 0], diff[:, :, 1])
-        flat_idx = np.argsort(dist.ravel())[:4]
-        d_coast = float(np.mean(dist.ravel()[flat_idx]))
-        i_a, i_b = np.unravel_index(flat_idx[0], dist.shape)
-        v_ab = pb[i_b] - pa[i_a]
-        u_ab = v_ab / (np.linalg.norm(v_ab) + 1e-6)
-        eff_d = d_coast / (0.80 + 0.30 * aff[ca, cb])
-        neigh_list.append((eff_d, d_coast, u_ab, aff[ca, cb]))
-        if d_coast < 38.0:
-          shifts[ca] -= u_ab * (38.0 - d_coast) * 0.24
-      neigh_list.sort(key=lambda x: x[0])
-      # Triangulated 2D coastal docking (1st & 2nd acoustic neighbors) closes hollow central bays while preserving Silhouette >= 0.50!
-      if len(neigh_list) >= 1 and neigh_list[0][1] > 42.0:
-        shifts[ca] += neigh_list[0][2] * (neigh_list[0][1] - 42.0) * 0.15
-      if len(neigh_list) >= 2 and neigh_list[1][1] > 84.0:
-        shifts[ca] += neigh_list[1][2] * (neigh_list[1][1] - 84.0) * 0.036
-    for ca in range(10):
-      hc_pts[hc_clusters == ca] += shifts[ca] / scale_xy
-    hc_pts += (np.array([0.352, 0.502]) - np.median(hc_pts, axis=0)) * 0.25
+      if len(m) == 1:
+        pts_px[m[0]] = c_pos[c]
+        continue
 
-  for dim, (lo, hi) in enumerate(((0.088, 0.608), (0.148, 0.842))):
-    v = hc_pts[:, dim]
-    vmin, vmax = float(np.percentile(v, 0.5)), float(np.percentile(v, 99.5))
-    hc_pts[:, dim] = lo + np.clip((v - vmin) / max(1e-6, vmax - vmin), 0.0, 1.0) * (hi - lo)
+      u_loc = u_hc[m] - np.median(u_hc[m], axis=0)
+      cov = np.cov(u_loc.T) + np.eye(2) * 1e-5
+      eigvals, eigvecs = np.linalg.eigh(cov)
+      order = np.argsort(-eigvals)
+      eigvals = eigvals[order]
+      eigvecs = eigvecs[:, order]
+      proj = u_loc @ eigvecs
+      s0 = math.sqrt(max(eigvals[0], 1e-6))
+      s1 = math.sqrt(max(eigvals[1], 1e-6))
+      proj[:, 0] /= s0
+      proj[:, 1] /= max(s1, s0 / 1.28)
+      whitened = proj @ eigvecs.T
+      whitened = whitened / (np.std(whitened, axis=0, keepdims=True) + 1e-6)
 
-  # Keep top-left HUD pill corner clear
-  hud_mask = (hc_pts[:, 0] < 0.24) & (hc_pts[:, 1] < 0.168)
-  hc_pts[hud_mask, 1] = np.maximum(hc_pts[hud_mask, 1], 0.172)
+      shore_vec = np.zeros_like(whitened)
+      for local_k, gi in enumerate(m):
+        v_acc = np.zeros(2, dtype=np.float64)
+        for cb in present_clusters:
+          if cb == c:
+            continue
+          ib = np.where(hc_clusters == cb)[0]
+          if len(ib) == 0:
+            continue
+          sims_cb = S_hc[gi, ib]
+          top3 = float(np.mean(np.sort(sims_cb)[::-1][: min(3, len(sims_cb))]))
+          if top3 > 0.58:
+            d_vec = c_pos[cb] - c_pos[c]
+            d_len = float(np.linalg.norm(d_vec)) + 1e-6
+            prox_w = 1.0 / (1.0 + (d_len / 340.0) ** 2)
+            v_acc += ((top3 - 0.58) ** 1.15) * prox_w * (d_vec / d_len)
+        shore_vec[local_k] = v_acc
 
-  # Clean coastal border channel (cross_mult=1.48) + anchor_pull=0.10 keeps every genre territory cohesive and non-interleaved!
-  hc_pts = _deoverlap_points(
-      hc_pts,
-      min_sep=0.0152,
-      x_bounds=(0.058, 0.636),
-      y_bounds=(0.115, 0.878),
-      anchor_pull=0.10,
-      iters=85,
-      clusters=hc_clusters,
-      cross_mult=1.48,
-  )
-  coords[hc_idx] = hc_pts
+      sh_std = float(np.hypot(shore_vec[:, 0], shore_vec[:, 1]).mean()) + 1e-6
+      shore_norm = np.clip(shore_vec / (sh_std * 1.6), -1.35, 1.35)
+
+      blended = 0.68 * whitened + 0.32 * shore_norm
+      blended -= np.median(blended, axis=0)
+
+      raw_r = np.hypot(blended[:, 0], blended[:, 1])
+      angles = np.arctan2(blended[:, 1], blended[:, 0])
+      ranks = np.argsort(np.argsort(raw_r)).astype(np.float64)
+      q_u = (ranks + 0.5) / float(len(m))
+      r_p90 = max(1e-6, float(np.percentile(raw_r, 90)))
+      r_nat = np.clip(raw_r / r_p90, 0.0, 1.12)
+      r_frac = 0.65 * np.sqrt(q_u) + 0.35 * r_nat
+      R_c = c_radii[c]
+      pts_px[m, 0] = c_pos[c][0] + R_c * 1.12 * r_frac * np.cos(angles)
+      pts_px[m, 1] = c_pos[c][1] + R_c * 0.90 * r_frac * np.sin(angles)
+
+    # 1d. True screen-pixel relaxation (default-visible first, then <75s sketch tuck-in)
+    anchor_px = pts_px.copy()
+    vis_idx = np.where(vis_mask)[0]
+    sk_idx = np.where(~vis_mask)[0]
+
+    def _relax_hc_subset(indices, fixed_indices, same_sep, cross_sep, anchor_w, r_cap_mult, iters):
+      all_active = np.concatenate([fixed_indices, indices]) if len(fixed_indices) > 0 else indices
+      if len(all_active) == 0:
+        return
+      n_fix = len(fixed_indices)
+      pos = pts_px[all_active].copy()
+      anc = anchor_px[all_active].copy()
+      cls = hc_clusters[all_active]
+      same_c = cls[:, None] == cls[None, :]
+      sep_mat = np.where(same_c, same_sep, cross_sep)
+
+      for _ in range(iters):
+        diff = pos[:, None, :] - pos[None, :, :]
+        dist_sq = np.sum(diff * diff, axis=2)
+        np.fill_diagonal(dist_sq, 1e9)
+        dist = np.sqrt(dist_sq)
+        overlap = (dist < sep_mat) & (dist > 1e-9)
+        if np.any(overlap):
+          stiff = np.where(same_c, 0.34, 0.50)
+          f_mag = np.where(overlap, (sep_mat - dist) / (dist + 1e-6) * stiff, 0.0)
+          disp = np.sum(diff * f_mag[:, :, None], axis=1)
+        else:
+          disp = np.zeros_like(pos)
+
+        pull = anchor_w * (anc - pos)
+        for loc_i in range(n_fix, len(all_active)):
+          ci = int(cls[loc_i])
+          rel_c = pos[loc_i] - c_pos[ci]
+          r_allow = c_radii[ci] * r_cap_mult
+          rn = float(np.hypot(rel_c[0] / 1.14, rel_c[1] / 0.92))
+          if rn > r_allow:
+            pull[loc_i] -= (rel_c / (rn + 1e-6)) * (rn - r_allow) * 0.38
+
+        if n_fix > 0:
+          pos[:n_fix] += 0.08 * disp[:n_fix] + 0.35 * (anc[:n_fix] - pos[:n_fix])
+          pos[n_fix:] += disp[n_fix:] + pull[n_fix:]
+        else:
+          pos += disp + pull
+
+        pos[:, 0] = np.clip(pos[:, 0], 4.0, W_BOX - 4.0)
+        pos[:, 1] = np.clip(pos[:, 1], 4.0, H_BOX - 4.0)
+        hud_hit = (pos[:, 0] < 245.0) & (pos[:, 1] < 44.0)
+        pos[hud_hit, 1] = np.maximum(pos[hud_hit, 1], 46.0)
+
+      pts_px[all_active] = pos
+
+    _relax_hc_subset(
+        vis_idx,
+        np.array([], dtype=np.int32),
+        same_sep=20.0,
+        cross_sep=52.0,
+        anchor_w=0.060,
+        r_cap_mult=1.15,
+        iters=125,
+    )
+    anchor_px[vis_idx] = pts_px[vis_idx].copy()
+
+    if len(sk_idx) > 0:
+      _relax_hc_subset(
+          sk_idx,
+          vis_idx,
+          same_sep=15.0,
+          cross_sep=48.0,
+          anchor_w=0.070,
+          r_cap_mult=1.15,
+          iters=95,
+      )
+
+    hc_pts = np.zeros_like(pts_px)
+    for dim, (lo, hi) in enumerate(((X_LO, X_HI), (Y_LO, Y_HI))):
+      v = pts_px[:, dim]
+      vmin, vmax = float(np.min(v)), float(np.max(v))
+      hc_pts[:, dim] = lo + ((v - vmin) / max(1e-6, vmax - vmin)) * (hi - lo)
+
+    coords[hc_idx] = hc_pts
 
   # 2. Generative AI Music: Cohesive Rounded 2D Archipelago in right reserve [0.692..0.952, 0.272..0.825]
   if len(ai_idx) > 0:
@@ -1130,13 +1331,14 @@ def compute_organic_continuum_and_ai_layout(
         random_state=42,
     ).fit_transform(X_ai).astype(np.float64)
 
-    # Tighter 5-region sub-archipelago inside Generative AI reserve (expanded upward now that Spoken word reserve is retired)
+    # 6-region sub-archipelago inside Generative AI reserve with Drum & bass cleanly separated from Bass & drill (post-023242)
     sub_pockets = {
-        "ai_sub_orch":      (np.array([0.758, 0.275]), (0.706, 0.812), (0.210, 0.340)),
-        "ai_sub_world_exp": (np.array([0.876, 0.295]), (0.822, 0.942), (0.220, 0.370)),
-        "ai_sub_downtempo": (np.array([0.754, 0.465]), (0.702, 0.810), (0.385, 0.545)),
-        "ai_sub_house":     (np.array([0.876, 0.545]), (0.816, 0.946), (0.425, 0.665)),
-        "ai_sub_bass":      (np.array([0.778, 0.705]), (0.708, 0.850), (0.610, 0.800)),
+        "ai_sub_orch":      (np.array([0.754, 0.246]), (0.704, 0.804), (0.192, 0.302)),
+        "ai_sub_world_exp": (np.array([0.884, 0.252]), (0.830, 0.942), (0.194, 0.312)),
+        "ai_sub_downtempo": (np.array([0.754, 0.448]), (0.702, 0.806), (0.382, 0.514)),
+        "ai_sub_house":     (np.array([0.884, 0.476]), (0.826, 0.946), (0.382, 0.570)),
+        "ai_sub_bass":      (np.array([0.756, 0.700]), (0.704, 0.808), (0.612, 0.788)),
+        "ai_sub_dnb":       (np.array([0.886, 0.716]), (0.840, 0.936), (0.664, 0.768)),
     }
     sub_members_local = {k: [] for k in sub_pockets}
     for local_i, global_i in enumerate(ai_idx):
@@ -1150,6 +1352,8 @@ def compute_organic_continuum_and_ai_layout(
 
     ai_pts = np.zeros((len(ai_idx), 2), dtype=np.float64)
     for sub_id, loc_indices in sub_members_local.items():
+      if not loc_indices:
+        continue
       anch, xb, yb = sub_pockets[sub_id]
       u_sub = u_ai[loc_indices]
       for d, (blo, bhi) in enumerate((xb, yb)):
@@ -1160,11 +1364,11 @@ def compute_organic_continuum_and_ai_layout(
         ai_pts[loc_indices, d] = np.clip(anch[d] + norm_v * half_w, blo + 0.004, bhi - 0.004)
       ai_pts[loc_indices] = _deoverlap_points(
           ai_pts[loc_indices],
-          min_sep=0.0150,
+          min_sep=0.0162,
           x_bounds=xb,
           y_bounds=yb,
           anchor_pull=0.035,
-          iters=85,
+          iters=95,
       )
     coords[ai_idx] = ai_pts
 
@@ -1385,6 +1589,10 @@ def build_dataset(
   for k in ("Electronic---Drum n Bass", "Electronic---Jungle"):
     if k in dg_map:
       dnb_probs += discogs_mean[:, dg_map[k]]
+  ukb_probs = np.zeros(n_tracks, dtype=np.float64)
+  for k in ("Electronic---Dubstep", "Electronic---Grime", "Hip Hop---Trap", "Electronic---UK Garage", "Electronic---Bassline"):
+    if k in dg_map:
+      ukb_probs += discogs_mean[:, dg_map[k]]
   for k, w in (
       ("meditative", 1.0),
       ("relaxing", 1.0),
@@ -1431,6 +1639,7 @@ def build_dataset(
           glitch_idm_vibe=float(glitch_idm_vibes[i]),
           downtempo_prob=float(downtempo_probs[i]),
           dnb_prob=float(dnb_probs[i]),
+          ukb_prob=float(ukb_probs[i]),
       )
       for i, t in enumerate(tracks)
   ]
@@ -1485,7 +1694,13 @@ def build_dataset(
       cluster_idx[i] = int(np.argmax(sc))
 
   coords = compute_organic_continuum_and_ai_layout(
-      X_hybrid, proto_centers, priors, cluster_idx, is_ai_mask, is_spoken_mask
+      X_hybrid,
+      proto_centers,
+      priors,
+      cluster_idx,
+      is_ai_mask,
+      is_spoken_mask,
+      is_sketch_mask=is_sketch_mask,
   )
 
   hc_mask = ~is_ai_mask & ~is_spoken_mask
@@ -1571,8 +1786,10 @@ def build_dataset(
     eff_era = str(upd.get("era") or t.get("era") or "")
     eff_yr = int(upd.get("year") or t.get("year") or 2020)
     if is_ai:
-      upd["preview_start_sec"] = 0.0
+      # Start all Generative AI tracks at 0:00 instead of mid-track preview cue (post-023279, post-023287)
       upd["cue_sec"] = 0.0
+      upd["preview_start_sec"] = 0.0
+      upd["cue_in_sec"] = 0.0
       upd["wip_eligible"] = False
       upd["rendered_at"] = str(t.get("rendered_at") or f"{eff_yr:04d}-06-15")
     else:

@@ -353,7 +353,7 @@
     const MOBILE_SHORT = {
       "Ambient & meditative": "Ambient",
       "Ambient & soundscapes": "Ambient",
-      "Meditative beats": "Meditative beats",
+      "Meditative beats": "Meditative",
       "Dark ambient & drone": "Dark ambient",
       "Downtempo & lush chords": "Downtempo",
       "House & ecstatic 4/4 groove": "House & 4/4",
@@ -395,8 +395,8 @@
       });
       if (rCnt > 0) {
         const padX = rg.is_spoken_group ? (isWide ? 24 : 14) : (isWide ? 24 : 12);
-        const padTop = rg.is_spoken_group ? (isWide ? 18 : 12) : (isWide ? 26 : 14);
-        const padBot = rg.is_spoken_group ? (isWide ? 18 : 12) : (isWide ? 24 : 14);
+        const padTop = rg.is_spoken_group ? (isWide ? 18 : 12) : (isWide ? 24 : 14);
+        const padBot = rg.is_spoken_group ? (isWide ? 18 : 12) : (isWide ? 34 : 18);
         const gx0 = rMinX - padX;
         const gx1 = rMaxX + padX;
         if (gx1 > -24 && gx0 < vw + 24) {
@@ -636,8 +636,8 @@
 
       if (g.is_ai_group || g.is_spoken_group) {
         const islPadX = g.is_spoken_group ? (isWide ? 24 : 14) : (isWide ? 24 : 12);
-        const islPadTop = g.is_spoken_group ? (isWide ? 18 : 12) : (isWide ? 32 : 14);
-        const islPadBot = g.is_spoken_group ? (isWide ? 18 : 12) : (isWide ? 22 : 14);
+        const islPadTop = g.is_spoken_group ? (isWide ? 18 : 12) : (isWide ? 24 : 14);
+        const islPadBot = g.is_spoken_group ? (isWide ? 18 : 12) : (isWide ? 34 : 18);
         const islBx0 = fullMinX - islPadX;
         const islBx1 = fullMaxX + islPadX;
         const islBy0 = fullMinY - islPadTop;
@@ -759,10 +759,10 @@
           const otherCenterD = otherCenterD2 < Infinity ? Math.sqrt(otherCenterD2) : Infinity;
           if (!zoomed && !isDedicatedIsland) {
             if (dotHits > 0) continue;
-            if (ownCenterD > otherCenterD - 3.0) continue;
-            const stronglyCentered = isWide && ownCenterD <= otherCenterD * 0.72;
-            if (!stronglyCentered && ownD > otherD + (isWide ? 10.5 : 3.0)) continue;
-            if (ownD > (isWide ? 48 : 35)) continue;
+            if (ownCenterD > otherCenterD - (isWide ? 3.0 : 0.8)) continue;
+            const stronglyCentered = ownCenterD <= otherCenterD * (isWide ? 0.72 : 0.82);
+            if (!stronglyCentered && ownD > otherD + (isWide ? 10.5 : 9.5)) continue;
+            if (ownD > (isWide ? 48 : 38)) continue;
           }
 
           const maxDistCore = dotHits === 0 ? outerMaxCore : (isWide ? 185 : 115);
@@ -780,9 +780,59 @@
             bestDotHits = dotHits;
           }
         }
+
+        // Compact mobile fallback: guarantee interior islands (e.g. Meditative, Downtempo) never drop their header
+        // while still strictly forbidding UI/label overlaps and foreign-cluster dot hits.
+        if (!best && !isWide && !zoomed) {
+          for (let ci = 0; ci < cands.length; ci++) {
+            const cx = clampX(cands[ci][0]);
+            const cy = clampY(cands[ci][1]);
+            if (cx - hw < 5 || cx + hw > vw - 5 || cy - hh < 8 || cy + hh > vh - 8) continue;
+            const distCore = Math.hypot(cx - mx, cy - my);
+            if (distCore > 92) continue;
+            const box = [cx - hw, cy - hh, cx + hw, cy + hh];
+            const p0 = cx - hw - 3.2, p1 = cy - hh - 3.2, p2 = cx + hw + 3.2, p3 = cy + hh + 3.2;
+            if (uiBoxes.some((ub) => boxOverlap(box, ub))) continue;
+            if (reserveGuardBoxes.some((rb) => boxOverlap(box, rb))) continue;
+            if (placedFam.some((pb) => boxOverlap(box, pb))) continue;
+            if (lastTrackBoxes.some((tb) => boxOverlap(box, tb))) continue;
+
+            let ownHits = 0, foreignHits = 0;
+            let ownD2 = Infinity, ownCenterD2 = Infinity, otherCenterD2 = Infinity;
+            for (let di = 0; di < dotLen; di++) {
+              const px = dotX[di], py = dotY[di];
+              const ddx = px < box[0] ? box[0] - px : (px > box[2] ? px - box[2] : 0);
+              const ddy = py < box[1] ? box[1] - py : (py > box[3] ? py - box[3] : 0);
+              const d2 = ddx * ddx + ddy * ddy;
+              const cd2 = (px - cx) * (px - cx) + (py - cy) * (py - cy);
+              const isOwn = isOwnDot[di] === 1;
+              if (isOwn) {
+                if (d2 < ownD2) ownD2 = d2;
+                if (cd2 < ownCenterD2) ownCenterD2 = cd2;
+              } else if (cd2 < otherCenterD2) {
+                otherCenterD2 = cd2;
+              }
+              if (p0 < dotBoxX1[di] && p2 > dotBoxX0[di] && p1 < dotBoxY1[di] && p3 > dotBoxY0[di]) {
+                if (isOwn) ownHits++;
+                else { foreignHits++; break; }
+              }
+            }
+            if (foreignHits > 0 || ownHits > 2) continue;
+            const ownD = ownD2 < Infinity ? Math.sqrt(ownD2) : Infinity;
+            const ownCenterD = ownCenterD2 < Infinity ? Math.sqrt(ownCenterD2) : Infinity;
+            const otherCenterD = otherCenterD2 < Infinity ? Math.sqrt(otherCenterD2) : Infinity;
+            if (ownCenterD > otherCenterD + 2.0 || ownD > 36) continue;
+            const fbScore = ownHits * 8000 + distCore * 1.4 + ownD * 2.0 + ownCenterD * 0.5;
+            if (fbScore < bestScore) {
+              bestScore = fbScore;
+              best = [cx, cy];
+              bestDotHits = ownHits;
+            }
+          }
+        }
       }
 
-      if (best && (isWide || zoomed || isDedicatedIsland || bestDotHits < 1)) {
+      if (best && (isWide || zoomed || isDedicatedIsland || bestDotHits <= 2)) {
         placedFam.push([best[0] - hw - 6, best[1] - hh - 4, best[0] + hw + 6, best[1] + hh + 4]);
 
         const grp = document.createElementNS(NS, "g");
@@ -821,8 +871,8 @@
       // Internal Discogs genre sub-labels inside the Generative AI territory box
       if (g.is_ai_group) {
         const padX = isWide ? 24 : 12;
-        const padTop = isWide ? 32 : 14;
-        const padBot = isWide ? 22 : 14;
+        const padTop = isWide ? 24 : 14;
+        const padBot = isWide ? 34 : 18;
         const bx0 = fullMinX - padX;
         const by0 = fullMinY - padTop;
         const bx1 = fullMaxX + padX;
@@ -860,32 +910,32 @@
             const stw = textWidth(subFont, sLbl);
             const shw = Math.ceil(stw * 0.56 + 6);
             const shh = Math.ceil(subFs * 0.64 + 3);
-            if (sMaxX + shw < -20 || sMinX - shw > vw + 20) return;
+            // Skip sub-pocket label when its pocket center cannot hold the full label inside the viewport (e.g. 30% right-edge peek)
+            if (smx - shw < 6 || smx + shw > vw - 6) return;
 
             const clampLoX = bx0 + shw + 5;
             const clampHiX = bx1 - shw - 5;
-            const clampLoY = Math.max(shh + 8, by0 + shh + 12);
-            const clampHiY = Math.min(vh - shh - 8, by1 - shh - 10);
+            const clampLoY = Math.max(shh + 8, by0 + shh + 10);
+            const clampHiY = Math.min(vh - shh - 8, by1 - shh - 6);
 
-            const sCands = [];
-            if (sMinY - shh - 10 >= clampLoY) {
-              sCands.push([smx, sMinY - shh - 10]);
-            }
-            if (sMinY - shh - 19 >= clampLoY) {
-              sCands.push([smx, sMinY - shh - 19]);
-            }
-            sCands.push(
-              [smx, sMaxY + shh + 10],
-              [smx, sMaxY + shh + 19],
+            // Place sub-pocket labels consistently below each sub-pocket so adjacent rows never double-stack labels in one gap
+            const sCands = [
+              [smx, sMaxY + shh + 9],
+              [smx, sMaxY + shh + 15],
+              [smx, sMaxY + shh + 22],
+              [smx - 10, sMaxY + shh + 10],
+              [smx + 10, sMaxY + shh + 10],
+              [smx - 20, sMaxY + shh + 11],
+              [smx + 20, sMaxY + shh + 11],
+              [smx, clampHiY],
               [sMinX - shw - 9, smy],
               [sMaxX + shw + 9, smy],
-              [smx, clampLoY],
-              [smx, clampHiY]
-            );
-            [14, 24, 36, 50, 68, 88].forEach((rad) => {
+            ];
+            [14, 24, 36, 50].forEach((rad) => {
               ANGLES.forEach((ang) => {
-                sCands.push([smx + Math.cos(ang) * rad * 1.15, smy + Math.sin(ang) * rad]);
-                sCands.push([smx + Math.cos(ang) * rad, sMinY + Math.sin(ang) * rad]);
+                if (Math.sin(ang) >= 0.15) {
+                  sCands.push([smx + Math.cos(ang) * rad * 1.15, sMaxY + Math.sin(ang) * rad]);
+                }
               });
             });
 
@@ -905,8 +955,8 @@
               if (placedFam.some((pb) => boxOverlap(sbox, pb))) continue;
               if (lastTrackBoxes.some((tb) => boxOverlap(sbox, tb))) continue;
 
-              const dCore = Math.hypot(scx - smx, scy - smy);
-              if (dCore > 135) continue;
+              const dAnchor = Math.hypot(scx - smx, scy - (sMaxY + shh + 9));
+              if (dAnchor > 115) continue;
 
               let dc = 0;
               for (let di = 0; di < dotLen; di++) {
@@ -914,7 +964,8 @@
                   dc += sIsOwn[di] ? 2600 : 5200;
                 }
               }
-              const sc = dCore + dc + (scy < sMinY ? -10 : 0);
+              const belowPenalty = scy >= sMaxY + shh + 3 ? -24 : 360;
+              const sc = dAnchor + Math.abs(scx - smx) * 0.45 + dc + belowPenalty;
               if (sc < sBestScore) {
                 sBestScore = sc;
                 sBest = [scx, scy];

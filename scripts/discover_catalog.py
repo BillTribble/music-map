@@ -62,6 +62,7 @@ EXCLUDED_DIR_NAMES = {
     "total praise remix",
     "ai music sandbox",
     "ai music sandbox tests",
+    "musicfx ai test",
 }
 EXCLUDED_PATH_SUBSTRS = (
     "jomtones rules",
@@ -110,6 +111,7 @@ EXCLUDED_PATH_SUBSTRS = (
     "ff33b 01",
     "ai music sandbox",
     "ai music sandbox tests",
+    "musicfx ai test",
 )
 EXCLUDED_EXACT_REL_PATHS = {
     "02 - psychedailies/season 1 - psychedaily/^ shortlist psychedailies/01 getaway/getaway vdj edit.flac",
@@ -345,7 +347,7 @@ def normalize_song_key(rel_path: str) -> str:
     """Normalize a track filename/stem into a canonical deduplication key."""
     low_rel = norm_nfc(rel_path).lower()
     stem = Path(norm_nfc(rel_path)).stem
-    is_ai_path = low_rel.startswith("ai music 2025") or "musicfx ai" in low_rel or "ai_test_kitchen" in low_rel
+    is_ai_path = low_rel.startswith("ai music 2025") or "ai_test_kitchen" in low_rel
     if is_ai_path:
         # Preserve take/batch numbers & distinct prompt names on GenAI tracks (post-022787)
         s_ai = unicodedata.normalize("NFKD", stem).encode("ascii", "ignore").decode("ascii").lower()
@@ -513,7 +515,6 @@ def build_manifest(raw_items: list[dict], ffprobe_bin: str | None = None, check_
         w_low = norm_nfc(winner["rel_path"]).lower()
         is_ai_track = (
             w_low.startswith("ai music 2025")
-            or "musicfx ai test" in w_low
             or "/ai gamelan/" in w_low
             or "/ai afrohouse" in w_low
             or "ai_test_kitchen" in w_low
