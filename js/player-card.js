@@ -262,7 +262,9 @@
   }
 
   function getPreviewStart(t) {
-    if (!t || t.is_ai) return 0;
+    if (!t) return 0;
+    const hasDropCue = Boolean(t.has_drop) && Number.isFinite(t.preview_start_sec) && Number(t.preview_start_sec) > 0;
+    if (t.is_ai && !hasDropCue) return 0;
     if (Number.isFinite(t.preview_start_sec)) return Math.max(0, Number(t.preview_start_sec));
     if (Number.isFinite(t.cue_in_sec)) return Math.max(0, Number(t.cue_in_sec));
     return Math.max(0, Number(t.cue_sec) || 0);
@@ -494,7 +496,13 @@
     let winEnd = Math.min(timelineDur, catalogClipDur);
     let hasPreviewWindow = false;
 
-    if (t.is_ai) {
+    const aiHasDropCue = Boolean(
+      t.is_ai &&
+      t.has_drop &&
+      Number.isFinite(t.preview_start_sec) &&
+      Number(t.preview_start_sec) > 0.05
+    );
+    if (t.is_ai && !aiHasDropCue) {
       winStart = 0;
       winEnd = timelineDur;
       hasPreviewWindow = false;

@@ -475,10 +475,11 @@
   function computeTrackBounds(track, isFullTrack, knownDur) {
     if (!track) return { duration: 0, previewStart: 0, previewEnd: 0, previewDur: 20 };
     const isAi = Boolean(track.is_ai);
+    const hasDropCue = Boolean(track.has_drop) && Number.isFinite(track.preview_start_sec) && Number(track.preview_start_sec) > 0;
     const finiteKnown = Number.isFinite(knownDur) && knownDur > 0 ? knownDur : 0;
     if (isFullTrack) {
       const estDur = finiteKnown || Number(track.full_duration_sec) || Number(track.duration_sec) || 0;
-      if (isAi) {
+      if (isAi && !hasDropCue) {
         const fullSpanDur = Math.max(4, estDur || Number(track.duration_sec) || 22);
         return { duration: estDur, previewStart: 0, previewEnd: estDur, previewDur: fullSpanDur };
       }
@@ -765,7 +766,10 @@
     if (!urls.length) return;
     const url = urls[0];
     const isFull = isUrlFullTrack(nextTrack, url);
-    const targetStart = 0;
+    const prewarmBounds = computeTrackBounds(nextTrack, isFull, 0);
+    const targetStart = Boolean(nextTrack.has_drop) && prewarmBounds.previewStart > 0.02
+      ? prewarmBounds.previewStart
+      : 0;
     const el = decks[standbyIdx];
     if (!el) return;
 
@@ -800,8 +804,11 @@
         pw.urlIdx++;
         pw.url = pw.urls[pw.urlIdx];
         pw.isFullTrack = isUrlFullTrack(nextTrack, pw.url);
-        pw.targetStart = 0;
-        pw.sought = true;
+        const fbBounds = computeTrackBounds(nextTrack, pw.isFullTrack, 0);
+        pw.targetStart = Boolean(nextTrack.has_drop) && fbBounds.previewStart > 0.02
+          ? fbBounds.previewStart
+          : 0;
+        pw.sought = pw.targetStart <= 0.02;
         try {
           el.src = pw.url;
           el.load();
@@ -1015,9 +1022,10 @@
     const fadeMs = opts.crossfadeMs === 0
       ? 0
       : (Number.isFinite(opts.crossfadeMs) ? Math.max(80, opts.crossfadeMs) : CROSSFADE_MS);
+    const nextHasDrop = Boolean(nextTrack.has_drop) && Number(nextTrack.preview_start_sec) > 0.02;
     playTrack(nextTrack, {
       fromAutoPlay: true,
-      fromStart: true,
+      fromStart: !nextHasDrop,
       crossfadeMs: fadeMs,
     });
 
@@ -1197,10 +1205,11 @@
     }
 
     const initBounds = computeTrackBounds(tr, isFull, reusePrewarm && Number.isFinite(el.duration) ? el.duration : 0);
+    const hasDropCue = Boolean(tr.has_drop) && initBounds.previewStart > 0.02;
     let initialStartSec = 0;
     if (typeof opts.startSec === "number" && Number.isFinite(opts.startSec)) {
       initialStartSec = Math.max(0, opts.startSec);
-    } else if (opts.fromStart || opts.fromAutoPlay || tr.is_ai) {
+    } else if (opts.fromStart || (opts.fromAutoPlay && !hasDropCue) || (tr.is_ai && !hasDropCue)) {
       initialStartSec = 0;
     } else {
       initialStartSec = initBounds.previewStart;
@@ -1352,7 +1361,10 @@
         voice.url = voice.urls[fbAttemptIdx];
         voice.isFullTrack = isUrlFullTrack(tr, voice.url);
         const fbBounds = computeTrackBounds(tr, voice.isFullTrack, 0);
-        const fbStart = (opts.fromStart || opts.fromAutoPlay || tr.is_ai) ? 0 : fbBounds.previewStart;
+        const fbHasDropCue = Boolean(tr.has_drop) && fbBounds.previewStart > 0.02;
+        const fbStart = (opts.fromStart || (opts.fromAutoPlay && !fbHasDropCue) || (tr.is_ai && !fbHasDropCue))
+          ? 0
+          : fbBounds.previewStart;
         voice.seekPending = fbStart > 0.02 ? fbStart : null;
         voice.loopWindowActive = true;
         try {

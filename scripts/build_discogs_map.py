@@ -30,6 +30,7 @@ DEFAULT_YON_BUNDLE = os.path.join(_ROOT, "scripts", "yon_recovered_track.json")
 DEFAULT_MASTERS_2026_BUNDLE = os.path.join(_ROOT, "scripts", "latest_masters_2026.json")
 DEFAULT_RENDERED_DATES = os.path.join(_ROOT, "scripts", "rendered_dates.json")
 DEFAULT_AI_MUSH_TAGS = os.path.join(_ROOT, "scripts", "ai_mush_tags.json")
+DEFAULT_DROP_PREVIEWS = os.path.join(_ROOT, "scripts", "drop_previews.json")
 DEFAULT_CATALOG = os.path.expanduser("~/tmp/music_map_staging/catalog_587_enriched.json")
 _STAGING_EXCLUSIONS = os.path.expanduser("~/tmp/music_map_staging/exclusions.json")
 DEFAULT_EXCLUSIONS = (
@@ -1737,6 +1738,11 @@ def build_dataset(
     mush_obj = json.load(open(DEFAULT_AI_MUSH_TAGS, "r", encoding="utf-8"))
     if isinstance(mush_obj, dict) and isinstance(mush_obj.get("tracks"), dict):
       ai_mush_by_id = mush_obj["tracks"]
+  drop_previews_by_id = {}
+  if os.path.exists(DEFAULT_DROP_PREVIEWS):
+    drop_obj = json.load(open(DEFAULT_DROP_PREVIEWS, "r", encoding="utf-8"))
+    if isinstance(drop_obj, dict) and isinstance(drop_obj.get("tracks"), dict):
+      drop_previews_by_id = drop_obj["tracks"]
 
   data["tracks"] = tracks
   n_tracks = len(tracks)
@@ -2061,6 +2067,16 @@ def build_dataset(
           and eff_era in WIP_ELIGIBLE_ERAS
           and tid not in NON_WIP_REMASTER_IDS
       )
+
+    drop_entry = drop_previews_by_id.get(tid)
+    if isinstance(drop_entry, dict) and drop_entry.get("has_drop"):
+      upd["has_drop"] = True
+      upd["drop_sec"] = round(float(drop_entry["drop_sec"]), 2)
+      upd["preview_start_sec"] = round(float(drop_entry["preview_start_sec"]), 2)
+      upd["preview_dur_sec"] = round(float(drop_entry["preview_dur_sec"]), 2)
+    else:
+      t.pop("has_drop", None)
+      t.pop("drop_sec", None)
 
     t.update(upd)
     t.pop("track_near", None)
