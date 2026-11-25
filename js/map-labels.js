@@ -7,7 +7,7 @@
     const step = i === 0 ? 0 : (i % 2 === 1 ? Math.ceil(i / 2) : -i / 2);
     return -Math.PI / 2 + (step * Math.PI) / 16;
   });
-  const RINGS = [12, 22, 34, 48, 66, 88, 114, 144, 180, 220];
+  const RINGS = [10, 16, 22, 30, 40, 52, 66, 84, 106, 132, 162, 198];
   const LEADER_RADII = [15, 23, 32, 42, 54, 68, 84, 102, 122];
 
   let measureCtx = null;
@@ -318,7 +318,7 @@
 
     const isWide = vw > 840;
     const zoomed = zoom.k >= 1.55;
-    const fs = zoomed ? (isWide ? 20 : 17) : (isWide ? 18 : 14);
+    const fs = zoomed ? (isWide ? 20 : 17) : (isWide ? 18 : 12.5);
     const fontSpec = `600 ${fs}px "Google Sans Flex", "Google Sans", Inter, sans-serif`;
 
     const uiBoxes = getUiObstacleBoxes(mapWrap);
@@ -331,7 +331,7 @@
       if (sx < -60 || sx > vw + 60 || sy < -60 || sy > vh + 60) continue;
       allDots.push([sx, sy, n.id]);
     }
-    const dotPad = zoomed ? 6.0 : (isWide ? 8.5 : 7.0);
+    const dotPad = zoomed ? 5.8 : (isWide ? 6.2 : 5.0);
     const dotLen = allDots.length;
     const dotX = new Float64Array(dotLen);
     const dotY = new Float64Array(dotLen);
@@ -419,7 +419,36 @@
       }
     });
 
-    styleGroups.forEach((g) => {
+    // Place most-constrained interior clusters first so landlocked genres (e.g. UK bass, Downtempo)
+    // secure clean zero-collision channel slots before outer peninsulas claim shared borders.
+    const orderedGroups = styleGroups.slice().sort((ga, gb) => {
+      const da = Boolean(ga.is_ai_group || ga.is_spoken_group) ? 0 : 1;
+      const db = Boolean(gb.is_ai_group || gb.is_spoken_group) ? 0 : 1;
+      if (da !== db) return da - db;
+      const crowdOf = (g) => {
+        const memSet = new Set(g.members || []);
+        let sxSum = 0, sySum = 0, cnt = 0;
+        memSet.forEach((id) => {
+          const m = nodeById.get(id);
+          if (!m || (isHidden && isHidden(m.t))) return;
+          sxSum += Number.isFinite(m.px) ? m.px : m.x * zoom.k + zoom.x;
+          sySum += Number.isFinite(m.py) ? m.py : m.y * zoom.k + zoom.y;
+          cnt++;
+        });
+        if (!cnt) return 0;
+        const cx = sxSum / cnt, cy = sySum / cnt;
+        let foreignNear = 0;
+        for (let di = 0; di < dotLen; di++) {
+          if (!memSet.has(allDots[di][2]) && Math.hypot(dotX[di] - cx, dotY[di] - cy) <= 155) {
+            foreignNear++;
+          }
+        }
+        return foreignNear;
+      };
+      return crowdOf(gb) - crowdOf(ga);
+    });
+
+    orderedGroups.forEach((g) => {
       const members = (g.members || [])
         .map((id) => nodeById.get(id))
         .filter((m) => m && !(isHidden && isHidden(m.t)));
@@ -496,47 +525,57 @@
       const shortLbl = g.short_label || MOBILE_SHORT[g.label];
       const label = (!isWide && !zoomed && shortLbl) ? shortLbl : g.label;
       const tw = textWidth(fontSpec, label);
-      const hw = Math.ceil(tw * 0.57 + 8);
-      const hh = Math.ceil(fs * 0.65 + 3.5);
+      const hw = Math.ceil(tw * 0.50 + 2.5);
+      const hh = Math.ceil(fs * 0.56 + 2);
 
       const clampX = (x) => Math.max(hw + 6, Math.min(vw - hw - 6, x));
       const clampY = (y) => Math.max(hh + 10, Math.min(vh - hh - 10, y));
-      const maxRad = zoomed ? 220 : (isWide ? 220 : 120);
+      const maxRad = zoomed ? 220 : (isWide ? 210 : 125);
 
       const anchorTopX = zoomed ? topX : mx;
       const anchorMinY = minY;
       const anchorMaxY = maxY;
 
       const cands = [
-        [topX, minY - hh - 10],
-        [mx, minY - hh - 10],
-        [mx + 28, minY - hh - 10],
-        [mx - 28, minY - hh - 10],
-        [mx + 56, minY - hh - 12],
-        [mx - 56, minY - hh - 12],
-        [mx, minY - hh - 20],
-        [mx, minY - hh - 32],
+        [topX, minY - hh - 8],
+        [mx, minY - hh - 8],
+        [mx - 18, minY - hh - 10],
+        [mx + 18, minY - hh - 10],
+        [mx - 36, minY - hh - 12],
+        [mx + 36, minY - hh - 12],
+        [mx - 54, minY - hh - 14],
+        [mx + 54, minY - hh - 14],
+        [mx, minY - hh - 18],
+        [mx - 24, minY - hh - 20],
+        [mx + 24, minY - hh - 20],
+        [mx, minY - hh - 30],
         [cMaxX + hw * 0.45, minY - hh - 10],
         [cMinX - hw * 0.45, minY - hh - 10],
         [maxX + hw * 0.55, minY - hh - 8],
         [minX - hw * 0.55, minY - hh - 8],
-        [mx, maxY + hh + 10],
-        [mx + 28, maxY + hh + 10],
-        [mx - 28, maxY + hh + 10],
-        [mx, maxY + hh + 22],
-        [mx, maxY + hh + 34],
+        [mx, maxY + hh + 8],
+        [mx - 18, maxY + hh + 10],
+        [mx + 18, maxY + hh + 10],
+        [mx - 36, maxY + hh + 12],
+        [mx + 36, maxY + hh + 12],
+        [mx, maxY + hh + 20],
+        [mx, maxY + hh + 32],
         [cMaxX + hw * 0.45, maxY + hh + 10],
         [cMinX - hw * 0.45, maxY + hh + 10],
-        [minX - hw - 10, my],
-        [maxX + hw + 10, my],
-        [minX - hw - 8, minY - hh],
-        [maxX + hw + 8, minY - hh],
-        [minX - hw - 8, maxY + hh],
-        [maxX + hw + 8, maxY + hh],
-        [mx, cMinY - hh - 12],
-        [mx, cMaxY + hh + 12],
-        [cMinX - hw - 10, my],
-        [cMaxX + hw + 10, my],
+        [minX - hw - 7, my],
+        [minX - hw - 7, my - 14],
+        [minX - hw - 7, my + 14],
+        [maxX + hw + 7, my],
+        [maxX + hw + 7, my - 14],
+        [maxX + hw + 7, my + 14],
+        [minX - hw - 6, minY - hh],
+        [maxX + hw + 6, minY - hh],
+        [minX - hw - 6, maxY + hh],
+        [maxX + hw + 6, maxY + hh],
+        [mx, cMinY - hh - 10],
+        [mx, cMaxY + hh + 10],
+        [cMinX - hw - 8, my],
+        [cMaxX + hw + 8, my],
       ];
       for (let ui = 0; ui < uiBoxes.length; ui++) {
         const ub = uiBoxes[ui];
@@ -546,6 +585,19 @@
             cands.push([mx, aboveCardY]);
             cands.push([cMinX, aboveCardY]);
             cands.push([cMaxX, aboveCardY]);
+          }
+        }
+      }
+      if (!zoomed) {
+        const stepX = isWide ? 6 : 6;
+        const stepY = isWide ? 5 : 5;
+        const gxLo = Math.max(hw + 6, minX - hw - 18);
+        const gxHi = Math.min(vw - hw - 6, maxX + hw + 18);
+        const gyLo = Math.max(hh + 10, minY - hh - (isWide ? 52 : 34));
+        const gyHi = Math.min(vh - hh - 10, maxY + hh + (isWide ? 52 : 34));
+        for (let gy = gyLo; gy <= gyHi; gy += stepY) {
+          for (let gx = gxLo; gx <= gxHi; gx += stepX) {
+            cands.push([gx, gy]);
           }
         }
       }
@@ -583,8 +635,8 @@
 
         const seenCand = new Set();
         const distWeight = zoomed ? 0.55 : (isWide ? 0.85 : 1.15);
-        const outerMaxCore = isWide ? 235 : 165;
-        const outerMaxBox = isWide ? 148 : 118;
+        const outerMaxCore = isWide ? 240 : 88;
+        const outerMaxBox = isWide ? 160 : 46;
 
         for (let ci = 0; ci < cands.length; ci++) {
           const cx = zoomed ? cands[ci][0] : clampX(cands[ci][0]);
@@ -605,7 +657,7 @@
           if (baseLowerBound >= bestScore) continue;
 
           const box = [cx - hw, cy - hh, cx + hw, cy + hh];
-          const p0 = cx - hw - 3, p1 = cy - hh - 3, p2 = cx + hw + 3, p3 = cy + hh + 3;
+          const p0 = cx - hw - 2, p1 = cy - hh - 2, p2 = cx + hw + 2, p3 = cy + hh + 2;
 
           if (uiBoxes.some((ub) => boxOverlap(box, ub))) continue;
           if (!isDedicatedIsland && reserveGuardBoxes.some((rb) => boxOverlap(box, rb))) continue;
@@ -616,6 +668,8 @@
           let dotHits = 0;
           let ownD2 = Infinity;
           let otherD2 = Infinity;
+          let ownCenterD2 = Infinity;
+          let otherCenterD2 = Infinity;
           let pruned = false;
           const b0 = box[0], b1 = box[1], b2 = box[2], b3 = box[3];
           for (let di = 0; di < dotLen; di++) {
@@ -623,29 +677,45 @@
             const ddx = px < b0 ? b0 - px : (px > b2 ? px - b2 : 0);
             const ddy = py < b1 ? b1 - py : (py > b3 ? py - b3 : 0);
             const d2 = ddx * ddx + ddy * ddy;
+            const cdx = px - cx, cdy = py - cy;
+            const cd2 = cdx * cdx + cdy * cdy;
             const isOwn = isOwnDot[di] === 1;
-            if (isOwn) { if (d2 < ownD2) ownD2 = d2; }
-            else { if (d2 < otherD2) otherD2 = d2; }
+            if (isOwn) {
+              if (d2 < ownD2) ownD2 = d2;
+              if (cd2 < ownCenterD2) ownCenterD2 = cd2;
+            } else {
+              if (d2 < otherD2) otherD2 = d2;
+              if (cd2 < otherCenterD2) otherCenterD2 = cd2;
+            }
             if (p0 < dotBoxX1[di] && p2 > dotBoxX0[di] && p1 < dotBoxY1[di] && p3 > dotBoxY0[di]) {
               if (zoomed) { pruned = true; break; }
               dotHits++;
-              dotCost += isOwn ? 2600 : 5200;
+              dotCost += isOwn ? 16000 : 32000;
               if (baseLowerBound + dotCost >= bestScore) { pruned = true; break; }
             }
           }
           if (pruned) continue;
           const ownD = ownD2 < Infinity ? Math.sqrt(ownD2) : Infinity;
           const otherD = otherD2 < Infinity ? Math.sqrt(otherD2) : Infinity;
-          if (!zoomed && !isDedicatedIsland && otherD + (isWide ? 12 : 16) < ownD) continue;
+          const ownCenterD = ownCenterD2 < Infinity ? Math.sqrt(ownCenterD2) : Infinity;
+          const otherCenterD = otherCenterD2 < Infinity ? Math.sqrt(otherCenterD2) : Infinity;
+          if (!zoomed && !isDedicatedIsland) {
+            if (dotHits > 0) continue;
+            if (ownCenterD > otherCenterD - 3.0) continue;
+            const stronglyCentered = isWide && ownCenterD <= otherCenterD * 0.72;
+            if (!stronglyCentered && ownD > otherD + (isWide ? 10.5 : 3.0)) continue;
+            if (ownD > (isWide ? 48 : 35)) continue;
+          }
 
-          const maxDistCore = dotHits === 0 ? outerMaxCore : (isWide ? 215 : 135);
-          const maxDistBox = dotHits === 0 ? outerMaxBox : (isWide ? 148 : 92);
+          const maxDistCore = dotHits === 0 ? outerMaxCore : (isWide ? 185 : 115);
+          const maxDistBox = dotHits === 0 ? outerMaxBox : (isWide ? 128 : 80);
           if (!zoomed && (distCore > maxDistCore || distCoreBox > maxDistBox)) continue;
           let score =
-            ownD * 1.65 +
+            ownD * 1.85 +
+            ownCenterD * 0.45 +
             baseLowerBound +
             dotCost +
-            (otherD < ownD ? (ownD - otherD) * 18 + 380 : 0);
+            (otherD < ownD ? (ownD - otherD) * 24 + 420 : 0);
           if (score < bestScore) {
             bestScore = score;
             best = [cx, cy];

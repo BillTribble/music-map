@@ -99,6 +99,7 @@
       primary: val("--md-sys-color-primary", "#A7C7FA"),
       outline: val("--md-sys-color-outline-variant", "#444746"),
       edgeLine: val("--md-sys-color-outline", "#8E9099"),
+      edgeLineDark: val("--md-sys-color-on-surface-variant", "#C2C5D0"),
       surfaceLowest: val("--md-sys-color-surface-container-lowest", "#16161B"),
       onSurface: val("--md-sys-color-on-surface", "#E8E9EF"),
       playing: val("--md-sys-color-cluster-2", "#2DD4BF"),
@@ -211,6 +212,13 @@
     return "music";
   }
 
+  function constellationKeyOf(t) {
+    if (!t) return "";
+    if (t.is_spoken_word) return "spoken";
+    if (t.is_ai) return t.ai_sub_id || "ai_generative";
+    return t.cluster_id || String(t.cluster_idx || 0);
+  }
+
   function isClusterMatch(t) {
     if (!activeClusterId) return true;
     if (activeClusterId === "spoken_word") return Boolean(t.is_spoken_word);
@@ -265,17 +273,39 @@
     }
   }
 
+  function edgeBend(key, isWeak) {
+    let h = 2166136261 >>> 0;
+    for (let i = 0; i < key.length; i++) {
+      h ^= key.charCodeAt(i);
+      h = Math.imul(h, 16777619) >>> 0;
+    }
+    const sign = (h & 1) === 0 ? 1 : -1;
+    const base = isWeak ? 0.14 : 0.11;
+    const jitter = ((h >>> 1) % 7) * 0.009;
+    return sign * (base + jitter);
+  }
+
   function buildEdges() {
     const pairs = new Map();
     const keyFor = (a, b) => (a < b ? `${a}|${b}` : `${b}|${a}`);
+    const addEdge = (a, b, w, weak) => {
+      const k = keyFor(a, b);
+      if (pairs.has(k)) return;
+      const aCanon = a < b ? a : b;
+      const bCanon = a < b ? b : a;
+      pairs.set(k, { a: aCanon, b: bCanon, w, weak, bend: edgeBend(k, weak) });
+    };
     const visNodes = nodes.filter((n) => !isSketchHidden(n.t));
     const visSet = new Set(visNodes.map((n) => n.id));
 
     if (layout === "vibe") {
-      const maxChordPx = Math.min(vw, vh) * 0.145;
-      const maxBridgePx = Math.min(vw, vh) * 0.22;
-      const MIN_CHORD_SIM = 0.68;
-      const MIN_BRIDGE_SIM = 0.70;
+      const minDim = Math.min(vw, vh);
+      const maxChordPx = minDim * 0.145;
+      const maxIntraBridgePx = minDim * 0.22;
+      const maxWebPx = minDim * 0.275;
+      const maxSpanBridgePx = minDim * 0.36;
+      const MIN_CHORD_SIM = 0.56;
+      const MIN_INTRA_SPAN_SIM = 0.28;
 
       const nearSim = new Map();
       visNodes.forEach((n) => {
@@ -288,25 +318,24 @@
         });
       });
 
+      // Pass 1a: Intra-constellation local chords (strong internal skeleton)
       visNodes.forEach((n) => {
         const t = n.t;
         if (t.is_spoken_word) return;
         const tTerr = territoryOf(t);
+        const tConst = constellationKeyOf(t);
         const candidates = (trackNear[t.id] || []).filter(([nid, sim]) => {
           if (sim < MIN_CHORD_SIM) return false;
           if (!visSet.has(nid)) return false;
           const nb = nodeById.get(nid);
-          if (!nb || territoryOf(nb.t) !== tTerr) return false;
+          if (!nb || territoryOf(nb.t) !== tTerr || constellationKeyOf(nb.t) !== tConst) return false;
           return Math.hypot(nb.tx - n.tx, nb.ty - n.ty) <= maxChordPx;
         }).slice(0, LINKS);
         candidates.forEach(([nid, sim]) => {
-          const k = keyFor(t.id, nid);
-          if (!pairs.has(k)) pairs.set(k, { a: t.id, b: nid, w: sim, weak: false });
+          addEdge(t.id, nid, sim, false);
         });
       });
 
-      // Acoustically-gated Kruskal bridge for detached vibe sub-constellations within each territory
-      // (strictly requires real audio/hybrid similarity in trackNear >= MIN_BRIDGE_SIM; never bridges acoustically unrelated border tracks!)
       if (visNodes.length <= 800) {
         const parent = new Map(visNodes.map((n) => [n.id, n.id]));
         const find = (x) => {
@@ -323,22 +352,90 @@
         };
         pairs.forEach((e) => unite(e.a, e.b));
 
-        const cands = [];
+        // Pass 1b: Intra-constellation Kruskal connectivity so each genre forms one coherent constellation
+        const intraCands = [];
         nearSim.forEach((sim, k) => {
-          if (sim < MIN_BRIDGE_SIM || pairs.has(k)) return;
+          if (sim < MIN_INTRA_SPAN_SIM || pairs.has(k)) return;
           const sep = k.indexOf("|");
           const aId = k.slice(0, sep), bId = k.slice(sep + 1);
           const a = nodeById.get(aId), b = nodeById.get(bId);
           if (!a || !b || a.t.is_spoken_word || b.t.is_spoken_word) return;
           if (territoryOf(a.t) !== territoryOf(b.t)) return;
+          if (constellationKeyOf(a.t) !== constellationKeyOf(b.t)) return;
           if (find(aId) === find(bId)) return;
           const d = Math.hypot(a.tx - b.tx, a.ty - b.ty);
-          if (d > maxBridgePx) return;
-          cands.push({ a: aId, b: bId, d, sim, cost: d / Math.max(0.5, sim) });
+          if (d > maxIntraBridgePx) return;
+          intraCands.push({ a: aId, b: bId, d, sim, cost: d / Math.max(0.45, sim) });
         });
-        cands.sort((p, q) => p.cost - q.cost);
-        for (const c of cands) {
-          if (unite(c.a, c.b)) pairs.set(keyFor(c.a, c.b), { a: c.a, b: c.b, w: c.sim * 0.55, weak: true });
+        intraCands.sort((p, q) => p.cost - q.cost);
+        for (const c of intraCands) {
+          if (unite(c.a, c.b)) addEdge(c.a, c.b, c.sim, false);
+        }
+
+        // Pass 2: Genuine cross-genre / cross-subfamily sonic web (strictly X_hybrid acoustic cousins in trackNear — zero blind pixel bridges!)
+        const crossDeg = new Map();
+        const pairConstCnt = new Map();
+        const bumpCross = (aId, bId, cKey) => {
+          crossDeg.set(aId, (crossDeg.get(aId) || 0) + 1);
+          crossDeg.set(bId, (crossDeg.get(bId) || 0) + 1);
+          pairConstCnt.set(cKey, (pairConstCnt.get(cKey) || 0) + 1);
+        };
+
+        // Pass 2a: Acoustic spanning spine so all constellations weave into one connected web
+        const spanCands = [];
+        nearSim.forEach((sim, k) => {
+          if (pairs.has(k)) return;
+          const sep = k.indexOf("|");
+          const aId = k.slice(0, sep), bId = k.slice(sep + 1);
+          const a = nodeById.get(aId), b = nodeById.get(bId);
+          if (!a || !b || a.t.is_spoken_word || b.t.is_spoken_word) return;
+          const terr = territoryOf(a.t);
+          if (terr !== territoryOf(b.t)) return;
+          const ca = constellationKeyOf(a.t), cb = constellationKeyOf(b.t);
+          if (ca === cb) return;
+          const minSim = terr === "ai" ? 0.68 : 0.645;
+          if (sim < minSim) return;
+          const d = Math.hypot(a.tx - b.tx, a.ty - b.ty);
+          if (d > maxSpanBridgePx) return;
+          spanCands.push({ a: aId, b: bId, ca, cb, d, sim, cost: d / (sim * sim) });
+        });
+        spanCands.sort((p, q) => p.cost - q.cost);
+        for (const c of spanCands) {
+          if (unite(c.a, c.b)) {
+            const cKey = keyFor(c.ca, c.cb);
+            addEdge(c.a, c.b, c.sim, true);
+            bumpCross(c.a, c.b, cKey);
+          }
+        }
+
+        // Pass 2b: Multi-filament coastal cousin weave across acoustically related neighboring genres
+        const weaveCands = [];
+        nearSim.forEach((sim, k) => {
+          if (pairs.has(k)) return;
+          const sep = k.indexOf("|");
+          const aId = k.slice(0, sep), bId = k.slice(sep + 1);
+          const a = nodeById.get(aId), b = nodeById.get(bId);
+          if (!a || !b || a.t.is_spoken_word || b.t.is_spoken_word) return;
+          const terr = territoryOf(a.t);
+          if (terr !== territoryOf(b.t)) return;
+          const ca = constellationKeyOf(a.t), cb = constellationKeyOf(b.t);
+          if (ca === cb) return;
+          const minSim = terr === "ai" ? 0.70 : 0.65;
+          if (sim < minSim) return;
+          const d = Math.hypot(a.tx - b.tx, a.ty - b.ty);
+          if (d > maxWebPx) return;
+          const score = sim - 0.20 * (d / maxWebPx);
+          weaveCands.push({ a: aId, b: bId, ca, cb, terr, sim, score });
+        });
+        weaveCands.sort((p, q) => q.score - p.score);
+        for (const c of weaveCands) {
+          const maxNodeCross = c.terr === "ai" ? 2 : 3;
+          if ((crossDeg.get(c.a) || 0) >= maxNodeCross || (crossDeg.get(c.b) || 0) >= maxNodeCross) continue;
+          const cKey = keyFor(c.ca, c.cb);
+          const maxPair = c.terr === "ai" ? 4 : 6;
+          if ((pairConstCnt.get(cKey) || 0) >= maxPair) continue;
+          addEdge(c.a, c.b, c.sim, true);
+          bumpCross(c.a, c.b, cKey);
         }
       }
     } else {
@@ -540,9 +637,9 @@
     computeScreenPositions();
 
     const isLight = document.documentElement.getAttribute("data-theme") === "light";
-    const zoomScale = Math.max(1, Math.sqrt(zoom.k));
-    const maxLocalDist = Math.min(vw, vh) * 0.135 * zoomScale;
-    const maxBridgeDist = Math.min(vw, vh) * 0.22 * zoomScale;
+    const zoomScale = Math.max(1, zoom.k);
+    const maxLocalDist = Math.min(vw, vh) * 0.22 * zoomScale + 18;
+    const maxBridgeDist = Math.min(vw, vh) * 0.36 * zoomScale + 24;
 
     // Draw edges & shrunk jewel circles directly in 1:1 screen space so zooming never inflates circle size
     edges.forEach((e) => {
@@ -550,27 +647,40 @@
       const b = nodeById.get(e.b);
       if (!a || !b) return;
       if (isSketchHidden(a.t) || isSketchHidden(b.t)) return;
-      const lit = selectedId && (e.a === selectedId || e.b === selectedId);
+      const selLit = Boolean(selectedId && (e.a === selectedId || e.b === selectedId));
+      const hovLit = Boolean(!selLit && hoverId && (e.a === hoverId || e.b === hoverId));
+      const lit = selLit || hovLit;
       const aMatch = isMatch(a.t);
       const bMatch = isMatch(b.t);
       if (starFilter && (!aMatch || !bMatch) && !lit) return;
 
-      let edgeAlpha = 0.24;
+      let edgeAlpha = isLight ? 0.30 : 0.34;
+      let edgeWidth = 1.05;
       if (!lit && layout === "vibe") {
         const d = Math.hypot(b.px - a.px, b.py - a.py);
         if (!aMatch && !bMatch) {
-          if (d >= maxLocalDist) return;
-          edgeAlpha = 0.05;
+          if (d >= (e.weak ? maxBridgeDist : maxLocalDist)) return;
+          edgeAlpha = isLight ? 0.065 : 0.075;
+          edgeWidth = e.weak ? 0.85 : 0.95;
+        } else if (aMatch !== bMatch) {
+          if (d >= maxBridgeDist) return;
+          edgeAlpha = isLight ? 0.21 : 0.26;
+          edgeWidth = 0.95;
         } else if (e.weak) {
           if (d >= maxBridgeDist) return;
-          edgeAlpha = (isLight ? 0.14 : 0.18) * Math.pow(Math.max(0, 1 - d / maxBridgeDist), 0.85);
+          const tBridge = Math.max(0.48, 1 - (d / maxBridgeDist) * 0.56);
+          const simBoost = 0.86 + 0.24 * Math.min(1, Math.max(0, ((e.w || 0.68) - 0.64) / 0.22));
+          edgeAlpha = (isLight ? 0.34 : 0.38) * tBridge * simBoost;
+          edgeWidth = 0.96;
         } else {
           if (d >= maxLocalDist) return;
-          edgeAlpha = (isLight ? 0.27 : 0.36) * Math.pow(Math.max(0, 1 - d / maxLocalDist), 1.45);
+          const tLocal = Math.max(0.48, 1 - (d / maxLocalDist) * 0.60);
+          edgeAlpha = (isLight ? 0.52 : 0.58) * tLocal;
+          edgeWidth = 1.2;
         }
-        if (edgeAlpha < 0.015) return;
+        if (edgeAlpha < 0.02) return;
       } else if (!lit && !aMatch && !bMatch) {
-        edgeAlpha = 0.06;
+        edgeAlpha = 0.07;
       }
 
       ctx.beginPath();
@@ -580,21 +690,33 @@
         ctx.moveTo(a.px, a.py);
         ctx.quadraticCurveTo(mx, (a.py + b.py) * 0.5 + arcOff, b.px, b.py);
       } else {
-        ctx.moveTo(a.px, a.py);
-        ctx.lineTo(b.px, b.py);
+        const dx = b.px - a.px;
+        const dy = b.py - a.py;
+        const chord = Math.hypot(dx, dy);
+        if (chord > 3) {
+          const bend = e.bend !== undefined ? e.bend : 0.14;
+          const maxBow = 44 * Math.sqrt(zoomScale);
+          const bow = Math.max(-maxBow, Math.min(maxBow, chord * bend));
+          const cx = (a.px + b.px) * 0.5 + (-dy / chord) * bow;
+          const cy = (a.py + b.py) * 0.5 + (dx / chord) * bow;
+          ctx.moveTo(a.px, a.py);
+          ctx.quadraticCurveTo(cx, cy, b.px, b.py);
+        } else {
+          ctx.moveTo(a.px, a.py);
+          ctx.lineTo(b.px, b.py);
+        }
       }
 
       if (lit) {
         ctx.strokeStyle = palette.primary;
-        ctx.globalAlpha = 0.88;
-        ctx.lineWidth = 1.8;
+        ctx.globalAlpha = selLit ? 0.90 : 0.78;
+        ctx.lineWidth = e.weak ? 1.55 : 1.9;
         ctx.setLineDash([]);
       } else {
-        ctx.strokeStyle = palette.edgeLine || palette.outline;
+        ctx.strokeStyle = isLight ? (palette.edgeLine || palette.outline) : (palette.edgeLineDark || palette.edgeLine);
         ctx.globalAlpha = edgeAlpha;
-        ctx.lineWidth = 1.0;
-        if (e.weak && layout === "vibe") ctx.setLineDash([3.5, 4.5]);
-        else ctx.setLineDash([]);
+        ctx.lineWidth = edgeWidth;
+        ctx.setLineDash([]);
       }
       ctx.stroke();
     });
