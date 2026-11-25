@@ -1,8 +1,8 @@
 {
   "summary": {
-    "total_tracks": 567,
+    "total_tracks": 565,
     "drum_tracks": 408,
-    "drumless_tracks": 159,
+    "drumless_tracks": 157,
     "drop_tracks": 245,
     "clusters": {
       "Generative AI · Afro, house & cumbia": {
@@ -11,7 +11,7 @@
         "drops": 49
       },
       "IDM, glitch & industrial": {
-        "total": 64,
+        "total": 63,
         "drums": 37,
         "drops": 16
       },
@@ -36,7 +36,7 @@
         "drops": 18
       },
       "Meditative beats": {
-        "total": 34,
+        "total": 33,
         "drums": 20,
         "drops": 10
       },
@@ -1680,17 +1680,6 @@
       "old_preview_start_sec": 49.12,
       "preview_start_sec": 49.12
     },
-    "archive_2013_18_18": {
-      "id": "archive_2013_18_18",
-      "title": "Arps Test",
-      "cluster_label": "IDM, glitch & industrial",
-      "is_ai": false,
-      "has_drums": false,
-      "drum_score": 0.457,
-      "has_drop": false,
-      "old_preview_start_sec": 19.5,
-      "preview_start_sec": 19.5
-    },
     "archive_2013_18_19": {
       "id": "archive_2013_18_19",
       "title": "Audiorealism test",
@@ -2891,17 +2880,6 @@
       "has_drop": false,
       "old_preview_start_sec": 70.83,
       "preview_start_sec": 70.83
-    },
-    "archive_2013_18_146": {
-      "id": "archive_2013_18_146",
-      "title": "Take You Chords 02-sketch Vox",
-      "cluster_label": "Meditative beats",
-      "is_ai": false,
-      "has_drums": false,
-      "drum_score": 0.384,
-      "has_drop": false,
-      "old_preview_start_sec": 42.35,
-      "preview_start_sec": 42.35
     },
     "archive_2013_18_147": {
       "id": "archive_2013_18_147",

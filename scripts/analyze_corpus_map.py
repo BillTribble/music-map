@@ -702,9 +702,11 @@ DEFAULT_EXCLUDED_IDS = {
     # MusicFX AI test — excluded by owner (post-023266)
     "archive_2018_23_45",
     "archive_2018_23_46",
-    # Owner track removals (post-023520, post-023524)
+    # Owner track removals (post-023520, post-023524, post-023576, post-023651)
     "present_electro_7",
     "hd_2005_42",
+    "archive_2013_18_146",
+    "archive_2013_18_18",
 }
 
 CANONICAL_ARCHETYPES: list[tuple[str, str, int]] = [
@@ -1498,6 +1500,8 @@ def is_excluded_by_folder_rule(path_str: str) -> bool:
         or "bill in china" in low_p
         or "blame it on the boogie" in low_p
         or "status quo 01 free" in low_p
+        or "take you chords 02-sketch vox" in low_p
+        or low_p.endswith("/arps test.mp3")
     ):
         return True
     parts = [p.strip() for p in low_p.split("/") if p.strip()]

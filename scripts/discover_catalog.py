@@ -114,6 +114,8 @@ EXCLUDED_PATH_SUBSTRS = (
     "musicfx ai test",
     "blame it on the boogie",
     "status quo 01 free",
+    "take you chords 02-sketch vox",
+    "stepper sketches 2012-2018/arps test",
 )
 EXCLUDED_EXACT_REL_PATHS = {
     "02 - psychedailies/season 1 - psychedaily/^ shortlist psychedailies/01 getaway/getaway vdj edit.flac",
@@ -184,6 +186,11 @@ EXCLUDED_EXACT_REL_PATHS = {
     "^ music sketches 2026/fount of life 01 project/fount of life 02b live.flac",
     "me archive/present trax/recent remasters/blame it on the boogie.wav",
     "me music - 2005 hard drive/status quo 01 free +comp.m4a",
+    "music sketches archive. 2012-2020/stepper sketches 2012-2018/arps test.mp3",
+    "music sketches archive. 2012-2020/stepper sketches 2012-2018/take you chords 02-sketch vox.mp3",
+    "music sketches archive. 2012-2020/stepper sketches 2012-2018/take you chords 02-sketch vox.wav",
+    "music sketches archive. 2012-2020/stepper sketches 2012-2018/take you chords 02-straight.mp3",
+    "music sketches archive. 2012-2020/stepper sketches 2012-2018/take you chords 02-straight.wav",
 }
 TITLE_OVERRIDES_BY_REL_PATH = {
     "me music - 2005 hard drive/as we enter mix2.m4a": "pr3s3nt - As we Enter",

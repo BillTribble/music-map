@@ -216,9 +216,11 @@ DEFAULT_EXCLUDED_IDS = {
     # MusicFX AI test — excluded by owner (post-023266)
     "archive_2018_23_45",
     "archive_2018_23_46",
-    # Owner track removals (post-023520, post-023524)
+    # Owner track removals (post-023520, post-023524, post-023576, post-023651)
     "present_electro_7",
     "hd_2005_42",
+    "archive_2013_18_146",
+    "archive_2013_18_18",
 }
 
 # Tracks genuinely rendered in 2026 move to the '2026' Era column (post-023035),
@@ -303,6 +305,8 @@ def is_excluded_by_folder_rule(path_str: str) -> bool:
       or "bill in china" in low_p
       or "blame it on the boogie" in low_p
       or "status quo 01 free" in low_p
+      or "take you chords 02-sketch vox" in low_p
+      or low_p.endswith("/arps test.mp3")
   ):
     return True
   parts = [p.strip() for p in low_p.split("/") if p.strip()]
@@ -1664,7 +1668,12 @@ def build_dataset(
 
   def _is_excluded_title(t_obj: dict) -> bool:
     tl = str(t_obj.get("title") or "").strip().lower()
-    return "blame it on the boogie" in tl or "status quo 01 free" in tl
+    return (
+        "blame it on the boogie" in tl
+        or "status quo 01 free" in tl
+        or "take you chords 02-sketch vox" in tl
+        or tl == "arps test"
+    )
 
   feats = np.load(features_path)
   tracks = [
