@@ -309,17 +309,25 @@
 
   function computeTrackBounds(track, isFullTrack, knownDur) {
     if (!track) return { duration: 0, previewStart: 0, previewEnd: 0, previewDur: 20 };
+    const isAi = Boolean(track.is_ai);
     const finiteKnown = Number.isFinite(knownDur) && knownDur > 0 ? knownDur : 0;
     if (isFullTrack) {
       const estDur = finiteKnown || Number(track.full_duration_sec) || Number(track.duration_sec) || 0;
-      const rawStart = Math.max(0, Number(track.preview_start_sec) || 0);
+      if (isAi) {
+        const fullSpanDur = Math.max(4, estDur || Number(track.duration_sec) || 22);
+        return { duration: estDur, previewStart: 0, previewEnd: estDur, previewDur: fullSpanDur };
+      }
+      const rawCueVal = Number.isFinite(track.preview_start_sec)
+        ? Number(track.preview_start_sec)
+        : (Number.isFinite(track.cue_in_sec) ? Number(track.cue_in_sec) : (Number(track.cue_sec) || 0));
+      const rawStart = Math.max(0, rawCueVal);
       const previewStart = estDur > 1.5 ? Math.min(rawStart, Math.max(0, estDur - 1.5)) : rawStart;
       const previewDur = Math.max(4, Number(track.preview_dur_sec) || Number(track.duration_sec) || 22);
       const previewEnd = estDur > 0 ? Math.min(estDur, previewStart + previewDur) : (previewStart + previewDur);
       return { duration: estDur, previewStart, previewEnd, previewDur };
     }
     const clipDur = finiteKnown || Number(track.duration_sec) || Number(track.preview_dur_sec) || 0;
-    const rawCue = Math.max(0, Number(track.cue_sec) || 0);
+    const rawCue = isAi ? 0 : Math.max(0, Number(track.cue_sec) || 0);
     const previewStart = clipDur > 1.0 ? Math.min(rawCue, Math.max(0, clipDur - 1.0)) : rawCue;
     const previewEnd = clipDur > 0 ? clipDur : Math.max(previewStart + 16, 20);
     return { duration: clipDur, previewStart, previewEnd, previewDur: Math.max(4, previewEnd - previewStart) };
@@ -821,7 +829,7 @@
     let initialStartSec = 0;
     if (typeof opts.startSec === "number" && Number.isFinite(opts.startSec)) {
       initialStartSec = Math.max(0, opts.startSec);
-    } else if (opts.fromStart || opts.fromAutoPlay) {
+    } else if (opts.fromStart || opts.fromAutoPlay || tr.is_ai) {
       initialStartSec = 0;
     } else {
       initialStartSec = initBounds.previewStart;
@@ -963,7 +971,7 @@
         voice.url = voice.urls[fbAttemptIdx];
         voice.isFullTrack = isUrlFullTrack(tr, voice.url);
         const fbBounds = computeTrackBounds(tr, voice.isFullTrack, 0);
-        const fbStart = (opts.fromStart || opts.fromAutoPlay) ? 0 : fbBounds.previewStart;
+        const fbStart = (opts.fromStart || opts.fromAutoPlay || tr.is_ai) ? 0 : fbBounds.previewStart;
         voice.seekPending = fbStart > 0.02 ? fbStart : null;
         voice.loopWindowActive = true;
         try {

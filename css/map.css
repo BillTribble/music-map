@@ -578,7 +578,8 @@
   align-items: center;
   gap: 8px;
 }
-.player-cta-row .btn { flex: 1; min-width: 0; }
+.player-cta-row .btn,
+.player-cta-row .btn-secondary-pill { flex: 1; min-width: 0; }
 .action-sub {
   font-size: 11px;
   color: var(--md-sys-color-on-surface-variant);

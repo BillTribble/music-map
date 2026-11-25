@@ -1226,6 +1226,8 @@ def build_dataset(
     ct = _clean_ai_display_title(gt.get("title", ""))
     gt["title"] = ct
     gt["shortTitle"] = ct.split(" (")[0][:26] if " (" in ct and len(ct) > 26 else ct[:26]
+    gt["preview_start_sec"] = 0.0
+    gt["cue_sec"] = 0.0
 
   feats = np.load(features_path)
   tracks = [t for t in data["tracks"] if str(t.get("id")) not in excluded_ids]
@@ -1569,6 +1571,8 @@ def build_dataset(
     eff_era = str(upd.get("era") or t.get("era") or "")
     eff_yr = int(upd.get("year") or t.get("year") or 2020)
     if is_ai:
+      upd["preview_start_sec"] = 0.0
+      upd["cue_sec"] = 0.0
       upd["wip_eligible"] = False
       upd["rendered_at"] = str(t.get("rendered_at") or f"{eff_yr:04d}-06-15")
     else:

@@ -1200,7 +1200,10 @@ def build_from_full_analysis(
         for pk in PRIVATE_TRACK_KEYS:
             t.pop(pk, None)
 
-        if not t.get("is_ai"):
+        if t.get("is_ai"):
+            t["preview_start_sec"] = 0.0
+            t["cue_sec"] = 0.0
+        else:
             new_era, new_yr, new_slot = resolve_present_1997_2004_era(
                 str(t["id"]), str(t.get("era") or ""), t.get("year"), t.get("slot")
             )

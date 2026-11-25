@@ -18,6 +18,7 @@
     youtube_music: '<svg viewBox="0 0 24 24" aria-hidden="true"><path fill="currentColor" d="M12 2a10 10 0 1 0 0 20 10 10 0 0 0 0-20zm0 16.25a6.25 6.25 0 1 1 0-12.5 6.25 6.25 0 0 1 0 12.5zm0-11a4.75 4.75 0 1 0 0 9.5 4.75 4.75 0 0 0 0-9.5zM10.2 14.8V9.2l4.85 2.8-4.85 2.8z"/></svg>',
     apple_music: '<svg viewBox="0 0 24 24" aria-hidden="true"><path fill="currentColor" d="M18.6 3.2c.4 0 .7.3.7.7v11.6a3.4 3.4 0 1 1-1.6-2.9V8.5l-7.8 1.6v7a3.4 3.4 0 1 1-1.6-2.9V6.8c0-.5.3-.9.8-1l9.1-2.5c.1 0 .3-.1.4-.1z"/></svg>',
     youtube: '<svg viewBox="0 0 24 24" aria-hidden="true"><path fill="currentColor" d="M21.58 7.19a2.75 2.75 0 0 0-1.94-1.95C17.93 4.78 12 4.78 12 4.78s-5.93 0-7.64.46A2.75 2.75 0 0 0 2.42 7.2 28.7 28.7 0 0 0 1.96 12c0 1.63.16 3.25.46 4.81a2.75 2.75 0 0 0 1.94 1.95c1.71.46 7.64.46 7.64.46s5.93 0 7.64-.46a2.75 2.75 0 0 0 1.94-1.95c.3-1.56.46-3.18.46-4.81 0-1.63-.16-3.25-.46-4.81zM10 15V9l5.2 3L10 15z"/></svg>',
+    download: '<svg class="dl-svg-icon" viewBox="0 -960 960 960" width="18" height="18" aria-hidden="true"><path fill="currentColor" d="M480-320 280-520l56-58 104 104v-326h80v326l104-104 56 58-200 200ZM240-160q-33 0-56.5-23.5T160-240v-120h80v120h480v-120h80v120q0 33-23.5 56.5T720-160H240Z"/></svg>',
   };
 
   let byId = new Map();
@@ -210,9 +211,10 @@
   function resolveTier(t) {
     if (isReleased(t)) return "A";
     const mp3Url = t && (t.mp3_320_url || t.mp3_url);
+    const flacUrl = t && t.flac_url;
     if (
       t &&
-      Boolean(mp3Url) &&
+      Boolean(mp3Url || flacUrl) &&
       (
         t.tier === "free_download" ||
         t.is_ai === true ||
@@ -222,6 +224,13 @@
       return "B";
     }
     return "C";
+  }
+
+  function getPreviewStart(t) {
+    if (!t || t.is_ai) return 0;
+    if (Number.isFinite(t.preview_start_sec)) return Math.max(0, Number(t.preview_start_sec));
+    if (Number.isFinite(t.cue_in_sec)) return Math.max(0, Number(t.cue_in_sec));
+    return Math.max(0, Number(t.cue_sec) || 0);
   }
 
   function formatClock(sec, roundNearest = false) {
@@ -442,31 +451,33 @@
       currentTime = clamp(optimisticSeekSec, 0, timelineDur);
     }
 
+    const looping = activeMatch && typeof st.looping === "boolean"
+      ? st.looping
+      : (!autoPlay || !isFullTrack);
+
     let winStart = 0;
     let winEnd = Math.min(timelineDur, catalogClipDur);
     let hasPreviewWindow = false;
 
-    if (activeMatch && Number.isFinite(st.previewStart) && Number.isFinite(st.previewEnd) && st.previewEnd > st.previewStart) {
+    if (t.is_ai) {
+      winStart = 0;
+      winEnd = timelineDur;
+      hasPreviewWindow = false;
+    } else if (activeMatch && Number.isFinite(st.previewStart) && Number.isFinite(st.previewEnd) && st.previewEnd > st.previewStart) {
       winStart = clamp(st.previewStart, 0, timelineDur);
       winEnd = clamp(st.previewEnd, winStart, timelineDur);
-      hasPreviewWindow = winEnd > winStart + 0.2;
+      hasPreviewWindow = winEnd > winStart + 0.2 && (winStart > 0.05 || Boolean(looping));
     } else if (isFullTrack) {
-      const cue = Number.isFinite(t.preview_start_sec)
-        ? Number(t.preview_start_sec)
-        : (Number(t.cue_sec) || 0);
+      const cue = getPreviewStart(t);
       const pDur = Number(t.preview_dur_sec) || catalogClipDur;
       winStart = clamp(cue, 0, timelineDur);
       winEnd = clamp(winStart + pDur, winStart, timelineDur);
-      hasPreviewWindow = timelineDur > pDur * 1.15 && winEnd > winStart + 0.5;
+      hasPreviewWindow = timelineDur > pDur * 1.15 && winEnd > winStart + 0.5 && (winStart > 0.05 || Boolean(looping));
     } else {
       winStart = 0;
       winEnd = timelineDur;
       hasPreviewWindow = true;
     }
-
-    const looping = activeMatch && typeof st.looping === "boolean"
-      ? st.looping
-      : (!autoPlay || !isFullTrack);
 
     const progressFrac = timelineDur > 0 ? clamp(currentTime / timelineDur, 0, 1) : 0;
 
@@ -888,16 +899,20 @@
     }
 
     if (tier === "B") {
-      const mp3Url = t.mp3_320_url || t.mp3_url;
+      const mp3Url = t.mp3_320_url || t.mp3_url || "";
       const flacUrl = t.flac_url || "";
-      const safeFilename = `Bill Tribble - ${(t.title || t.id).replace(/[\\/:*?"<>|]/g, "")}.mp3`;
-      const estKbps = Number(t.mp3_kbps) || (t.mp3_320_bytes && t.full_duration_sec ? Math.round((t.mp3_320_bytes * 8) / 1000 / t.full_duration_sec) : 320);
-      const mp3Label = estKbps < 280 ? "Download MP3" : "Download MP3 (320 kbps)";
+      const hasMp3 = Boolean(mp3Url);
+      const hasFlac = Boolean(flacUrl);
+      const safeBase = (t.title || t.id).replace(/[\\/:*?"<>|]/g, "");
+      const safeMp3Filename = `Bill Tribble - ${safeBase}.mp3`;
+      const safeFlacFilename = `Bill Tribble - ${safeBase}.flac`;
+      const mp3Label = hasFlac ? "MP3" : "Download MP3";
+      const flacLabel = hasMp3 ? "FLAC" : "Download FLAC";
       return `
         <div class="player-actions">
           <div class="player-cta-row">
-            <a class="btn" href="${esc(mp3Url)}" download="${esc(safeFilename)}" target="_blank" rel="noopener noreferrer" data-dl-kind="track-download-mp3"><span class="ms">download</span><span>${mp3Label}</span></a>
-            ${flacUrl ? `<a class="btn-secondary-pill" href="${esc(flacUrl)}" target="_blank" rel="noopener noreferrer" data-dl-kind="track-download-flac" title="Download lossless FLAC"><span class="ms">album</span><span>FLAC</span></a>` : ""}
+            ${hasMp3 ? `<a class="btn" href="${esc(mp3Url)}" download="${esc(safeMp3Filename)}" target="_blank" rel="noopener noreferrer" data-dl-kind="track-download-mp3" title="Download MP3">${BRAND_SVGS.download}<span>${mp3Label}</span></a>` : ""}
+            ${hasFlac ? `<a class="${hasMp3 ? "btn-secondary-pill" : "btn"}" href="${esc(flacUrl)}" download="${esc(safeFlacFilename)}" target="_blank" rel="noopener noreferrer" data-dl-kind="track-download-flac" title="Download lossless FLAC">${BRAND_SVGS.download}<span>${flacLabel}</span></a>` : ""}
           </div>
         </div>`;
     }
@@ -1604,6 +1619,7 @@
     setInfoOpen(v) { infoOpen = Boolean(v); render(); },
     setWeb3FormsKey(k) { web3FormsKey = String(k || ""); render(); },
     refreshWaveform: syncWaveVisuals,
+    getPreviewStart,
     getShareUrl: (tid) => buildTrackShareUrl(tid || selectedId),
     isWorkInProgress,
     formatSimpleKey,
