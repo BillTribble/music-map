@@ -13,7 +13,9 @@
 
   const TRACK_FADE_TAU_MS = 160;
   const TRACK_OFFSET_TAU_MS = 90;
-  const CLUSTER_FADE_TAU_MS = 180;
+  const CLUSTER_FADE_OUT_TAU_MS = 95;
+  const CLUSTER_FADE_IN_TAU_MS = 150;
+  const CLUSTER_RELOCATE_DWELL_MS = 450;
 
   const MOBILE_SHORT = {
     "Ambient & meditative": "Ambient",
@@ -770,16 +772,37 @@
     return cnt > 0 ? [dx / cnt, dy / cnt] : [0, 0];
   }
 
-  function evaluateGenreItem(item, isSub, opts, uiBoxes) {
-    const { nodeById, zoom, vw, vh, activeClusterId, isMatch, isHidden } = opts;
+  function evaluateGenreItem(item, isSub, anchorWx, anchorWy, opts, uiBoxes) {
+    const { nodeById, zoom, vw, vh, isMatch, isHidden } = opts;
     const isWide = vw > 840;
     let visCount = 0;
+    let viewportVisCount = 0;
     let anyMatch = false;
+    const safeVisDots = [];
+
     for (let i = 0; i < item.memberIds.length; i++) {
       const m = nodeById ? nodeById.get(item.memberIds[i]) : null;
       if (!m || (isHidden && isHidden(m.t))) continue;
       visCount++;
       if (!anyMatch && (!isMatch || isMatch(m.t))) anyMatch = true;
+      const mx = Number.isFinite(m.px) ? m.px : m.x * zoom.k + zoom.x;
+      const my = Number.isFinite(m.py) ? m.py : m.y * zoom.k + zoom.y;
+      if (mx >= -24 && mx <= vw + 24 && my >= -24 && my <= vh + 24) {
+        viewportVisCount++;
+      }
+      if (mx >= 8 && mx <= vw - 8 && my >= 10 && my <= vh - 10) {
+        let coveredByUi = false;
+        for (let u = 0; u < uiBoxes.length; u++) {
+          const ub = uiBoxes[u];
+          if (mx >= ub[0] && mx <= ub[2] && my >= ub[1] && my <= ub[3]) {
+            coveredByUi = true;
+            break;
+          }
+        }
+        if (!coveredByUi) {
+          safeVisDots.push([mx, my]);
+        }
+      }
     }
 
     const zGrow = smoothstep(1.0, 2.8, zoom.k);
@@ -790,29 +813,30 @@
     const strokeW = isSub ? 3.2 : (isWide ? 4.0 : (3.5 + 0.5 * zGrow));
 
     const [mdx, mdy] = computeMorphDelta(item.memberIds, nodeById);
-    const sx = (item.wx + mdx) * zoom.k + zoom.x;
-    const sy = (item.wy + mdy) * zoom.k + zoom.y;
+    const sx = (anchorWx + mdx) * zoom.k + zoom.x;
+    const sy = (anchorWy + mdy) * zoom.k + zoom.y;
     const hw = Math.ceil(item.unitRatio * fs * 0.52 + (isSub ? 5 : 3.5));
     const hh = Math.ceil(fs * (isSub ? 0.62 : 0.58) + 2.5);
 
     if (visCount === 0) {
-      return { sx, sy, hw, hh, fs, fw, strokeW, anyMatch: false, targetAlpha: 0 };
+      return {
+        sx, sy, hw, hh, fs, fw, strokeW, mdx, mdy,
+        anyMatch: false, visCount: 0, safeVisDots,
+        hasClusterOnScreen: false, inAlpha: 0, steadyAlpha: 0,
+        minEdge: -999, minUiGap: -999, minOwnDotDist: Infinity,
+      };
     }
 
+    const minDotsNeeded = zoom.k <= 1.18 ? 1 : Math.min(2, visCount);
+    const hasClusterOnScreen = zoom.k <= 1.18
+      ? (viewportVisCount >= 1)
+      : (safeVisDots.length >= minDotsNeeded);
+
     const inAlpha = item.minK <= 1.0 ? 1.0 : smoothstep(item.minK - 0.08, item.minK + 0.42, zoom.k);
-    const actBoost = activeClusterId === item.id ? 0.65 : 0;
-    let fadeStart, fadeEnd;
-    if (isSub) {
-      fadeStart = (isWide ? 2.25 : 2.75) + actBoost;
-      fadeEnd = (isWide ? 3.85 : 4.45) + actBoost;
-    } else if (item.hasSubGroups) {
-      fadeStart = (isWide ? 1.80 : 2.25) + actBoost;
-      fadeEnd = (isWide ? 3.15 : 3.80) + actBoost;
-    } else {
-      fadeStart = (isWide ? 2.10 : 2.55) + actBoost;
-      fadeEnd = (isWide ? 3.70 : 4.35) + actBoost;
-    }
-    const outAlpha = 1 - smoothstep(fadeStart, fadeEnd, zoom.k);
+    // Keep genre headers clearly visible across ALL zoom levels while their cluster is on screen
+    const deepCalm = item.hasSubGroups
+      ? (1 - 0.24 * smoothstep(2.4, 4.2, zoom.k))
+      : (1 - 0.12 * smoothstep(2.6, 4.6, zoom.k));
 
     const minEdge = Math.min(
       (sx - hw) - 4,
@@ -820,18 +844,187 @@
       (sy - hh) - 6,
       (vh - 6) - (sy + hh)
     );
-    const edgeAlpha = smoothstep(-28, 4, minEdge);
 
     const hBox = [sx - hw, sy - hh, sx + hw, sy + hh];
-    let uiAlpha = 1;
+    let minUiGap = Infinity;
     for (let u = 0; u < uiBoxes.length; u++) {
       const gap = signedBoxGap(hBox, uiBoxes[u]);
-      const a = smoothstep(-16, 16, gap);
-      if (a < uiAlpha) uiAlpha = a;
+      if (gap < minUiGap) minUiGap = gap;
     }
 
-    const targetAlpha = clamp01(inAlpha * outAlpha * edgeAlpha * uiAlpha);
-    return { sx, sy, hw, hh, fs, fw, strokeW, anyMatch, targetAlpha };
+    let minOwnDotD2 = Infinity;
+    for (let i = 0; i < safeVisDots.length; i++) {
+      const px = safeVisDots[i][0];
+      const py = safeVisDots[i][1];
+      const dx = px < hBox[0] ? hBox[0] - px : (px > hBox[2] ? px - hBox[2] : 0);
+      const dy = py < hBox[1] ? hBox[1] - py : (py > hBox[3] ? py - hBox[3] : 0);
+      const d2 = dx * dx + dy * dy;
+      if (d2 < minOwnDotD2) minOwnDotD2 = d2;
+    }
+    const minOwnDotDist = minOwnDotD2 < Infinity ? Math.sqrt(minOwnDotD2) : Infinity;
+
+    const steadyAlpha = hasClusterOnScreen ? clamp01(inAlpha * deepCalm) : 0;
+    return {
+      sx, sy, hw, hh, fs, fw, strokeW, mdx, mdy,
+      anyMatch, visCount, safeVisDots,
+      hasClusterOnScreen, inAlpha, steadyAlpha,
+      minEdge, minUiGap, minOwnDotDist,
+    };
+  }
+
+  // Find a clean world-space anchor over the visible slice of a cluster inside the safe viewport
+  function findVisibleClusterSlot(item, isSub, ev, opts, uiBoxes, otherHeaderBoxes) {
+    const { nodes, zoom, vw, vh, isHidden } = opts;
+    if (zoom.k <= 1.15) {
+      const osx = (item.wx + ev.mdx) * zoom.k + zoom.x;
+      const osy = (item.wy + ev.mdy) * zoom.k + zoom.y;
+      return { wx: item.wx, wy: item.wy, sx: osx, sy: osy, isOverview: true };
+    }
+    const safeDots = ev.safeVisDots;
+    if (!safeDots || safeDots.length === 0) return null;
+
+    const hw = ev.hw;
+    const hh = ev.hh;
+    const xs = safeDots.map((d) => d[0]).sort((a, b) => a - b);
+    const ys = safeDots.map((d) => d[1]).sort((a, b) => a - b);
+    const len = safeDots.length;
+    const mx = xs[len >> 1];
+    const my = ys[len >> 1];
+    const qLo = Math.floor((len - 1) * 0.15);
+    const qHi = Math.ceil((len - 1) * 0.85);
+    const cMinX = xs[qLo], cMaxX = xs[qHi];
+    const cMinY = ys[qLo], cMaxY = ys[qHi];
+    const minX = xs[0], maxX = xs[len - 1];
+    const minY = ys[0], maxY = ys[len - 1];
+
+    const loX = hw + 10;
+    const hiX = vw - hw - 10;
+    const loY = hh + 12;
+    const hiY = vh - hh - 12;
+    if (loX > hiX || loY > hiY) return null;
+    const clampX = (x) => Math.max(loX, Math.min(hiX, x));
+    const clampY = (y) => Math.max(loY, Math.min(hiY, y));
+
+    const ownSet = new Set(item.memberIds);
+    const visDots = [];
+    for (let i = 0; i < nodes.length; i++) {
+      const n = nodes[i];
+      if (isHidden && isHidden(n.t)) continue;
+      const px = Number.isFinite(n.px) ? n.px : n.x * zoom.k + zoom.x;
+      const py = Number.isFinite(n.py) ? n.py : n.y * zoom.k + zoom.y;
+      if (px < -16 || px > vw + 16 || py < -16 || py > vh + 16) continue;
+      visDots.push([px, py, ownSet.has(n.id) ? 1 : 0]);
+    }
+
+    const cands = [
+      [mx, cMinY - hh - 14],
+      [mx - 26, cMinY - hh - 14],
+      [mx + 26, cMinY - hh - 14],
+      [mx, minY - hh - 12],
+      [mx, cMaxY + hh + 14],
+      [mx, maxY + hh + 12],
+      [cMinX - hw - 10, my],
+      [cMaxX + hw + 10, my],
+      [mx, my - 22],
+      [mx, my + 22],
+      [mx, my],
+    ];
+
+    const gx0 = clampX(minX - hw - 20);
+    const gx1 = clampX(maxX + hw + 20);
+    const gy0 = clampY(minY - hh - 32);
+    const gy1 = clampY(maxY + hh + 32);
+    const stepX = Math.max(12, Math.round((gx1 - gx0) / 14));
+    const stepY = Math.max(10, Math.round((gy1 - gy0) / 14));
+    for (let gy = gy0; gy <= gy1; gy += stepY) {
+      for (let gx = gx0; gx <= gx1; gx += stepX) {
+        cands.push([gx, gy]);
+      }
+    }
+    [18, 32, 48, 68, 92].forEach((rad) => {
+      for (let ai = 0; ai < ANGLES.length; ai += 2) {
+        const ang = ANGLES[ai];
+        cands.push([mx + Math.cos(ang) * rad * 1.15, my + Math.sin(ang) * rad]);
+      }
+    });
+
+    let bestSx = null;
+    let bestSy = null;
+    let bestScore = Infinity;
+    const seen = new Set();
+
+    for (let ci = 0; ci < cands.length; ci++) {
+      const cx = clampX(cands[ci][0]);
+      const cy = clampY(cands[ci][1]);
+      const key = ((cx * 2) | 0) * 8192 + ((cy * 2) | 0);
+      if (seen.has(key)) continue;
+      seen.add(key);
+
+      const box = [cx - hw, cy - hh, cx + hw, cy + hh];
+      let badUi = false;
+      for (let u = 0; u < uiBoxes.length; u++) {
+        if (signedBoxGap(box, uiBoxes[u]) < 6) {
+          badUi = true;
+          break;
+        }
+      }
+      if (badUi) continue;
+
+      let badHdr = false;
+      for (let h = 0; h < otherHeaderBoxes.length; h++) {
+        if (signedBoxGap(box, otherHeaderBoxes[h]) < 6) {
+          badHdr = true;
+          break;
+        }
+      }
+      if (badHdr) continue;
+
+      let ownHits = 0;
+      let foreignHits = 0;
+      let ownD2 = Infinity;
+      let foreignD2 = Infinity;
+      const p0 = box[0] - 4, p1 = box[1] - 4, p2 = box[2] + 4, p3 = box[3] + 4;
+      for (let di = 0; di < visDots.length; di++) {
+        const px = visDots[di][0];
+        const py = visDots[di][1];
+        const isOwn = visDots[di][2] === 1;
+        const dx = px < box[0] ? box[0] - px : (px > box[2] ? px - box[2] : 0);
+        const dy = py < box[1] ? box[1] - py : (py > box[3] ? py - box[3] : 0);
+        const d2 = dx * dx + dy * dy;
+        if (isOwn) {
+          if (d2 < ownD2) ownD2 = d2;
+        } else if (d2 < foreignD2) {
+          foreignD2 = d2;
+        }
+        if (px >= p0 && px <= p2 && py >= p1 && py <= p3) {
+          if (isOwn) ownHits++;
+          else foreignHits++;
+        }
+      }
+
+      const ownD = ownD2 < Infinity ? Math.sqrt(ownD2) : 0;
+      const foreignD = foreignD2 < Infinity ? Math.sqrt(foreignD2) : Infinity;
+      const distCore = Math.hypot(cx - mx, cy - my);
+      const foreignCloserPen = foreignD + 6 < ownD ? (ownD - foreignD) * 28 + 380 : 0;
+      const score =
+        foreignHits * 9500 +
+        ownHits * 2400 +
+        Math.max(0, ownD - 10) * 2.1 +
+        distCore * 0.55 +
+        foreignCloserPen +
+        (cy <= cMinY ? -16 : 0);
+
+      if (score < bestScore) {
+        bestScore = score;
+        bestSx = cx;
+        bestSy = cy;
+      }
+    }
+
+    if (bestSx === null) return null;
+    const wx = (bestSx - zoom.x) / zoom.k - ev.mdx;
+    const wy = (bestSy - zoom.y) / zoom.k - ev.mdy;
+    return { wx, wy, sx: bestSx, sy: bestSy, isOverview: false };
   }
 
   function getActiveGenreObstacleBoxes(opts, uiBoxes) {
@@ -840,10 +1033,13 @@
     if (!plan) return [];
     const obs = [];
     const pushIfVisible = (item, isSub) => {
-      const ev = evaluateGenreItem(item, isSub, opts, uiBoxes);
       const st = clusterAlphaState.get(item.key);
-      const curA = st ? st.alpha : ev.targetAlpha;
-      if (Math.max(curA, ev.targetAlpha) >= 0.18) {
+      const ax = st && Number.isFinite(st.anchorWx) ? st.anchorWx : item.wx;
+      const ay = st && Number.isFinite(st.anchorWy) ? st.anchorWy : item.wy;
+      const ev = evaluateGenreItem(item, isSub, ax, ay, opts, uiBoxes);
+      const curA = st ? st.alpha : ev.steadyAlpha;
+      const tgtA = st ? st.targetAlpha : ev.steadyAlpha;
+      if (Math.max(curA, tgtA) >= 0.12) {
         obs.push([ev.sx - ev.hw - 6, ev.sy - ev.hh - 4, ev.sx + ev.hw + 6, ev.sy + ev.hh + 4]);
       }
     };
@@ -893,13 +1089,18 @@
     if (layout) lastTrackLayout = layout;
 
     const mobileEraScroll = layout === "era" && vw <= 800;
+    const desktopEraScroll = layout === "era" && vw > 800;
+    const eraBrowseScroll = mobileEraScroll || desktopEraScroll;
     const uiBoxes = getUiObstacleBoxes(mapWrap);
     if (mobileEraScroll) {
       uiBoxes.push([0, 0, (eraLeftGutter || 94) + 2, vh]);
       uiBoxes.push([vw - 170, 0, vw, 48]); // "Ambient <- -> High energy" top-right header legend
+    } else if (desktopEraScroll) {
+      uiBoxes.push([0, 0, vw, 112]); // sticky top Syne era headers + year ticks + energy legend
+      uiBoxes.push([0, vh - 20, vw, vh]); // bottom horizontal scroll position indicator
     }
-    const minLabelX = mobileEraScroll ? (eraLeftGutter || 94) + 3 : 6;
-    const maxLabelX = mobileEraScroll ? vw - 10 : vw - 6;
+    const minLabelX = mobileEraScroll ? (eraLeftGutter || 94) + 3 : 8;
+    const maxLabelX = mobileEraScroll ? vw - 10 : vw - 8;
 
     const genreBoxes = getActiveGenreObstacleBoxes(opts, uiBoxes);
     const isCompact = vw <= 640;
@@ -908,12 +1109,12 @@
     // Screen-density-aware progressive LOD thresholds:
     // On a 390px phone in Vibe view, minDim=390 -> kEnter=2.42, kMid=4.05, kClose=5.08
     // On a 1440x900 desktop in Vibe view, minDim=844 -> kEnter=1.78, kMid=2.90, kClose=3.90
-    // In mobileEraScroll (already 3-screens tall vertically), browse labels remain active at k>=1.0.
+    // In Era view (3-screens tall on mobile, ~2.45-screens wide on desktop), non-overlapping browse labels are active at k>=1.0.
     const minDim = Math.max(320, Math.min(vw, vh));
-    const kEnter = mobileEraScroll ? 1.0 : Math.max(1.78, 945 / minDim);
-    const kStay = mobileEraScroll ? 1.0 : (kEnter - 0.14);
-    const kMid = mobileEraScroll ? 2.2 : Math.max(2.90, 1580 / minDim);
-    const kClose = mobileEraScroll ? 3.4 : Math.max(3.90, 1980 / minDim);
+    const kEnter = eraBrowseScroll ? 1.0 : Math.max(1.78, 945 / minDim);
+    const kStay = eraBrowseScroll ? 1.0 : (kEnter - 0.14);
+    const kMid = eraBrowseScroll ? 2.2 : Math.max(2.90, 1580 / minDim);
+    const kClose = eraBrowseScroll ? 3.4 : Math.max(3.90, 1980 / minDim);
 
     const uMid = clamp01((zoom.k - kEnter) / Math.max(0.2, kMid - kEnter));
     const uClose = clamp01((zoom.k - kMid) / Math.max(0.2, kClose - kMid));
@@ -923,6 +1124,8 @@
     let maxAmbient = 0;
     if (mobileEraScroll) {
       maxAmbient = Math.max(6, Math.round(effAreaUnits * (9.5 + 10.0 * smoothstep(1.0, 2.6, zoom.k))));
+    } else if (desktopEraScroll) {
+      maxAmbient = Math.max(12, Math.round(effAreaUnits * (4.4 + 9.0 * smoothstep(1.0, 2.8, zoom.k))));
     } else if (zoom.k >= kEnter) {
       const density = zoom.k <= kMid
         ? (1.1 + 4.9 * Math.pow(uMid, 0.85))
@@ -934,15 +1137,21 @@
 
     const baseClearX = mobileEraScroll
       ? (10 - 4 * smoothstep(1.0, 2.5, zoom.k))
-      : (zoom.k <= kMid ? (28 - 10 * uMid) : (18 - 8 * smoothstep(0, 1, uClose)));
+      : desktopEraScroll
+        ? (14 - 5 * smoothstep(1.0, 2.6, zoom.k))
+        : (zoom.k <= kMid ? (28 - 10 * uMid) : (18 - 8 * smoothstep(0, 1, uClose)));
     const baseClearY = mobileEraScroll
       ? (7 - 3 * smoothstep(1.0, 2.5, zoom.k))
-      : (zoom.k <= kMid ? (18 - 6 * uMid) : (12 - 5 * smoothstep(0, 1, uClose)));
+      : desktopEraScroll
+        ? (9 - 3.5 * smoothstep(1.0, 2.6, zoom.k))
+        : (zoom.k <= kMid ? (18 - 6 * uMid) : (12 - 5 * smoothstep(0, 1, uClose)));
     const baseDotSep = mobileEraScroll
       ? (24 - 10 * smoothstep(1.0, 2.5, zoom.k))
-      : (zoom.k <= kMid
-          ? ((isCompact ? 74 : 84) * (1 - uMid) + 44 * uMid)
-          : (44 * (1 - smoothstep(0, 1, uClose)) + 16 * smoothstep(0, 1, uClose)));
+      : desktopEraScroll
+        ? (36 - 16 * smoothstep(1.0, 2.6, zoom.k))
+        : (zoom.k <= kMid
+            ? ((isCompact ? 74 : 84) * (1 - uMid) + 44 * uMid)
+            : (44 * (1 - smoothstep(0, 1, uClose)) + 16 * smoothstep(0, 1, uClose)));
 
     lastLodDebug = { kEnter, kStay, kMid, kClose, maxAmbient };
 
@@ -1373,15 +1582,20 @@
     const dt = stepDt(lastClusterTs, now);
     lastClusterTs = now;
     const reducedMotion = prefersReducedMotion();
-    const isFreshPlanAtOverview = plan.sig !== lastClusterPlanSig && zoom.k <= 1.05;
-    if (plan.sig !== lastClusterPlanSig) {
+    const planSigChanged = plan.sig !== lastClusterPlanSig;
+    const isFreshPlanAtOverview = planSigChanged && zoom.k <= 1.05;
+    if (planSigChanged) {
       lastClusterPlanSig = plan.sig;
     }
-    const alphaBlend = (reducedMotion || isFreshPlanAtOverview)
+    const fadeOutBlend = reducedMotion
       ? 1
-      : (1 - Math.exp(-dt / CLUSTER_FADE_TAU_MS));
+      : (1 - Math.exp(-dt / CLUSTER_FADE_OUT_TAU_MS));
+    const fadeInBlend = (reducedMotion || isFreshPlanAtOverview)
+      ? 1
+      : (1 - Math.exp(-dt / CLUSTER_FADE_IN_TAU_MS));
 
     const uiBoxes = getUiObstacleBoxes(mapWrap);
+    const placedHeaderBoxes = [];
     clusterAnimating = false;
     lastGenreDebug = [];
     const seenKeys = new Set();
@@ -1434,17 +1648,169 @@
 
     function updateHeaderItem(item, isSub) {
       seenKeys.add(item.key);
-      const ev = evaluateGenreItem(item, isSub, opts, uiBoxes);
       let st = clusterAlphaState.get(item.key);
-      if (!st) {
-        const initA = (reducedMotion || isFreshPlanAtOverview) ? ev.targetAlpha : 0;
-        st = { alpha: initA, targetAlpha: ev.targetAlpha };
+      if (!st || planSigChanged) {
+        const evInit = evaluateGenreItem(item, isSub, item.wx, item.wy, opts, uiBoxes);
+        const initA = (reducedMotion || isFreshPlanAtOverview) ? evInit.steadyAlpha : 0;
+        st = {
+          anchorWx: item.wx,
+          anchorWy: item.wy,
+          isOverviewAnchor: true,
+          phase: initA > 0 ? "steady" : "fading_in",
+          alpha: initA,
+          targetAlpha: evInit.steadyAlpha,
+          lastRelocateTs: 0,
+          needsPlacementOnEntry: false,
+          relocateCount: 0,
+        };
         clusterAlphaState.set(item.key, st);
       }
-      st.targetAlpha = ev.targetAlpha;
-      st.alpha += (ev.targetAlpha - st.alpha) * alphaBlend;
-      if (Math.abs(ev.targetAlpha - st.alpha) > 0.01) {
-        clusterAnimating = true;
+
+      let ev = evaluateGenreItem(item, isSub, st.anchorWx, st.anchorWy, opts, uiBoxes);
+      const isWide = vw > 840;
+      const wantOverviewReturn =
+        zoom.k <= 1.15 &&
+        !st.isOverviewAnchor &&
+        Math.hypot((item.wx - st.anchorWx) * zoom.k, (item.wy - st.anchorWy) * zoom.k) > 8;
+      const anchorExitedSafeArea =
+        zoom.k > 1.15 &&
+        (ev.minEdge < 2 || ev.minUiGap < -2 || (zoom.k >= 1.65 && ev.minOwnDotDist > (isWide ? 165 : 115)));
+      const needsRelocate = ev.hasClusterOnScreen && ev.inAlpha >= 0.08 && (wantOverviewReturn || anchorExitedSafeArea);
+      const severeExit = ev.minEdge < -16 || ev.minUiGap < -14;
+      const dwellReady = (now - st.lastRelocateTs) >= CLUSTER_RELOCATE_DWELL_MS || severeExit || wantOverviewReturn;
+      const linearFadeFloor = 0.008 * Math.min(2.5, Math.max(0.5, dt / 16.67));
+
+      if (st.phase === "fading_out") {
+        st.targetAlpha = 0;
+        if (reducedMotion) {
+          st.alpha = 0;
+        } else {
+          st.alpha = Math.max(0, st.alpha - (st.alpha * fadeOutBlend + linearFadeFloor));
+        }
+        if (st.alpha <= 0.02) {
+          st.alpha = 0;
+          if (ev.hasClusterOnScreen && ev.inAlpha >= 0.05) {
+            const nextSlot = findVisibleClusterSlot(item, isSub, ev, opts, uiBoxes, placedHeaderBoxes);
+            if (nextSlot) {
+              st.lastRelocateAlpha = st.alpha;
+              st.anchorWx = nextSlot.wx;
+              st.anchorWy = nextSlot.wy;
+              st.isOverviewAnchor = Boolean(nextSlot.isOverview);
+              st.lastRelocateTs = now;
+              st.needsPlacementOnEntry = false;
+              st.relocateCount = (st.relocateCount || 0) + 1;
+              ev = evaluateGenreItem(item, isSub, st.anchorWx, st.anchorWy, opts, uiBoxes);
+              st.targetAlpha = ev.steadyAlpha;
+              if (reducedMotion) {
+                st.alpha = ev.steadyAlpha;
+                st.phase = "steady";
+              } else {
+                st.phase = "fading_in";
+              }
+            } else {
+              st.needsPlacementOnEntry = true;
+              st.phase = "steady";
+            }
+          } else {
+            st.needsPlacementOnEntry = true;
+            st.phase = "steady";
+          }
+        }
+        if (st.phase === "fading_out" || Math.abs(st.targetAlpha - st.alpha) > 0.008) {
+          clusterAnimating = true;
+        }
+      } else {
+        if (st.alpha <= 0.02 && (st.needsPlacementOnEntry || needsRelocate) && ev.hasClusterOnScreen && ev.inAlpha >= 0.05) {
+          const nextSlot = findVisibleClusterSlot(item, isSub, ev, opts, uiBoxes, placedHeaderBoxes);
+          if (nextSlot) {
+            st.lastRelocateAlpha = st.alpha;
+            st.anchorWx = nextSlot.wx;
+            st.anchorWy = nextSlot.wy;
+            st.isOverviewAnchor = Boolean(nextSlot.isOverview);
+            st.lastRelocateTs = now;
+            st.needsPlacementOnEntry = false;
+            st.relocateCount = (st.relocateCount || 0) + 1;
+            ev = evaluateGenreItem(item, isSub, st.anchorWx, st.anchorWy, opts, uiBoxes);
+          }
+        }
+
+        const curWantOverview =
+          zoom.k <= 1.15 &&
+          !st.isOverviewAnchor &&
+          Math.hypot((item.wx - st.anchorWx) * zoom.k, (item.wy - st.anchorWy) * zoom.k) > 8;
+        const curAnchorExited =
+          zoom.k > 1.15 &&
+          (ev.minEdge < 2 || ev.minUiGap < -2 || (zoom.k >= 1.65 && ev.minOwnDotDist > (isWide ? 165 : 115)));
+        const curNeedsRelocate = ev.hasClusterOnScreen && ev.inAlpha >= 0.08 && (curWantOverview || curAnchorExited);
+        const curSevere = ev.minEdge < -16 || ev.minUiGap < -14;
+        const curDwellReady = (now - st.lastRelocateTs) >= CLUSTER_RELOCATE_DWELL_MS || curSevere || curWantOverview;
+
+        if (!ev.hasClusterOnScreen || ev.inAlpha < 0.02) {
+          st.targetAlpha = 0;
+          if (st.alpha > 0.02 && !reducedMotion) {
+            st.phase = "fading_out";
+            st.alpha = Math.max(0, st.alpha - (st.alpha * fadeOutBlend + linearFadeFloor));
+            clusterAnimating = true;
+          } else {
+            st.alpha = 0;
+            st.needsPlacementOnEntry = true;
+            st.phase = "steady";
+          }
+        } else if (curNeedsRelocate && curDwellReady) {
+          const previewSlot = findVisibleClusterSlot(item, isSub, ev, opts, uiBoxes, placedHeaderBoxes);
+          if (previewSlot && Math.hypot(previewSlot.sx - ev.sx, previewSlot.sy - ev.sy) >= 14) {
+            if (reducedMotion || st.alpha <= 0.02) {
+              st.lastRelocateAlpha = st.alpha;
+              st.anchorWx = previewSlot.wx;
+              st.anchorWy = previewSlot.wy;
+              st.isOverviewAnchor = Boolean(previewSlot.isOverview);
+              st.lastRelocateTs = now;
+              st.needsPlacementOnEntry = false;
+              st.relocateCount = (st.relocateCount || 0) + 1;
+              ev = evaluateGenreItem(item, isSub, st.anchorWx, st.anchorWy, opts, uiBoxes);
+              st.targetAlpha = ev.steadyAlpha;
+              if (reducedMotion) {
+                st.alpha = ev.steadyAlpha;
+                st.phase = "steady";
+              } else {
+                st.alpha = 0;
+                st.phase = "fading_in";
+                clusterAnimating = true;
+              }
+            } else {
+              st.phase = "fading_out";
+              st.targetAlpha = 0;
+              st.alpha = Math.max(0, st.alpha - (st.alpha * fadeOutBlend + linearFadeFloor));
+              clusterAnimating = true;
+            }
+          } else {
+            st.targetAlpha = ev.steadyAlpha;
+            st.alpha += (st.targetAlpha - st.alpha) * fadeInBlend;
+            if (Math.abs(st.targetAlpha - st.alpha) <= 0.012) {
+              st.alpha = st.targetAlpha;
+              st.phase = "steady";
+            } else {
+              clusterAnimating = true;
+            }
+          }
+        } else {
+          st.targetAlpha = ev.steadyAlpha;
+          if (!reducedMotion && st.alpha === 0 && (now - st.lastRelocateTs) < 14) {
+            clusterAnimating = true;
+          } else {
+            st.alpha += (st.targetAlpha - st.alpha) * fadeInBlend;
+            if (Math.abs(st.targetAlpha - st.alpha) <= 0.012) {
+              st.alpha = st.targetAlpha;
+              st.phase = "steady";
+            } else {
+              clusterAnimating = true;
+            }
+          }
+        }
+      }
+
+      if (Math.max(st.alpha, st.targetAlpha) >= 0.10) {
+        placedHeaderBoxes.push([ev.sx - ev.hw, ev.sy - ev.hh, ev.sx + ev.hw, ev.sy + ev.hh]);
       }
 
       const dom = ensureSvgEntry(svgGroup, item.key, item.id, isSub);
@@ -1464,7 +1830,7 @@
       dom.grp.setAttribute("transform", `translate(${ev.sx.toFixed(2)}, ${ev.sy.toFixed(2)})`);
       dom.grp.style.opacity = st.alpha.toFixed(3);
       dom.grp.style.pointerEvents = st.alpha >= 0.16 ? "auto" : "none";
-      dom.grp.style.display = (st.alpha < 0.006 && ev.targetAlpha < 0.006) ? "none" : "";
+      dom.grp.style.display = (st.alpha < 0.006 && st.targetAlpha < 0.006) ? "none" : "";
 
       dom.hit.setAttribute("x", (-ev.hw).toFixed(1));
       dom.hit.setAttribute("y", (-ev.hh).toFixed(1));
@@ -1484,12 +1850,19 @@
         id: item.id,
         label: item.label,
         isSub,
-        wx: Number(item.wx.toFixed(2)),
-        wy: Number(item.wy.toFixed(2)),
+        phase: st.phase,
+        isOverviewAnchor: Boolean(st.isOverviewAnchor),
+        relocateCount: st.relocateCount || 0,
+        lastRelocateAlpha: Number((st.lastRelocateAlpha || 0).toFixed(4)),
+        wx: Number(st.anchorWx.toFixed(2)),
+        wy: Number(st.anchorWy.toFixed(2)),
+        overviewWx: Number(item.wx.toFixed(2)),
+        overviewWy: Number(item.wy.toFixed(2)),
         sx: Number(ev.sx.toFixed(2)),
         sy: Number(ev.sy.toFixed(2)),
         alpha: Number(st.alpha.toFixed(3)),
-        targetAlpha: Number(ev.targetAlpha.toFixed(3)),
+        targetAlpha: Number(st.targetAlpha.toFixed(3)),
+        safeVisDots: ev.safeVisDots.length,
         box: [
           Number((ev.sx - ev.hw).toFixed(2)),
           Number((ev.sy - ev.hh).toFixed(2)),

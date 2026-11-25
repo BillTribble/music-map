@@ -68,19 +68,20 @@
     const bands = [];
 
     if (!isMobile) {
-      // Desktop: Left -> Right proportional chronological wave fitted 100% inside viewport (vw x vh)
-      const padL = 24;
-      const padR = 24;
-      const padT = 104; // clears top-left HUD + top era headings + year ticks
-      const padB = 34;
-      const virtualW = vw;
+      // Desktop (> 800px): ~2.45-screens-wide smooth horizontal chronological scroll so all 18 eras breathe cleanly at 1x zoom
+      const DESKTOP_ERA_SCREENS = 2.45;
+      const padL = 32;
+      const padR = 32;
+      const padT = 122; // clears top-left HUD + nudged top Syne era headings + year ticks
+      const padB = 42;  // clears bottom track labels + horizontal scroll indicator
+      const virtualW = Math.max(1980, Math.round(vw * DESKTOP_ERA_SCREENS));
       const virtualH = vh;
       const waveH = Math.max(200, virtualH - padT - padB);
-      const usableW = Math.max(480, virtualW - padL - padR);
+      const usableW = Math.max(1200, virtualW - padL - padR);
 
       const rawWidths = eraList.map((er) => {
         const cnt = (byEra.get(er.id) || []).length;
-        return dense ? (34 + Math.sqrt(cnt) * 11) : 100;
+        return dense ? (52 + Math.pow(cnt, 0.62) * 18) : 130;
       });
       const rawSumW = rawWidths.reduce((a, b) => a + b, 0) || 1;
       const widths = rawWidths.map((w) => (w / rawSumW) * usableW);
@@ -92,22 +93,25 @@
         const x0 = cursorX;
         cursorX += colW;
         const cx = x0 + colW * 0.5;
-        const padInX = Math.min(10, colW * 0.16);
+        const padInX = Math.min(18, Math.max(10, colW * 0.12));
+        const innerW = Math.max(14, colW - padInX * 2);
 
         list.forEach((t, ti) => {
           const en = energyNorm(t);
-          const jitterX = (hashFrac(t.id + "_x") - 0.5) * Math.max(12, colW - padInX * 2.2);
-          const jitterY = (hashFrac(t.id + "_y") - 0.5) * 26;
-          const px = Math.max(x0 + padInX, Math.min(x0 + colW - padInX, cx + jitterX));
+          const slotFrac = list.length > 1 ? (ti + 0.5) / list.length : 0.5;
+          const hashX = hashFrac(t.id + "_x");
+          const xFrac = slotFrac * 0.64 + hashX * 0.36;
+          const jitterY = (hashFrac(t.id + "_y") - 0.5) * 32;
+          const px = Math.max(x0 + padInX, Math.min(x0 + colW - padInX, x0 + padInX + xFrac * innerW));
           const py = Math.max(padT + 8, Math.min(virtualH - padB - 8, padT + (1 - en) * waveH + jitterY));
           coords.set(t.id, { x: px, y: py, era: er.id, idx: ti });
         });
 
-        // Adaptive micro-swarm collision repulsion scaled to column area
+        // Adaptive micro-swarm collision repulsion scaled to expanded ~2.45x column area
         const minDist = dense
-          ? Math.max(9.5, Math.min(18, Math.sqrt((colW * waveH) / Math.max(1, list.length)) * 0.46))
-          : 20;
-        for (let iter = 0; iter < 20; iter++) {
+          ? Math.max(18, Math.min(32, Math.sqrt((colW * waveH) / Math.max(1, list.length)) * 0.54))
+          : 28;
+        for (let iter = 0; iter < 28; iter++) {
           for (let i = 0; i < list.length; i++) {
             const a = coords.get(list[i].id);
             for (let j = i + 1; j < list.length; j++) {
@@ -117,13 +121,13 @@
               let dist = Math.hypot(dx, dy);
               if (dist < 0.01) { dx = 1; dy = 0.35; dist = 1.06; }
               if (dist < minDist) {
-                const push = (minDist - dist) * 0.48;
-                const ux = (dx / dist) * push;
+                const push = (minDist - dist) * 0.5;
+                const ux = (dx / dist) * push * 0.88;
                 const uy = (dy / dist) * push * 0.82;
                 a.x = Math.max(x0 + padInX, Math.min(x0 + colW - padInX, a.x - ux));
                 b.x = Math.max(x0 + padInX, Math.min(x0 + colW - padInX, b.x + ux));
-                a.y = Math.max(padT + 6, Math.min(virtualH - padB - 6, a.y - uy));
-                b.y = Math.max(padT + 6, Math.min(virtualH - padB - 6, b.y + uy));
+                a.y = Math.max(padT + 8, Math.min(virtualH - padB - 8, a.y - uy));
+                b.y = Math.max(padT + 8, Math.min(virtualH - padB - 8, b.y + uy));
               }
             }
           }
@@ -307,8 +311,16 @@
       [0.24, 0.52, 0.8].forEach((f) => {
         const y = data.virtualH * f;
         ctx.beginPath();
-        ctx.moveTo(40, y);
-        ctx.lineTo(data.virtualW - 40, y);
+        ctx.moveTo(28, y);
+        ctx.lineTo(data.virtualW - 28, y);
+        ctx.stroke();
+      });
+      ctx.globalAlpha = 0.13;
+      data.bands.forEach((b, idx) => {
+        if (idx === 0) return;
+        ctx.beginPath();
+        ctx.moveTo(b.x, 56);
+        ctx.lineTo(b.x, data.virtualH - 22);
         ctx.stroke();
       });
     } else {
@@ -380,6 +392,36 @@
       else ctx.rect(vwScreen - 6, thumbY, 3.5, thumbH);
       ctx.fill();
       ctx.restore();
+    } else if (!data.isMobile && colors.viewportW && colors.viewportH && data.virtualW * zoom.k > colors.viewportW + 24) {
+      // Subtle screen-space bottom-edge horizontal scroll thumb on ~2.45-screen desktop Era view (clearing player card)
+      const vwScreen = colors.viewportW;
+      const vhScreen = colors.viewportH;
+      const slackX = Number(colors.panSlackX) || 0;
+      const cardLeftX = Number.isFinite(colors.visiblePlayerLeftX) ? colors.visiblePlayerLeftX : vwScreen;
+      const maxScrollX = Math.max(1, data.virtualW * zoom.k + slackX - vwScreen);
+      const progX = Math.max(0, Math.min(1, -zoom.x / maxScrollX));
+      const trackLeft = 24;
+      const trackRight = Math.max(trackLeft + 120, Math.min(vwScreen - 24, cardLeftX - 18));
+      const trackLen = trackRight - trackLeft;
+      const visRatio = Math.max(0.08, Math.min(0.55, vwScreen / (data.virtualW * zoom.k + slackX)));
+      const thumbW = Math.max(36, Math.round(trackLen * visRatio));
+      const thumbX = trackLeft + progX * (trackLen - thumbW);
+
+      ctx.save();
+      ctx.fillStyle = colors.gridLine;
+      ctx.globalAlpha = 0.22;
+      ctx.beginPath();
+      if (typeof ctx.roundRect === "function") ctx.roundRect(trackLeft, vhScreen - 12, trackLen, 2.5, 2);
+      else ctx.rect(trackLeft, vhScreen - 12, trackLen, 2.5);
+      ctx.fill();
+
+      ctx.fillStyle = colors.primary;
+      ctx.globalAlpha = 0.58;
+      ctx.beginPath();
+      if (typeof ctx.roundRect === "function") ctx.roundRect(thumbX, vhScreen - 12.5, thumbW, 3.5, 2);
+      else ctx.rect(thumbX, vhScreen - 12.5, thumbW, 3.5);
+      ctx.fill();
+      ctx.restore();
     }
   }
 
@@ -398,11 +440,10 @@
       const sh = b.h * zoom.k;
 
       if (!data.isMobile) {
-        if (sx + sw < -80 || sx > vw + 80) return;
-        const cx = sx + sw * 0.5;
-        const headerY = Math.max(66, Math.min(104, sy + 72));
+        if (sx + sw < 12 || sx > vw - 12) return;
+        const headerY = Math.max(78, Math.min(114, sy + 84));
 
-        let displayLbl = sw < 130 ? b.shortLabel : b.label;
+        let displayLbl = sw < 84 ? b.shortLabel : b.label;
         if (sw < 88 && b.yearMark) {
           displayLbl = displayLbl.replace(/\s*'\d{2}$/, "");
         }
@@ -410,20 +451,46 @@
           displayLbl = displayLbl.replace(/\s*&\s*/g, "/");
         }
 
-        // Year marker ticks along the top wave header (skip when identical to column label, e.g. '2026')
-        if (b.yearMark && b.yearMark !== displayLbl) {
+        const yrText = sw >= 104 ? (b.sublabel || b.yearMark || "") : (b.yearMark || b.sublabel || "");
+        const showYr = Boolean(yrText && yrText !== displayLbl && yrText !== b.label);
+        const lblW = displayLbl.length * (sw < 68 ? 5.8 : 6.7) + 14;
+        const yrW = showYr ? yrText.length * 5.8 + 12 : 0;
+        const pillW = Math.max(38, Math.min(sw - 10, Math.max(lblW, yrW)));
+        const pillHalf = pillW * 0.5;
+
+        const visLeft = Math.max(12, sx);
+        const visRight = Math.min(vw - 12, sx + sw);
+        const visW = visRight - visLeft;
+        const minVisW = pillW + 4;
+        if (visW <= minVisW) return;
+
+        const fullVisW = Math.max(minVisW + 6, Math.min(sw - 2, pillW + 28));
+        const tEdge = Math.max(0, Math.min(1, (visW - minVisW) / Math.max(1, fullVisW - minVisW)));
+        const edgeAlpha = tEdge * tEdge * (3 - 2 * tEdge);
+        if (edgeAlpha < 0.02) return;
+
+        const minCx = visLeft + pillHalf + 2;
+        const maxCx = Math.max(minCx, visRight - pillHalf - 2);
+        const cx = Math.max(minCx, Math.min(maxCx, sx + sw * 0.5));
+
+        if (edgeAlpha < 0.999) {
+          g.style.opacity = edgeAlpha.toFixed(3);
+          if (edgeAlpha < 0.25) g.style.pointerEvents = "none";
+        }
+
+        // Year / era date range along the top wave header (skip when identical to column label, e.g. '2026' or '2024–25')
+        if (showYr) {
           const yr = document.createElementNS(NS, "text");
           yr.setAttribute("class", "era-tick-year");
           yr.setAttribute("x", cx.toFixed(1));
           yr.setAttribute("y", (headerY - 12).toFixed(1));
           yr.setAttribute("text-anchor", "middle");
-          yr.textContent = b.yearMark;
+          yr.textContent = yrText;
           g.appendChild(yr);
         }
-        const pillW = Math.max(36, Math.min(sw - 4, displayLbl.length * (sw < 66 ? 5.6 : 6.4) + 12));
         const rect = document.createElementNS(NS, "rect");
         rect.setAttribute("class", "map-family-hit");
-        rect.setAttribute("x", (cx - pillW * 0.5).toFixed(1));
+        rect.setAttribute("x", (cx - pillHalf).toFixed(1));
         rect.setAttribute("y", (headerY - 6).toFixed(1));
         rect.setAttribute("width", pillW.toFixed(1));
         rect.setAttribute("height", "24");

@@ -717,23 +717,31 @@
 
     if (layout === "era" && window.BTMM_TIMELINE_ERA && eraLayout) {
       let visiblePlayerTopY = vh;
+      let visiblePlayerLeftX = vw;
       if (typeof document !== "undefined" && mapWrap) {
         const card = document.getElementById("track-player-card");
         if (card && !card.hidden) {
           const mRect = mapWrap.getBoundingClientRect();
           const cRect = card.getBoundingClientRect();
-          if (cRect.height > 20) visiblePlayerTopY = Math.max(80, cRect.top - mRect.top);
+          if (cRect.height > 20) {
+            visiblePlayerTopY = Math.max(80, cRect.top - mRect.top);
+            visiblePlayerLeftX = Math.max(120, cRect.left - mRect.left);
+          }
         }
       }
+      const [panSlackX, panSlackY] = getPanSlack();
       window.BTMM_TIMELINE_ERA.drawCanvasBackground(ctx, eraLayout, zoom, {
         bandAlt: palette.bandAlt,
         bandActive: palette.bandActive,
         gridLine: palette.gridLine,
         primary: palette.primary,
         spineGlow: palette.spineGlow,
+        viewportW: vw,
         viewportH: vh,
-        panSlackY: getPanSlack()[1],
+        panSlackX,
+        panSlackY,
         visiblePlayerTopY,
+        visiblePlayerLeftX,
       }, activeEraId, selTrack);
     }
 
@@ -958,14 +966,19 @@
   // so bottom-most tracks in both Vibe and Era views sit right above the maximized player's top edge.
   function getPanSlack() {
     const isMob = vw <= 840;
+    const isDesktopEra = layout === "era" && vw > 800;
     let spanY = cachedExpandedBottomSpanY > 0 ? cachedExpandedBottomSpanY : 336;
+    let liveDesktopSpanX = 0;
     if (typeof document !== "undefined" && mapWrap) {
       const card = document.getElementById("track-player-card");
       if (card && !card.hidden) {
         const mRect = mapWrap.getBoundingClientRect();
+        const cRect = card.getBoundingClientRect();
+        if (cRect.width > 40 && vw > 800) {
+          liveDesktopSpanX = Math.max(0, Math.round(mRect.right - cRect.left + 42));
+        }
         const isCol = card.classList.contains("is-collapsed") || card.classList.contains("mp-collapsed");
         if (!isCol) {
-          const cRect = card.getBoundingClientRect();
           if (cRect.height > 40) {
             const liveSpan = Math.max(0, mRect.bottom - cRect.top);
             const infoOpen = Boolean(window.BTMM_PLAYER && window.BTMM_PLAYER.isInfoOpen && window.BTMM_PLAYER.isInfoOpen());
@@ -998,11 +1011,16 @@
     }
     const bottomMarginWorld = maxNodeY > 0 ? Math.max(0, worldH - maxNodeY) : 0;
     const curK = Math.max(1, Number.isFinite(zoom.k) ? zoom.k : 1);
+    // On Desktop Era at 1x zoom, lock vertical slack to 0 so horizontal timeline scrolling stays on a rock-steady rail
+    if (isDesktopEra && curK <= 1.02) {
+      const eraSlackX = Math.max(448, liveDesktopSpanX);
+      return [eraSlackX, 0];
+    }
     // Place the lowest visible track ~42px above the maximized player's top edge when scrolled all the way up
     const neededSlackY = (spanY + 42) - bottomMarginWorld * curK;
     const minDesktopSlackY = !isMob && curK <= 1.02 ? Math.round(spanY + 48) : 0;
     const slackY = Math.max(minDesktopSlackY, Math.min(Math.round(vh * 0.75), Math.round(Math.max(0, neededSlackY))));
-    const slackX = isMob ? 0 : 416;
+    const slackX = isDesktopEra ? Math.max(448, liveDesktopSpanX) : (isMob ? 0 : Math.max(416, liveDesktopSpanX));
     return [slackX, slackY];
   }
 
@@ -1197,8 +1215,10 @@
     if (layout === "era" && eraLayout) {
       if ((prevVw <= 800) !== (vw <= 800)) {
         zoom = { ...eraLayout.defaultZoom };
-      } else if (prevVh > 0 && Math.abs(vh - prevVh) > 0.5) {
+      } else if (vw <= 800 && prevVh > 0 && Math.abs(vh - prevVh) > 0.5) {
         zoom.y = zoom.y * (vh / prevVh);
+      } else if (vw > 800 && prevVw > 0 && Math.abs(vw - prevVw) > 0.5) {
+        zoom.x = zoom.x * (vw / prevVw);
       }
     } else if ((prevVw <= 768) !== (vw <= 768)) {
       zoom = defaultMapZoom();
@@ -1408,6 +1428,7 @@
     getPanSlack,
     refreshLabels() { clampZoom(); paintCanvas(); drawFloatingLabels(); },
     isCoasting: () => Boolean(physics && physics.isCoasting && physics.isCoasting()),
+    getVelocity: () => (physics && physics.getVelocity ? physics.getVelocity() : { vx: 0, vy: 0, speed: 0, vLogK: 0, zoomSpeed: 0 }),
     selected: () => selectedId,
     setSelectedSilent(tid) { selectedId = tid; paint(); },
     firstVisibleTrackId,
