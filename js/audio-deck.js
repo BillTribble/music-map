@@ -6,6 +6,10 @@
   const CROSSFADE_SEC = 1.0;
   const CROSSFADE_MS = 1000;
   const PREWARM_LEAD_SEC = 5.5;
+  const MUSH_TASTE_SEC = 3.0;
+  const MUSH_FADE_SEC = 2.5;
+  const MUSH_FADE_MS = 2500;
+  const MUSH_MIN_FACTOR = 0.02;
   const TICK_MS = 40;
 
   let ctx = null;
@@ -360,6 +364,44 @@
     return 0;
   }
 
+  function getVoiceBaseVolume(voice) {
+    if (!voice || !enabled) return 0;
+    const trim = voice.track && Number.isFinite(Number(voice.track.gain_trim))
+      ? clamp(Number(voice.track.gain_trim), 0.25, 1.5)
+      : 1.0;
+    return clamp(volume * trim, 0, 1);
+  }
+
+  function getRawMushTriggerSec(track, realDur) {
+    if (!track || track.has_mush !== true) return null;
+    const onset = Number(track.mush_onset_sec);
+    if (!Number.isFinite(onset) || onset <= 0) return null;
+    const trig = onset + MUSH_TASTE_SEC;
+    if (Number.isFinite(realDur) && realDur > 0 && trig >= realDur - 1.2) return null;
+    return trig;
+  }
+
+  function getEffectiveMushTriggerSec(voice, realDur) {
+    if (!voice || !voice.isFullTrack || !voice.track) return null;
+    const rawTrig = getRawMushTriggerSec(voice.track, realDur);
+    if (rawTrig === null) return null;
+    const eff = Number.isFinite(voice.mushCustomTriggerSec)
+      ? Math.max(rawTrig, voice.mushCustomTriggerSec)
+      : rawTrig;
+    if (Number.isFinite(realDur) && realDur > 0 && eff >= realDur - 1.2) return null;
+    return eff;
+  }
+
+  function cancelMushFade(voice) {
+    if (!voice || voice.disposed) return;
+    if (voice.mushFadeActive || voice.mushFadeFactor !== 1.0) {
+      voice.mushFadeActive = false;
+      voice.mushFadeStartMs = 0;
+      voice.mushFadeFactor = 1.0;
+      syncVoiceVolume(voice);
+    }
+  }
+
   function syncVoiceVolume(voice) {
     if (!voice || voice.disposed || !voice.htmlAudio) return;
     const el = voice.htmlAudio;
@@ -369,11 +411,12 @@
       el.muted = !enabled;
       return;
     }
-    const trim = voice.track && Number.isFinite(Number(voice.track.gain_trim))
-      ? clamp(Number(voice.track.gain_trim), 0.25, 1.5)
-      : 1.0;
+    const baseVol = getVoiceBaseVolume(voice);
     const fade = Number.isFinite(voice.fadeFactor) ? clamp(voice.fadeFactor, 0, 1) : 1.0;
-    const target = enabled ? clamp(volume * trim * fade, 0, 1) : 0;
+    const mushFade = Number.isFinite(voice.mushFadeFactor)
+      ? clamp(voice.mushFadeFactor, MUSH_MIN_FACTOR, 1)
+      : 1.0;
+    const target = enabled ? clamp(baseVol * fade * mushFade, 0, 1) : 0;
     el.volume = target;
     el.muted = !enabled;
   }
@@ -405,6 +448,9 @@
         isFullTrack: Boolean(active.isFullTrack),
         looping: !autoPlay,
         autoPlay: Boolean(autoPlay),
+        mushFadeActive: Boolean(active.mushFadeActive),
+        mushFadeFactor: Number.isFinite(active.mushFadeFactor) ? active.mushFadeFactor : 1.0,
+        baseVolume: getVoiceBaseVolume(active),
       };
     }
     if (pending) {
@@ -655,6 +701,25 @@
       }
     }
 
+    if (active && !active.disposed && active.mushFadeActive) {
+      if (!autoPlay) {
+        cancelMushFade(active);
+      } else {
+        const pMush = clamp((now - active.mushFadeStartMs) / MUSH_FADE_MS, 0, 1);
+        if (pMush >= 1) {
+          active.mushFadeActive = false;
+          active.mushFadeFactor = MUSH_MIN_FACTOR;
+          active.crossfadeTriggered = true;
+          advanceToNextSimilar({ crossfadeMs: 0, fromMushFade: true });
+          return;
+        }
+        active.mushFadeFactor =
+          MUSH_MIN_FACTOR + (1.0 - MUSH_MIN_FACTOR) * Math.cos(pMush * Math.PI * 0.5);
+        syncVoiceVolume(active);
+        stillFading = true;
+      }
+    }
+
     if (stillFading && typeof requestAnimationFrame === "function" && typeof document !== "undefined" && !document.hidden) {
       fadeRafId = requestAnimationFrame(stepFadeFrame);
     }
@@ -675,7 +740,9 @@
     const nextTrack = pickNextSimilarTrack(prevId, { peekOnly: false });
     if (!nextTrack) return null;
 
-    const fadeMs = Number.isFinite(opts.crossfadeMs) ? Math.max(80, opts.crossfadeMs) : CROSSFADE_MS;
+    const fadeMs = opts.crossfadeMs === 0
+      ? 0
+      : (Number.isFinite(opts.crossfadeMs) ? Math.max(80, opts.crossfadeMs) : CROSSFADE_MS);
     playTrack(nextTrack, {
       fromAutoPlay: true,
       fromStart: true,
@@ -717,6 +784,8 @@
     if (active.stopIdx >= 0) return;
 
     if (!autoPlay) {
+      // HARD REQUIREMENT (post-023316): when Auto-Play is OFF, never fade or shorten mush tracks!
+      cancelMushFade(active);
       // Loop Mode (Auto-Play OFF): loop the snippet window [previewStart, previewEnd]
       if (active.isFullTrack) {
         el.loop = false;
@@ -735,11 +804,28 @@
       return;
     }
 
-    // Auto-Play ON: play through to track end, then 1s crossfade into closest unvisited track
+    // Auto-Play ON: play through to track end (or mush_onset_sec + 3.0s on flagged AI mush tracks)
     el.loop = false;
     if (active.track && active.track.is_spoken_word) return;
     const realDur = Number.isFinite(el.duration) && el.duration > 0 ? el.duration : 0;
     if (realDur <= 0) return;
+
+    const mushTrig = getEffectiveMushTriggerSec(active, realDur);
+    if (mushTrig !== null && !active.crossfadeTriggered) {
+      if (!fadingOut && curSec >= mushTrig - MUSH_TASTE_SEC) {
+        maybePrewarmNext(active.trackId);
+      }
+      if (!active.mushFadeActive && curSec >= mushTrig) {
+        active.mushFadeActive = true;
+        active.mushFadeStartMs = nowMs();
+        active.mushFadeFactor = 1.0;
+        ensureFadeRaf();
+        notifyStateChange({ skipAppCallback: true });
+      }
+      if (active.mushFadeActive && realDur - curSec > 0.35) {
+        return;
+      }
+    }
 
     const remaining = realDur - curSec;
     if (!fadingOut && remaining <= PREWARM_LEAD_SEC && remaining > CROSSFADE_SEC + 0.1) {
@@ -874,6 +960,16 @@
       fadeDurMs: crossfadeMs,
       fadeStartFactor: 0,
       fadeFactor: crossfadeMs > 0 ? 0 : 1.0,
+      mushFadeActive: false,
+      mushFadeStartMs: 0,
+      mushFadeFactor: 1.0,
+      mushCustomTriggerSec:
+        opts.isManual &&
+        typeof opts.startSec === "number" &&
+        getRawMushTriggerSec(tr, initBounds.duration) !== null &&
+        initialStartSec >= getRawMushTriggerSec(tr, initBounds.duration)
+          ? initialStartSec + MUSH_TASTE_SEC
+          : null,
       disposed: false,
       cleanup: null,
     };
@@ -1054,6 +1150,14 @@
       const b = getVoiceBounds(active);
       const maxSeek = b.duration > 0.1 ? Math.max(0, b.duration - 0.05) : rawSec;
       const target = clamp(rawSec, 0, maxSeek);
+      // Immediately cancel any active mush fade and restore full volume on manual seek
+      cancelMushFade(active);
+      const rawMushTrig = getRawMushTriggerSec(active.track, b.duration);
+      if (rawMushTrig !== null && target >= rawMushTrig) {
+        active.mushCustomTriggerSec = target + MUSH_TASTE_SEC;
+      } else {
+        active.mushCustomTriggerSec = null;
+      }
       if (b.duration > 0 && (b.duration - target) > CROSSFADE_SEC + 0.15) {
         active.crossfadeTriggered = false;
       }
@@ -1088,6 +1192,8 @@
   function restart() {
     if (active && !active.disposed && active.htmlAudio) {
       const el = active.htmlAudio;
+      cancelMushFade(active);
+      active.mushCustomTriggerSec = null;
       active.crossfadeTriggered = false;
       active.loopWindowActive = true;
       active.seekPending = null;
@@ -1168,11 +1274,15 @@
     if (autoPlay === next) return autoPlay;
     autoPlay = next;
     if (active && !active.disposed && active.htmlAudio) {
+      if (!autoPlay) {
+        // Immediately cancel any active mush fade and restore full volume when Auto-play is turned OFF
+        cancelMushFade(active);
+        clearPrewarm(false);
+      }
       const b = getVoiceBounds(active);
       const cur = getVoiceCurrentTime(active);
       active.loopWindowActive = cur <= b.previewEnd + 0.05;
       active.htmlAudio.loop = !autoPlay && !active.isFullTrack && active.stopIdx < 0;
-      if (!autoPlay) clearPrewarm(false);
     }
     notifyStateChange();
     return autoPlay;

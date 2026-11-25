@@ -1,0 +1,98 @@
+{
+  "schema": "ai-mush-v1",
+  "analyzed_ai_tracks": 196,
+  "eligible_full_tracks": 190,
+  "flagged_count": 18,
+  "tracks": {
+    "sketches_2024_25_5": {
+      "has_mush": true,
+      "mush_onset_sec": 328.0,
+      "mush_score": 1.276
+    },
+    "sketches_2024_25_22": {
+      "has_mush": true,
+      "mush_onset_sec": 127.0,
+      "mush_score": 1.343
+    },
+    "sketches_2024_25_29": {
+      "has_mush": true,
+      "mush_onset_sec": 62.0,
+      "mush_score": 1.484
+    },
+    "ai_music_019_b9b7f1": {
+      "has_mush": true,
+      "mush_onset_sec": 207.0,
+      "mush_score": 1.608
+    },
+    "ai_music_030_77858a": {
+      "has_mush": true,
+      "mush_onset_sec": 63.0,
+      "mush_score": 1.577
+    },
+    "ai_music_072_388d78": {
+      "has_mush": true,
+      "mush_onset_sec": 202.0,
+      "mush_score": 2.754
+    },
+    "ai_music_086_81f21f": {
+      "has_mush": true,
+      "mush_onset_sec": 212.0,
+      "mush_score": 1.604
+    },
+    "ai_music_133_2d3261": {
+      "has_mush": true,
+      "mush_onset_sec": 32.0,
+      "mush_score": 1.156
+    },
+    "ai_music_135_c0757e": {
+      "has_mush": true,
+      "mush_onset_sec": 70.0,
+      "mush_score": 1.737
+    },
+    "ai_music_139_ecc5f1": {
+      "has_mush": true,
+      "mush_onset_sec": 34.0,
+      "mush_score": 1.857
+    },
+    "ai_music_142_876215": {
+      "has_mush": true,
+      "mush_onset_sec": 49.0,
+      "mush_score": 1.789
+    },
+    "ai_music_152_0aacdf": {
+      "has_mush": true,
+      "mush_onset_sec": 86.0,
+      "mush_score": 1.894
+    },
+    "ai_music_159_24c189": {
+      "has_mush": true,
+      "mush_onset_sec": 110.0,
+      "mush_score": 1.164
+    },
+    "ai_music_174_05e7f0": {
+      "has_mush": true,
+      "mush_onset_sec": 86.0,
+      "mush_score": 1.868
+    },
+    "ai_music_189_9b3d66": {
+      "has_mush": true,
+      "mush_onset_sec": 95.0,
+      "mush_score": 1.889
+    },
+    "ai_music_190_26d13e": {
+      "has_mush": true,
+      "mush_onset_sec": 98.0,
+      "mush_score": 1.346
+    },
+    "ai_music_193_d0b525": {
+      "has_mush": true,
+      "mush_onset_sec": 125.0,
+      "mush_score": 1.256
+    },
+    "ai_music_196_54a7bd": {
+      "has_mush": true,
+      "mush_onset_sec": 157.0,
+      "mush_score": 1.154
+    }
+  }
+}

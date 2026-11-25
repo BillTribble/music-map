@@ -521,22 +521,40 @@
       window.ME_NODEMAP.setFilter(null);
     } else {
       const hits = new Set();
-      tracks.forEach((t) => {
-        const er = erasById.get(t.era);
-        if (
-          (t.title || "").toLowerCase().includes(ql) ||
-          (er && (er.label || "").toLowerCase().includes(ql)) ||
-          (t.cluster_label || "").toLowerCase().includes(ql) ||
-          (t.key_label || "").toLowerCase().includes(ql) ||
-          (window.formatSimpleKey && window.formatSimpleKey(t).toLowerCase() === ql) ||
-          (Array.isArray(t.discogs_styles) && t.discogs_styles.some((s) => s.toLowerCase().includes(ql))) ||
-          (Array.isArray(t.mood_tags) && t.mood_tags.some((s) => s.toLowerCase().includes(ql))) ||
-          (Array.isArray(t.instrument_tags) && t.instrument_tags.some((s) => s.toLowerCase().includes(ql))) ||
-          (ql.length >= 3 && window.isTrackWorkInProgress && window.isTrackWorkInProgress(t) && ("work in progress".includes(ql) || "wip".startsWith(ql)))
-        ) {
-          hits.add(t.id);
+      const explicitMushTag = ql === "has:mush" || ql === "is:mush" || ql === "tag:mush";
+      if (explicitMushTag) {
+        tracks.forEach((t) => {
+          if (t && t.has_mush === true && Number.isFinite(Number(t.mush_onset_sec))) {
+            hits.add(t.id);
+          }
+        });
+      } else {
+        tracks.forEach((t) => {
+          const er = erasById.get(t.era);
+          if (
+            (t.title || "").toLowerCase().includes(ql) ||
+            (er && (er.label || "").toLowerCase().includes(ql)) ||
+            (t.cluster_label || "").toLowerCase().includes(ql) ||
+            (t.key_label || "").toLowerCase().includes(ql) ||
+            (window.formatSimpleKey && window.formatSimpleKey(t).toLowerCase() === ql) ||
+            (Array.isArray(t.discogs_styles) && t.discogs_styles.some((s) => s.toLowerCase().includes(ql))) ||
+            (Array.isArray(t.mood_tags) && t.mood_tags.some((s) => s.toLowerCase().includes(ql))) ||
+            (Array.isArray(t.instrument_tags) && t.instrument_tags.some((s) => s.toLowerCase().includes(ql))) ||
+            (ql.length >= 3 && window.isTrackWorkInProgress && window.isTrackWorkInProgress(t) && ("work in progress".includes(ql) || "wip".startsWith(ql))) ||
+            (Boolean(t.has_mush) && (ql === "mush" || ql === "ai mush" || (ql.length >= 3 && "mush".startsWith(ql))))
+          ) {
+            hits.add(t.id);
+          }
+        });
+      }
+      if (hits.size > 0 && (explicitMushTag || ql === "mush" || ql === "ai mush") && window.ME_NODEMAP) {
+        if (typeof window.ME_NODEMAP.getShowVibeGenAi === "function" && !window.ME_NODEMAP.getShowVibeGenAi() && typeof window.ME_NODEMAP.setShowVibeGenAi === "function") {
+          window.ME_NODEMAP.setShowVibeGenAi(true);
         }
-      });
+        if (state.tab === "era" && typeof window.ME_NODEMAP.getShowEraGenAi === "function" && !window.ME_NODEMAP.getShowEraGenAi() && typeof window.ME_NODEMAP.setShowEraGenAi === "function") {
+          window.ME_NODEMAP.setShowEraGenAi(true);
+        }
+      }
       window.ME_NODEMAP.setFilter(hits);
     }
     if (!isMapTab()) renderView();

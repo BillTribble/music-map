@@ -29,6 +29,7 @@ DEFAULT_GENAI_BUNDLE = os.path.join(_ROOT, "scripts", "genai_catalog_198.json")
 DEFAULT_YON_BUNDLE = os.path.join(_ROOT, "scripts", "yon_recovered_track.json")
 DEFAULT_MASTERS_2026_BUNDLE = os.path.join(_ROOT, "scripts", "latest_masters_2026.json")
 DEFAULT_RENDERED_DATES = os.path.join(_ROOT, "scripts", "rendered_dates.json")
+DEFAULT_AI_MUSH_TAGS = os.path.join(_ROOT, "scripts", "ai_mush_tags.json")
 DEFAULT_CATALOG = os.path.expanduser("~/tmp/music_map_staging/catalog_587_enriched.json")
 _STAGING_EXCLUSIONS = os.path.expanduser("~/tmp/music_map_staging/exclusions.json")
 DEFAULT_EXCLUSIONS = (
@@ -1496,6 +1497,11 @@ def build_dataset(
       if os.path.exists(DEFAULT_RENDERED_DATES)
       else {}
   )
+  ai_mush_by_id = {}
+  if os.path.exists(DEFAULT_AI_MUSH_TAGS):
+    mush_obj = json.load(open(DEFAULT_AI_MUSH_TAGS, "r", encoding="utf-8"))
+    if isinstance(mush_obj, dict) and isinstance(mush_obj.get("tracks"), dict):
+      ai_mush_by_id = mush_obj["tracks"]
 
   data["tracks"] = tracks
   n_tracks = len(tracks)
@@ -1792,7 +1798,16 @@ def build_dataset(
       upd["cue_in_sec"] = 0.0
       upd["wip_eligible"] = False
       upd["rendered_at"] = str(t.get("rendered_at") or f"{eff_yr:04d}-06-15")
+      mush_entry = ai_mush_by_id.get(tid)
+      if isinstance(mush_entry, dict) and mush_entry.get("has_mush") and mush_entry.get("mush_onset_sec") is not None:
+        upd["has_mush"] = True
+        upd["mush_onset_sec"] = round(float(mush_entry["mush_onset_sec"]), 1)
+      else:
+        t.pop("has_mush", None)
+        t.pop("mush_onset_sec", None)
     else:
+      t.pop("has_mush", None)
+      t.pop("mush_onset_sec", None)
       iso_date = str(rendered_dates_map.get(tid) or t.get("rendered_at") or f"{eff_yr:04d}-06-15")
       is_rel = bool(t.get("released"))
       upd["rendered_at"] = iso_date

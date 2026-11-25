@@ -480,6 +480,19 @@
     }
 
     const progressFrac = timelineDur > 0 ? clamp(currentTime / timelineDur, 0, 1) : 0;
+    const rawMushOnset = Number(t && t.mush_onset_sec);
+    const hasMush = Boolean(
+      t &&
+      t.has_mush === true &&
+      Number.isFinite(rawMushOnset) &&
+      rawMushOnset > 0 &&
+      isFullTrack &&
+      timelineDur > rawMushOnset + 4.2
+    );
+    const mushOnsetSec = hasMush ? rawMushOnset : null;
+    const mushFadeStartSec = hasMush ? Math.min(timelineDur, rawMushOnset + 3.0) : null;
+    const mushFrac = hasMush ? clamp(rawMushOnset / timelineDur, 0, 1) : null;
+    const mushFadeFrac = hasMush ? clamp(mushFadeStartSec / timelineDur, 0, 1) : null;
 
     return {
       isPlaying,
@@ -496,6 +509,11 @@
       seekableDur: Math.max(1, seekableDur),
       displayTotalDur: Math.max(1, displayTotalDur),
       progressFrac,
+      hasMush,
+      mushOnsetSec,
+      mushFadeStartSec,
+      mushFrac,
+      mushFadeFrac,
     };
   }
 
@@ -507,6 +525,9 @@
         secondaryContainer: "rgb(193, 231, 255)",
         onSurface: "rgb(31, 31, 31)",
         onSurfaceVariant: "rgb(68, 71, 70)",
+        outline: "rgb(116, 119, 117)",
+        outlineVariant: "rgb(196, 199, 197)",
+        surfaceVariant: "rgb(224, 227, 225)",
       };
     }
     const themeAttr = document.documentElement.getAttribute("data-theme") || "light";
@@ -520,6 +541,9 @@
       secondaryContainer: pick("--md-sys-color-secondary-container", "rgb(193, 231, 255)"),
       onSurface: pick("--md-sys-color-on-surface", "rgb(31, 31, 31)"),
       onSurfaceVariant: pick("--md-sys-color-on-surface-variant", "rgb(68, 71, 70)"),
+      outline: pick("--md-sys-color-outline", "rgb(116, 119, 117)"),
+      outlineVariant: pick("--md-sys-color-outline-variant", "rgb(196, 199, 197)"),
+      surfaceVariant: pick("--md-sys-color-surface-variant", "rgb(224, 227, 225)"),
     };
     return cachedPalette;
   }
@@ -583,6 +607,7 @@
     const progressX = hasProgress ? clamp(startX + dispFrac * totalBarsW, startX, startX + totalBarsW) : startX;
 
     // 1. Unplayed capsule bars (right of playhead) + hover seek preview
+    const miniMushActive = Boolean(snap.autoPlay && snap.hasMush && snap.mushFadeFrac !== null);
     ctx.save();
     ctx.beginPath();
     ctx.rect(progressX, 0, Math.max(0, W - progressX), H);
@@ -592,10 +617,11 @@
       if (x + barW <= progressX) continue;
       const barFrac = (i + 0.5) / barCount;
       const inHover = waveHoverFrac !== null && !isWaveScrubbing && barFrac <= waveHoverFrac;
+      const inMushTail = miniMushActive && barFrac >= snap.mushFadeFrac;
       const barH = heights[i];
       const y = (H - barH) * 0.5;
-      ctx.fillStyle = inHover ? pal.primary : pal.onSurfaceVariant;
-      ctx.globalAlpha = inHover ? 0.35 : 0.25;
+      ctx.fillStyle = inHover ? pal.primary : (inMushTail ? pal.outline : pal.onSurfaceVariant);
+      ctx.globalAlpha = inHover ? 0.35 : (inMushTail ? 0.11 : 0.25);
       drawRoundedRect(ctx, x, y, barW, barH, barW * 0.5);
       ctx.fill();
     }
@@ -723,6 +749,21 @@
       }
     }
 
+    // 1b. Subtle AI mush fade-out tail zone (when Auto-play is ON; 100% normal when Auto-play is OFF)
+    const showMushCue = Boolean(snap.autoPlay && snap.hasMush && snap.mushFrac !== null && snap.mushFadeFrac !== null);
+    if (showMushCue) {
+      const mFadeX = startX + snap.mushFadeFrac * totalBarsW;
+      const endX = startX + totalBarsW;
+      if (endX > mFadeX + 3) {
+        ctx.save();
+        ctx.fillStyle = pal.surfaceVariant;
+        ctx.globalAlpha = 0.22;
+        drawRoundedRect(ctx, mFadeX, 4, endX - mFadeX, H - 8, 4);
+        ctx.fill();
+        ctx.restore();
+      }
+    }
+
     // 2. SoundCloud split upper + mirrored lower amplitude bars
     const bars = getResampledBars(t, barCount);
     const dispFrac = isWaveScrubbing && scrubFrac !== null ? scrubFrac : snap.progressFrac;
@@ -742,19 +783,29 @@
         !isWaveScrubbing &&
         ((waveHoverFrac > dispFrac && barFrac > dispFrac && barFrac <= waveHoverFrac) ||
           (waveHoverFrac < dispFrac && barFrac >= waveHoverFrac && barFrac <= dispFrac));
+      const inMushTaste = showMushCue && barFrac >= snap.mushFrac && barFrac < snap.mushFadeFrac;
+      const inMushFadeTail = showMushCue && barFrac >= snap.mushFadeFrac;
 
       let col = pal.onSurfaceVariant;
-      let uAlpha = 0.28;
-      let lAlpha = 0.13;
+      let uAlpha = 0.30;
+      let lAlpha = 0.14;
 
       if (played) {
         col = pal.primary;
-        uAlpha = 0.96;
-        lAlpha = 0.38;
+        uAlpha = inMushFadeTail ? 0.62 : 0.96;
+        lAlpha = inMushFadeTail ? 0.24 : 0.38;
       } else if (inHover) {
         col = pal.primary;
         uAlpha = 0.56;
         lAlpha = 0.22;
+      } else if (inMushFadeTail) {
+        col = pal.outline;
+        uAlpha = 0.13;
+        lAlpha = 0.06;
+      } else if (inMushTaste) {
+        col = pal.onSurfaceVariant;
+        uAlpha = 0.21;
+        lAlpha = 0.09;
       } else if (inWin) {
         col = pal.secondary;
         uAlpha = snap.showLoopMarkers ? 0.68 : 0.46;
@@ -768,6 +819,21 @@
       ctx.fillRect(x, splitY + gapY * 0.5, barW, lH);
     }
     ctx.globalAlpha = 1;
+
+    // 2b. Subtle dashed Auto-play fade-start marker at mush_onset_sec + 3.0s
+    if (showMushCue && snap.mushFadeFrac > 0.05 && snap.mushFadeFrac < 0.98) {
+      const mx = Math.round(startX + snap.mushFadeFrac * totalBarsW) + 0.5;
+      ctx.save();
+      ctx.strokeStyle = pal.outline;
+      ctx.globalAlpha = 0.52;
+      ctx.lineWidth = 1;
+      if (typeof ctx.setLineDash === "function") ctx.setLineDash([2, 2]);
+      ctx.beginPath();
+      ctx.moveTo(mx, 5);
+      ctx.lineTo(mx, H - 5);
+      ctx.stroke();
+      ctx.restore();
+    }
 
     // 3. Loop brackets (when looping / preview-only) or subtle snippet cue tick (when Auto-Play ON)
     if (snap.hasPreviewWindow && winX1 > winX0 + 2) {
@@ -950,6 +1016,22 @@
       </div>`;
   }
 
+  function buildAutoPlayTooltip(t, snap) {
+    if (snap.hasMush && snap.mushOnsetSec !== null) {
+      return snap.autoPlay
+        ? `Auto-play on: plays 3s past ${formatClock(snap.mushOnsetSec)} tail mush, then fades to nearest similar track (turn off to hear full mush)`
+        : "Auto-play off: playing 100% of track through all tail mush (click to enable Auto-play)";
+    }
+    if (t && t.is_ai) {
+      return snap.autoPlay
+        ? "Auto-play on: plays full track & crossfades to nearest similar AI track (click to loop full track)"
+        : "Auto-play off: playing & looping full track (click to enable Auto-play)";
+    }
+    return snap.autoPlay
+      ? "Auto-play on: plays full track & 1s crossfades to nearest similar track (click to loop snippet)"
+      : "Auto-play off: looping snippet window (click to enable Auto-play)";
+  }
+
   function syncInPlaceButtons(t, snap) {
     const playBtn = cardEl.querySelector("[data-player-play]");
     if (playBtn) {
@@ -963,6 +1045,7 @@
     if (autoBtn) {
       autoBtn.classList.toggle("is-active", snap.autoPlay);
       autoBtn.setAttribute("aria-pressed", String(snap.autoPlay));
+      autoBtn.title = buildAutoPlayTooltip(t, snap);
       const ic = autoBtn.querySelector(".ms");
       if (ic) ic.textContent = snap.autoPlay ? "playlist_play" : "repeat";
     }
@@ -1086,7 +1169,7 @@
             <span class="ms">${copiedForId === t.id ? "check" : "link"}</span>
             <span class="mp-copy-lbl">${copiedForId === t.id ? "Copied" : "Copy link"}</span>
           </button>
-          <button type="button" class="mp-ctrl-btn ${snap.autoPlay ? "is-active" : ""}" id="mp-autoplay-toggle" data-player-autoplay="1" aria-pressed="${snap.autoPlay}" aria-label="Auto-play similar tracks" title="${snap.autoPlay ? "Auto-play on: plays full track & 1s crossfades to nearest similar track (click to loop snippet)" : "Auto-play off: looping snippet window (click to enable Auto-play)"}">
+          <button type="button" class="mp-ctrl-btn ${snap.autoPlay ? "is-active" : ""}" id="mp-autoplay-toggle" data-player-autoplay="1" aria-pressed="${snap.autoPlay}" aria-label="Auto-play similar tracks" title="${esc(buildAutoPlayTooltip(t, snap))}">
             <span class="ms">${snap.autoPlay ? "playlist_play" : "repeat"}</span>
             <span>Auto-play</span>
           </button>
