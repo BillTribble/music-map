@@ -180,6 +180,7 @@
 
   function isWalkEligible(cand, curIsAi) {
     if (!cand) return false;
+    if (cand.is_spoken_word) return false;
     if (Boolean(cand.is_ai) !== curIsAi) return false;
     const sketchesShown =
       typeof window !== "undefined" &&
@@ -196,6 +197,7 @@
     if (tracksList.length === 1) return tracksList[0];
 
     const curTrack = currentId ? byId.get(currentId) : null;
+    if (curTrack && curTrack.is_spoken_word) return null;
     const curIsAi = Boolean(curTrack && curTrack.is_ai);
 
     const peekOnly = Boolean(opts.peekOnly);
@@ -714,6 +716,7 @@
 
     // Auto-Play ON: play through to track end, then 1s crossfade into closest unvisited track
     el.loop = false;
+    if (active.track && active.track.is_spoken_word) return;
     const realDur = Number.isFinite(el.duration) && el.duration > 0 ? el.duration : 0;
     if (realDur <= 0) return;
 
@@ -898,7 +901,22 @@
       }
       if (!voice.crossfadeTriggered) {
         voice.crossfadeTriggered = true;
-        advanceToNextSimilar({ crossfadeMs: 350 });
+        const nextId = advanceToNextSimilar({ crossfadeMs: 350 });
+        if (!nextId) {
+          lastPaused = {
+            trackId: voice.trackId,
+            track: voice.track,
+            currentTime: 0,
+            duration: getVoiceDuration(voice),
+            isFullTrack: voice.isFullTrack,
+            stopIdx: voice.stopIdx,
+            eraId: voice.eraId,
+          };
+          stopVoice(voice);
+          active = null;
+          stopTickLoop();
+          notifyStateChange();
+        }
       }
     };
 

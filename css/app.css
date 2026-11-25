@@ -539,3 +539,7 @@ input[type="range"].gm3-slider::-moz-range-thumb {
   }
   .side-nav .nav-lbl { display: inline; }
 }
+
+@media (max-width: 640px) {
+  #theme-toggle-btn { display: none; }
+}

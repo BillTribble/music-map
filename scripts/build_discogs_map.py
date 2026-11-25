@@ -90,6 +90,89 @@ DEFAULT_EXCLUDED_IDS = {
     "archive_2018_23_30",
     "archive_2018_23_31",
     "present_electro_45",
+    "archive_2013_18_108",
+    "archive_2013_18_119",
+    "archive_2013_18_121",
+    "archive_2013_18_129",
+    "archive_2013_18_150",
+    "archive_2013_18_23",
+    "archive_2013_18_27",
+    "archive_2013_18_39",
+    "archive_2013_18_40",
+    "archive_2013_18_41",
+    "archive_2013_18_42",
+    "archive_2013_18_58",
+    "archive_2013_18_64",
+    "archive_2013_18_7",
+    "archive_2013_18_80",
+    "archive_2013_18_88",
+    "archive_2018_23_36",
+    "archive_2018_23_37",
+    "archive_2018_23_51",
+    "archive_2018_23_54",
+    "bands_archive_12",
+    "bands_archive_13",
+    "bands_archive_14",
+    "bands_archive_16",
+    "bands_archive_19",
+    "bands_archive_7",
+    "hd_2005_11",
+    "hd_2005_12",
+    "hd_2005_13",
+    "hd_2005_17",
+    "hd_2005_19",
+    "hd_2005_21",
+    "hd_2005_25",
+    "hd_2005_26",
+    "hd_2005_27",
+    "hd_2005_30",
+    "hd_2005_32",
+    "hd_2005_36",
+    "hd_2005_37",
+    "hd_2005_38",
+    "hd_2005_40",
+    "hd_2005_41",
+    "hd_2005_43",
+    "hd_2005_44",
+    "hd_2005_45",
+    "hd_2005_9",
+    "sketches_2024_25_25",
+    "present_electro_5",
+    "present_electro_50",
+    "present_electro_52",
+    "hd_2005_1",
+    "hd_2005_24",
+    "remixes_commissions_20",
+    "present_electro_58",
+    "psychedailies_12",
+}
+
+TITLE_OVERRIDES = {
+    "hd_2005_10": "pr3s3nt - As we Enter",
+}
+
+INDIE_GUITAR_KEEPER_IDS = {
+    "hd_2005_29",         # Mello Heart
+    "hd_2005_28",         # Mary J Slinted 2003
+    "archive_2013_18_65", # Spudboy - Green Lanes
+    "hd_2005_4",          # White Morning
+    "bands_archive_10",   # Folkcore
+    "present_electro_56", # Space Bandits
+    "hd_2005_50",         # Your a Genius
+    "bands_archive_6",    # Make It Thru
+    "hd_2005_14",         # Cuntray
+    "bands_archive_18",   # Mic Test2 Rev (Yon)
+    "bands_archive_20",   # Yon-Santa Claus Asbo (Yon)
+}
+
+SPOKEN_WORD_IDS = {
+    "bands_archive_17",   # me - Bill in China 1983
+}
+
+FORCE_NON_SKETCH_IDS = INDIE_GUITAR_KEEPER_IDS | SPOKEN_WORD_IDS | {
+    "hd_2005_10",         # pr3s3nt - As we Enter (mix2)
+    "hd_2005_34",         # Peng pr3s3nt mix2
+    "hd_2005_39",         # Soc All 164bpm
 }
 
 
@@ -432,7 +515,7 @@ def extract_instrument_tags(probs, classes):
   return out
 
 
-def build_seeded_prototypes(X_hybrid, discogs_mean, mood_mean, inst_mean, dg_cls, md_cls, in_cls):
+def build_seeded_prototypes(X_hybrid, discogs_mean, mood_mean, inst_mean, dg_cls, md_cls, in_cls, track_ids=None):
   dg_idx = {str(c): i for i, c in enumerate(dg_cls)}
   md_idx = {str(c): i for i, c in enumerate(md_cls)}
   in_idx = {str(c): i for i, c in enumerate(in_cls)}
@@ -441,8 +524,22 @@ def build_seeded_prototypes(X_hybrid, discogs_mean, mood_mean, inst_mean, dg_cls
   md_z = (mood_mean - mood_mean.mean(0)) / (mood_mean.std(0) + 1e-4)
   in_z = (inst_mean - inst_mean.mean(0)) / (inst_mean.std(0) + 1e-4)
 
+  keeper_rows = (
+      [i for i, tid in enumerate(track_ids) if tid in INDIE_GUITAR_KEEPER_IDS]
+      if track_ids is not None
+      else []
+  )
+  spoken_rows = (
+      {i for i, tid in enumerate(track_ids) if tid in SPOKEN_WORD_IDS}
+      if track_ids is not None
+      else set()
+  )
+
   seeds = []
   for slot in STYLE_SLOTS:
+    if slot["idx"] == 4 and keeper_rows:
+      seeds.append(X_hybrid[keeper_rows].mean(axis=0))
+      continue
     score = np.zeros(len(discogs_mean), dtype=np.float64)
     for k, w in slot["discogs_kw"].items():
       if k in dg_idx:
@@ -453,6 +550,8 @@ def build_seeded_prototypes(X_hybrid, discogs_mean, mood_mean, inst_mean, dg_cls
     for k, w in slot["inst_kw"].items():
       if k in in_idx:
         score += w * in_z[:, in_idx[k]]
+    for sr in spoken_rows:
+      score[sr] = -999.0
     top_idx = np.argsort(-score)[:20]
     seeds.append(X_hybrid[top_idx].mean(axis=0))
   return normalize(np.vstack(seeds), norm="l2")
@@ -466,7 +565,8 @@ def _rel_catalog_path(local_path: str) -> str:
 
 
 def classify_folder_guidance(t: dict, cat_entry: dict | None) -> dict:
-  """Evaluate author folder priority, Generative AI membership, and clean Sketch status."""
+  """Evaluate author folder priority, Generative AI / Spoken Word membership, and clean Sketch status."""
+  tid = str(t.get("id") or "")
   rel_path = _rel_catalog_path(str((cat_entry or {}).get("local_path") or ""))
   low = rel_path.lower()
   title = str(t.get("title") or "")
@@ -475,26 +575,54 @@ def classify_folder_guidance(t: dict, cat_entry: dict | None) -> dict:
   released = bool(t.get("released"))
   full_dur = float(t.get("full_duration_sec") or (cat_entry or {}).get("full_duration_sec") or t.get("duration_sec") or 180.0)
   perc_share = float((cat_entry or {}).get("perc_share") or t.get("perc_share") or 0.1)
+  four_on_floor = float((cat_entry or {}).get("four_on_floor") or t.get("four_on_floor") or 0.0)
   energy = float(t.get("energy") or 5)
 
+  is_spoken_word = tid in SPOKEN_WORD_IDS
   is_ai = bool(
-      low.startswith("ai music 2025")
-      or "musicfx ai test" in low
-      or "/ai gamelan/" in low
-      or "/ai afrohouse" in low
+      not is_spoken_word
+      and (
+          low.startswith("ai music 2025")
+          or "musicfx ai test" in low
+          or "/ai gamelan/" in low
+          or "/ai afrohouse" in low
+      )
   )
 
   in_sketch_dir = "sketches" in low
   has_sketch_word = bool(SKETCH_WORD_RE.search(title) or SKETCH_WORD_RE.search(fname))
   is_sketch = bool(
-      not released
-      and (in_sketch_dir or has_sketch_word or (full_dur < 75.0 and not is_ai))
+      tid not in FORCE_NON_SKETCH_IDS
+      and not released
+      and (in_sketch_dir or has_sketch_word or (full_dur < 75.0 and not is_ai and not is_spoken_word))
   )
 
   prior = np.zeros(10, dtype=np.float64)
   allowed: set[int] | None = None
   rule = "discogs_ml"
 
+  if is_spoken_word:
+    return {
+        "is_ai": False,
+        "is_spoken_word": True,
+        "is_sketch": False,
+        "prior": prior,
+        "allowed": {4},
+        "rule": "curated:spoken_word_island",
+    }
+
+  if tid in INDIE_GUITAR_KEEPER_IDS:
+    prior[4] += 0.45
+    return {
+        "is_ai": False,
+        "is_spoken_word": False,
+        "is_sketch": False,
+        "prior": prior,
+        "allowed": {4},
+        "rule": "curated:indie_guitar_keeper",
+    }
+
+  is_band = False
   if not is_ai and low:
     is_band = any(
         k in low
@@ -538,11 +666,17 @@ def classify_folder_guidance(t: dict, cat_entry: dict | None) -> dict:
       allowed = {0, 1, 2}
       rule = "folder:le_garage_microtonal"
     elif "06 - ecstatic wave" in low or ("reflective disc" in low and "^ uptempo level match" in low):
-      prior[3] += 0.18
-      prior[1] += 0.12
-      prior[5] += 0.08
-      allowed = {1, 2, 3, 5}
-      rule = "folder:ecstatic_uptempo_groove"
+      if "06 - ecstatic wave" in low and perc_share < 0.10 and four_on_floor < 10.0:
+        prior[0] += 0.24
+        prior[2] += 0.08
+        allowed = {0, 2, 8}
+        rule = "folder:ecstatic_ambient_interlude"
+      else:
+        prior[3] += 0.18
+        prior[1] += 0.12
+        prior[5] += 0.08
+        allowed = {1, 2, 3, 5}
+        rule = "folder:ecstatic_uptempo_groove"
     elif any(k in low for k in ("dom piano ravel", "me and mya piano", "kalimba, piano")):
       prior[8] += 0.26
       allowed = {8, 0, 2}
@@ -570,8 +704,12 @@ def classify_folder_guidance(t: dict, cat_entry: dict | None) -> dict:
       prior[1] += 0.08
       rule = "folder:nihon_forever"
 
+  if not is_ai and not is_band:
+    allowed = (allowed - {4}) if allowed is not None else {0, 1, 2, 3, 5, 6, 7, 8, 9}
+
   return {
       "is_ai": is_ai,
+      "is_spoken_word": False,
       "is_sketch": is_sketch,
       "prior": prior,
       "allowed": allowed,
@@ -598,14 +736,18 @@ def _deoverlap_points(pts, min_sep, x_bounds, y_bounds, anchor_pull=0.025, iters
   return pos
 
 
-def compute_organic_continuum_and_ai_layout(X_hybrid, proto_centers, priors, cluster_idx, is_ai_mask):
+def compute_organic_continuum_and_ai_layout(
+    X_hybrid, proto_centers, priors, cluster_idx, is_ai_mask, is_spoken_mask
+):
   """Project handcrafted tracks onto one organic t-SNE continuum (matching d939dcca organic spacing & blurring),
-  and place Generative AI tracks into a rounded 2D genre-subdivided archipelago on the right."""
+  place Generative AI tracks into a rounded 2D genre-subdivided archipelago on the right,
+  and isolate Spoken Word tracks onto their own quiet mini-island in the upper-right bay."""
   n = len(X_hybrid)
   coords = np.zeros((n, 2), dtype=np.float64)
 
-  hc_idx = np.where(~is_ai_mask)[0]
+  hc_idx = np.where(~is_ai_mask & ~is_spoken_mask)[0]
   ai_idx = np.where(is_ai_mask)[0]
+  sp_idx = np.where(is_spoken_mask)[0]
 
   # 1. Handcrafted Music: Continuous PCA-initialized t-SNE Manifold + Honeycombed Organic Spacing
   # Soft Discogs-400 + folder affinity guides genre peninsulas while preserving natural shoreline blurring.
@@ -730,6 +872,13 @@ def compute_organic_continuum_and_ai_layout(X_hybrid, proto_centers, priors, clu
     )
     coords[ai_idx] = ai_pts
 
+  # 3. Spoken Word Mini-Island: Quiet upper-right bay [0.880, 0.115], clear of HUD, music continent, AI box & player card
+  if len(sp_idx) > 0:
+    sp_pts = np.zeros((len(sp_idx), 2), dtype=np.float64)
+    for k in range(len(sp_idx)):
+      sp_pts[k] = np.array([0.880 + (k - (len(sp_idx) - 1) * 0.5) * 0.028, 0.115])
+    coords[sp_idx] = sp_pts
+
   return coords
 
 
@@ -754,16 +903,23 @@ def build_dataset(data_js_path, features_path, catalog_path, out_js_path, exclus
 
   feats = np.load(features_path)
   tracks = [t for t in data["tracks"] if str(t.get("id")) not in excluded_ids]
+  for t in tracks:
+    tid = str(t.get("id") or "")
+    if tid in TITLE_OVERRIDES:
+      t["title"] = TITLE_OVERRIDES[tid]
+      t["shortTitle"] = TITLE_OVERRIDES[tid][:26]
   data["tracks"] = tracks
   n_tracks = len(tracks)
 
   feat_id_to_row = {str(x): idx for idx, x in enumerate(feats["track_ids"])}
   row_indices = []
+  track_ids = []
   for t in tracks:
     tid = str(t["id"])
     if tid not in feat_id_to_row:
       raise KeyError(f"Track ID {tid} missing from {features_path}!")
     row_indices.append(feat_id_to_row[tid])
+    track_ids.append(tid)
   row_idx = np.array(row_indices, dtype=np.int32)
 
   emb_mean = feats["emb_mean"][row_idx]
@@ -784,16 +940,18 @@ def build_dataset(data_js_path, features_path, catalog_path, out_js_path, exclus
   )
 
   seeds = build_seeded_prototypes(
-      X_hybrid, discogs_mean, mood_mean, inst_mean, dg_cls, md_cls, in_cls
+      X_hybrid, discogs_mean, mood_mean, inst_mean, dg_cls, md_cls, in_cls, track_ids=track_ids
   )
+  non_spoken_fit = np.array([tid not in SPOKEN_WORD_IDS for tid in track_ids], dtype=bool)
   km = KMeans(n_clusters=10, init=seeds, n_init=1, max_iter=300, random_state=42)
-  km.fit(X_hybrid)
+  km.fit(X_hybrid[non_spoken_fit])
   proto_centers = normalize(km.cluster_centers_, norm="l2")
 
   base_scores = X_hybrid @ proto_centers.T
   priors = np.zeros((n_tracks, 10), dtype=np.float64)
   cluster_idx = np.zeros(n_tracks, dtype=np.int32)
   is_ai_mask = np.zeros(n_tracks, dtype=bool)
+  is_spoken_mask = np.zeros(n_tracks, dtype=bool)
   is_sketch_mask = np.zeros(n_tracks, dtype=bool)
   folder_rules = []
 
@@ -801,9 +959,14 @@ def build_dataset(data_js_path, features_path, catalog_path, out_js_path, exclus
     tid = str(t["id"])
     guidance = classify_folder_guidance(t, cat_by_id.get(tid))
     is_ai_mask[i] = guidance["is_ai"]
+    is_spoken_mask[i] = guidance["is_spoken_word"]
     is_sketch_mask[i] = guidance["is_sketch"]
     priors[i] = guidance["prior"]
     folder_rules.append(guidance["rule"])
+
+    if guidance["is_spoken_word"]:
+      cluster_idx[i] = 10
+      continue
 
     sc = base_scores[i] + guidance["prior"]
     allowed = guidance["allowed"]
@@ -816,10 +979,10 @@ def build_dataset(data_js_path, features_path, catalog_path, out_js_path, exclus
       cluster_idx[i] = int(np.argmax(sc))
 
   coords = compute_organic_continuum_and_ai_layout(
-      X_hybrid, proto_centers, priors, cluster_idx, is_ai_mask
+      X_hybrid, proto_centers, priors, cluster_idx, is_ai_mask, is_spoken_mask
   )
 
-  hc_mask = ~is_ai_mask
+  hc_mask = ~is_ai_mask & ~is_spoken_mask
   sil_hybrid = float(silhouette_score(X_hybrid[hc_mask], cluster_idx[hc_mask], metric="cosine"))
   sil_2d = float(silhouette_score(coords[hc_mask], cluster_idx[hc_mask], metric="euclidean"))
 
@@ -836,37 +999,55 @@ def build_dataset(data_js_path, features_path, catalog_path, out_js_path, exclus
   for i, t in enumerate(tracks):
     tid = str(t["id"])
     cidx = int(cluster_idx[i])
-    slot = slot_by_idx[cidx]
-    dg_styles = extract_track_discogs_styles(discogs_mean[i], dg_cls)
-    mood_tags = extract_mood_tags(mood_mean[i], md_cls)
-    inst_tags = extract_instrument_tags(inst_mean[i], in_cls)
+    is_sp = bool(is_spoken_mask[i])
     is_ai = bool(is_ai_mask[i])
     is_sk = bool(is_sketch_mask[i])
+    mood_tags = extract_mood_tags(mood_mean[i], md_cls)
+    inst_tags = extract_instrument_tags(inst_mean[i], in_cls)
 
-    ai_sub_id = None
-    ai_sub_label = None
-    if is_ai:
-      for sid, slbl, _, cset, _ in AI_SUBFAMILIES:
-        if cidx in cset:
-          ai_sub_id = sid
-          ai_sub_label = slbl
-          ai_sub_members[sid].append(tid)
-          break
-
-    upd = {
-        "cluster_id": "ai_generative" if is_ai else slot["id"],
-        "cluster_label": f"Generative AI · {slot['short_label']}" if is_ai else slot["label"],
-        "cluster_idx": cidx,
-        "is_ai": is_ai,
-        "is_sketch": is_sk,
-        "discogs_styles": dg_styles,
-        "discogs_top": dg_styles[0] if dg_styles else slot["short_label"],
-        "mood_tags": mood_tags,
-        "instrument_tags": inst_tags,
-    }
-    if ai_sub_id:
-      upd["ai_sub_id"] = ai_sub_id
-      upd["ai_sub_label"] = ai_sub_label
+    if is_sp:
+      upd = {
+          "cluster_id": "spoken_word",
+          "cluster_label": "Spoken word · 1983",
+          "cluster_idx": 10,
+          "is_ai": False,
+          "is_spoken_word": True,
+          "is_sketch": False,
+          "discogs_styles": ["Spoken Word"],
+          "discogs_top": "Spoken Word",
+          "mood_tags": mood_tags,
+          "instrument_tags": ["Voice"],
+      }
+    else:
+      slot = slot_by_idx[cidx]
+      dg_styles = extract_track_discogs_styles(discogs_mean[i], dg_cls)
+      ai_sub_id = None
+      ai_sub_label = None
+      if is_ai:
+        for sid, slbl, _, cset, _ in AI_SUBFAMILIES:
+          if cidx in cset:
+            ai_sub_id = sid
+            ai_sub_label = slbl
+            ai_sub_members[sid].append(tid)
+            break
+      upd = {
+          "cluster_id": "ai_generative" if is_ai else slot["id"],
+          "cluster_label": f"Generative AI · {slot['short_label']}" if is_ai else slot["label"],
+          "cluster_idx": cidx,
+          "is_ai": is_ai,
+          "is_spoken_word": False,
+          "is_sketch": is_sk,
+          "discogs_styles": dg_styles,
+          "discogs_top": dg_styles[0] if dg_styles else slot["short_label"],
+          "mood_tags": mood_tags,
+          "instrument_tags": inst_tags,
+      }
+      if ai_sub_id:
+        upd["ai_sub_id"] = ai_sub_id
+        upd["ai_sub_label"] = ai_sub_label
+    if tid in TITLE_OVERRIDES:
+      upd["title"] = TITLE_OVERRIDES[tid]
+      upd["shortTitle"] = TITLE_OVERRIDES[tid][:26]
 
     t.update(upd)
     t.pop("track_near", None)
@@ -876,14 +1057,18 @@ def build_dataset(data_js_path, features_path, catalog_path, out_js_path, exclus
     era_xy = old_track_map.get(tid, {}).get("era", xy)
     new_track_map[tid] = {"vibe": xy, "similarity": xy, "era": era_xy}
 
-    # Nearest neighbors strictly within same territory (Handcrafted<->Handcrafted or AI<->AI)
-    sims = sim_mat[i].copy()
-    sims[i] = -2.0
-    sims[is_ai_mask != is_ai] = -2.0
-    nn_idx = [int(j) for j in np.argsort(-sims) if sims[j] > -1.0][:6]
-    new_track_near[tid] = [
-        [tracks[j]["id"], round(float(sims[j]), 3)] for j in nn_idx
-    ]
+    # Nearest neighbors strictly within same territory (0 cross-edges into/out of Spoken Word or AI)
+    if is_sp:
+      new_track_near[tid] = []
+    else:
+      sims = sim_mat[i].copy()
+      sims[i] = -2.0
+      sims[is_spoken_mask] = -2.0
+      sims[is_ai_mask != is_ai] = -2.0
+      nn_idx = [int(j) for j in np.argsort(-sims) if sims[j] > -1.0][:6]
+      new_track_near[tid] = [
+          [tracks[j]["id"], round(float(sims[j]), 3)] for j in nn_idx
+      ]
 
   for section in ("eras", "phases"):
     for item in data.get(section, []):
@@ -897,7 +1082,7 @@ def build_dataset(data_js_path, features_path, catalog_path, out_js_path, exclus
   style_groups = []
   for cidx in range(10):
     slot = slot_by_idx[cidx]
-    mem_indices = np.where((cluster_idx == cidx) & (~is_ai_mask))[0]
+    mem_indices = np.where((cluster_idx == cidx) & (~is_ai_mask) & (~is_spoken_mask))[0]
     if len(mem_indices) == 0:
       continue
     members = [tracks[j]["id"] for j in mem_indices]
@@ -912,6 +1097,20 @@ def build_dataset(data_js_path, features_path, catalog_path, out_js_path, exclus
         "members": members,
         "cx": cx,
         "cy": cy,
+    })
+
+  sp_indices = np.where(is_spoken_mask)[0]
+  if len(sp_indices) > 0:
+    style_groups.append({
+        "id": "spoken_word",
+        "label": "Spoken word",
+        "short_label": "Spoken word",
+        "idx": 10,
+        "hue": 42,
+        "is_spoken_group": True,
+        "members": [tracks[j]["id"] for j in sp_indices],
+        "cx": round(float(np.median(coords[sp_indices, 0])), 4),
+        "cy": round(float(np.min(coords[sp_indices, 1])) - 0.032, 4),
     })
 
   ai_indices = np.where(is_ai_mask)[0]

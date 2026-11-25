@@ -200,11 +200,18 @@
     }
   }
 
+  function territoryOf(t) {
+    if (t && t.is_spoken_word) return "spoken";
+    if (t && t.is_ai) return "ai";
+    return "music";
+  }
+
   function isClusterMatch(t) {
     if (!activeClusterId) return true;
+    if (activeClusterId === "spoken_word") return Boolean(t.is_spoken_word);
     if (activeClusterId === "ai_generative") return Boolean(t.is_ai);
     if (activeClusterId.startsWith("ai_sub_")) return Boolean(t.is_ai) && t.ai_sub_id === activeClusterId;
-    return !t.is_ai && t.cluster_id === activeClusterId;
+    return !t.is_ai && !t.is_spoken_word && t.cluster_id === activeClusterId;
   }
 
   function isMatch(t) {
@@ -259,10 +266,12 @@
       const maxChordPx = Math.min(vw, vh) * 0.135;
       visNodes.forEach((n) => {
         const t = n.t;
+        if (t.is_spoken_word) return;
+        const tTerr = territoryOf(t);
         const candidates = (trackNear[t.id] || []).filter(([nid]) => {
           if (!visSet.has(nid)) return false;
           const nb = nodeById.get(nid);
-          if (!nb || Boolean(nb.t.is_ai) !== Boolean(t.is_ai)) return false;
+          if (!nb || territoryOf(nb.t) !== tTerr) return false;
           return Math.hypot(nb.tx - n.tx, nb.ty - n.ty) <= maxChordPx;
         }).slice(0, LINKS);
         candidates.forEach(([nid, sim]) => {
@@ -271,7 +280,7 @@
         });
       });
 
-      // Kruskal bridge for detached vibe islands within each territory (never bridging Handcrafted <-> AI)
+      // Kruskal bridge for detached vibe islands within each territory (never bridging Handcrafted <-> AI or Spoken Word)
       if (visNodes.length <= 800) {
         const parent = new Map(visNodes.map((n) => [n.id, n.id]));
         const find = (x) => {
@@ -292,7 +301,8 @@
         for (let i = 0; i < visNodes.length; i++) {
           for (let j = i + 1; j < visNodes.length; j++) {
             const a = visNodes[i], b = visNodes[j];
-            if (Boolean(a.t.is_ai) !== Boolean(b.t.is_ai)) continue;
+            if (a.t.is_spoken_word || b.t.is_spoken_word) continue;
+            if (territoryOf(a.t) !== territoryOf(b.t)) continue;
             if (find(a.id) === find(b.id)) continue;
             cands.push({ a: a.id, b: b.id, d: Math.hypot(a.tx - b.tx, a.ty - b.ty) });
           }
@@ -303,20 +313,22 @@
         }
       }
     } else {
-      // Intra-era subtle harmonic arcs (nearest visible within same era)
+      // Intra-era subtle harmonic arcs (nearest visible within same era & musical territory)
       const byEra = new Map();
       visNodes.forEach((n) => {
         const t = n.t;
+        if (t.is_spoken_word) return;
         if (!byEra.has(t.era)) byEra.set(t.era, []);
         byEra.get(t.era).push(t);
       });
       byEra.forEach((list) => {
         for (let i = 0; i < list.length; i++) {
           const t = list[i];
+          const tTerr = territoryOf(t);
           const near = (trackNear[t.id] || []).find(([nid]) => {
             if (!visSet.has(nid)) return false;
             const nt = byId.get(nid);
-            return nt && nt.era === t.era;
+            return nt && nt.era === t.era && territoryOf(nt) === tTerr;
           });
           if (near) {
             const k = keyFor(t.id, near[0]);
@@ -919,6 +931,7 @@
     setClusterFilter,
     setShowSketches,
     getShowSketches: () => showSketches,
+    getEdgesCountFor: (tid) => edges.filter((e) => e.a === tid || e.b === tid).length,
     setColorMode(mode) { colorMode = mode; paint(); },
     getColorMode: () => colorMode,
     refreshTheme() { samplePalette(); paint(); },

@@ -791,6 +791,65 @@ DEFAULT_EXCLUDED_IDS = {
     "archive_2018_23_30",
     "archive_2018_23_31",
     "present_electro_45",
+    "archive_2013_18_108",
+    "archive_2013_18_119",
+    "archive_2013_18_121",
+    "archive_2013_18_129",
+    "archive_2013_18_150",
+    "archive_2013_18_23",
+    "archive_2013_18_27",
+    "archive_2013_18_39",
+    "archive_2013_18_40",
+    "archive_2013_18_41",
+    "archive_2013_18_42",
+    "archive_2013_18_58",
+    "archive_2013_18_64",
+    "archive_2013_18_7",
+    "archive_2013_18_80",
+    "archive_2013_18_88",
+    "archive_2018_23_36",
+    "archive_2018_23_37",
+    "archive_2018_23_51",
+    "archive_2018_23_54",
+    "bands_archive_12",
+    "bands_archive_13",
+    "bands_archive_14",
+    "bands_archive_16",
+    "bands_archive_19",
+    "bands_archive_7",
+    "hd_2005_11",
+    "hd_2005_12",
+    "hd_2005_13",
+    "hd_2005_17",
+    "hd_2005_19",
+    "hd_2005_21",
+    "hd_2005_25",
+    "hd_2005_26",
+    "hd_2005_27",
+    "hd_2005_30",
+    "hd_2005_32",
+    "hd_2005_36",
+    "hd_2005_37",
+    "hd_2005_38",
+    "hd_2005_40",
+    "hd_2005_41",
+    "hd_2005_43",
+    "hd_2005_44",
+    "hd_2005_45",
+    "hd_2005_9",
+    "sketches_2024_25_25",
+    "present_electro_5",
+    "present_electro_50",
+    "present_electro_52",
+    "hd_2005_1",
+    "hd_2005_24",
+    "remixes_commissions_20",
+    "present_electro_58",
+    "psychedailies_12",
+}
+
+TITLE_OVERRIDES = {
+    "hd_2005_10": "pr3s3nt - As we Enter",
 }
 
 PRIVATE_TRACK_KEYS = (
@@ -950,6 +1009,9 @@ def build_from_full_analysis(
             continue
         t = dict(base_track_by_id.get(tid, {}))
         t.update(src_t)
+        if tid in TITLE_OVERRIDES:
+            t["title"] = TITLE_OVERRIDES[tid]
+            t["shortTitle"] = TITLE_OVERRIDES[tid][:26]
 
         # Merge Tier B 320k MP3 / lossless FLAC download metadata when available
         dl_entry = archive_dl.get(tid) if isinstance(archive_dl, dict) else None

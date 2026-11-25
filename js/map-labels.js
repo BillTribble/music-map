@@ -143,6 +143,10 @@
       const g = item.r + 3.8;
 
       const cands = [];
+      if (item.n.t && item.n.t.is_spoken_word) {
+        const belowBoxY = item.sy + 23;
+        cands.push({ box: [item.sx - hw, belowBoxY, item.sx + hw, belowBoxY + 2 * hh], leader: false });
+      }
       if (item.n.fanAngle != null) {
         const ca = Math.cos(item.n.fanAngle);
         const sa = Math.sin(item.n.fanAngle);
@@ -345,37 +349,38 @@
       "Piano, classical & folk": "Piano & acoustic",
       "UK bass, dubstep & juke": "UK bass & dubstep",
       "Generative AI music": "AI music",
+      "Spoken word": "Spoken word",
     };
 
-    // Pre-compute Generative AI reserve bounds so handcrafted landmark headers never cross into the AI dashed box
-    let aiGuardBox = null;
-    const aiGrpDef = styleGroups.find((sg) => sg.is_ai_group);
-    if (aiGrpDef) {
-      let aMinX = Infinity, aMaxX = -Infinity, aMinY = Infinity, aMaxY = -Infinity, aCnt = 0;
-      (aiGrpDef.members || []).forEach((id) => {
+    // Pre-compute Generative AI & Spoken Word island bounds so handcrafted landmark headers never cross into them
+    const reserveGuardBoxes = [];
+    styleGroups.forEach((rg) => {
+      if (!rg.is_ai_group && !rg.is_spoken_group) return;
+      let rMinX = Infinity, rMaxX = -Infinity, rMinY = Infinity, rMaxY = -Infinity, rCnt = 0;
+      (rg.members || []).forEach((id) => {
         const m = nodeById.get(id);
         if (!m || (isHidden && isHidden(m.t))) return;
         const sx = Number.isFinite(m.px) ? m.px : m.x * zoom.k + zoom.x;
         const sy = Number.isFinite(m.py) ? m.py : m.y * zoom.k + zoom.y;
         if (zoomed && (sx < -40 || sx > vw + 40 || sy < -40 || sy > vh + 40)) return;
-        if (sx < aMinX) aMinX = sx;
-        if (sx > aMaxX) aMaxX = sx;
-        if (sy < aMinY) aMinY = sy;
-        if (sy > aMaxY) aMaxY = sy;
-        aCnt++;
+        if (sx < rMinX) rMinX = sx;
+        if (sx > rMaxX) rMaxX = sx;
+        if (sy < rMinY) rMinY = sy;
+        if (sy > rMaxY) rMaxY = sy;
+        rCnt++;
       });
-      if (aCnt > 0) {
-        const padX = isWide ? 36 : 16;
-        const padTop = isWide ? 30 : 16;
-        const padBot = isWide ? 28 : 16;
-        aiGuardBox = [
-          Math.max(4, aMinX - padX) - 8,
-          Math.max(4, aMinY - padTop) - 28,
-          Math.min(vw - 6, aMaxX + padX) + 8,
-          Math.min(vh - 6, aMaxY + padBot) + 8,
-        ];
+      if (rCnt > 0) {
+        const padX = rg.is_spoken_group ? (isWide ? 24 : 14) : (isWide ? 36 : 16);
+        const padTop = rg.is_spoken_group ? (isWide ? 18 : 12) : (isWide ? 30 : 16);
+        const padBot = rg.is_spoken_group ? (isWide ? 18 : 12) : (isWide ? 28 : 16);
+        reserveGuardBoxes.push([
+          Math.max(4, rMinX - padX) - 8,
+          Math.max(4, rMinY - padTop) - 28,
+          Math.min(vw - 6, rMaxX + padX) + 8,
+          Math.min(vh - 6, rMaxY + padBot) + 8,
+        ]);
       }
-    }
+    });
 
     styleGroups.forEach((g) => {
       const members = (g.members || [])
@@ -387,12 +392,15 @@
       let minX = Infinity, maxX = -Infinity, minY = Infinity, maxY = -Infinity;
       let topX = 0, visCount = 0;
       const xs = [], ys = [];
+      const fullXs = [], fullYs = [];
       const ownSet = new Set();
       for (let i = 0; i < members.length; i++) {
         const m = members[i];
         ownSet.add(m.id);
         const sx = Number.isFinite(m.px) ? m.px : m.x * zoom.k + zoom.x;
         const sy = Number.isFinite(m.py) ? m.py : m.y * zoom.k + zoom.y;
+        fullXs.push(sx);
+        fullYs.push(sy);
         if (zoomed && (sx < -40 || sx > vw + 40 || sy < -40 || sy > vh + 40)) continue;
         xs.push(sx);
         ys.push(sy);
@@ -403,6 +411,42 @@
         visCount++;
       }
       if (visCount === 0) return;
+
+      // Never stamp a primary genre landmark header on a zoomed viewport over 1–2 stray border outliers
+      const isDedicatedIsland = Boolean(g.is_ai_group || g.is_spoken_group);
+      if (zoomed && !isDedicatedIsland && members.length >= 4) {
+        const minReq = Math.max(3, Math.ceil(members.length * 0.12));
+        if (visCount < Math.min(members.length, minReq)) return;
+        fullXs.sort((a, b) => a - b);
+        fullYs.sort((a, b) => a - b);
+        const fqLo = fullXs.length >= 8 ? Math.floor(fullXs.length * 0.14) : 0;
+        const fqHi = fullXs.length >= 8 ? Math.floor(fullXs.length * 0.86) : fullXs.length - 1;
+        const coreMargin = 72 * Math.sqrt(Math.max(1, zoom.k));
+        xs.sort((a, b) => a - b);
+        ys.sort((a, b) => a - b);
+        const vMx = xs[xs.length >> 1];
+        const vMy = ys[ys.length >> 1];
+        if (
+          vMx < fullXs[fqLo] - coreMargin ||
+          vMx > fullXs[fqHi] + coreMargin ||
+          vMy < fullYs[fqLo] - coreMargin ||
+          vMy > fullYs[fqHi] + coreMargin
+        ) {
+          return;
+        }
+        if (visCount < members.length * 0.35) {
+          let ownNear = 0, otherNear = 0;
+          const neighR = 95;
+          for (let di = 0; di < allDots.length; di++) {
+            if (Math.hypot(allDots[di][0] - vMx, allDots[di][1] - vMy) <= neighR) {
+              if (ownSet.has(allDots[di][2])) ownNear++;
+              else otherNear++;
+            }
+          }
+          if (otherNear > ownNear * 2.2) return;
+        }
+      }
+
       xs.sort((a, b) => a - b);
       ys.sort((a, b) => a - b);
 
@@ -472,7 +516,7 @@
         const padBox = [cx - hw - 3, cy - hh - 3, cx + hw + 3, cy + hh + 3];
 
         if (uiBoxes.some((ub) => boxOverlap(box, ub))) continue;
-        if (!g.is_ai_group && aiGuardBox && boxOverlap(box, aiGuardBox)) continue;
+        if (!isDedicatedIsland && reserveGuardBoxes.some((rb) => boxOverlap(box, rb))) continue;
         if (placedFam.some((pb) => boxOverlap(box, pb))) continue;
         if (lastTrackBoxes.some((tb) => boxOverlap(box, tb))) continue;
 
@@ -510,9 +554,10 @@
         }
       }
 
-      if (g.is_ai_group) {
+      if (g.is_ai_group || g.is_spoken_group) {
+        const headerOffset = g.is_spoken_group ? (isWide ? 22 : 16) : (isWide ? 34 : 20);
         const boxCenterX = Math.max(hw + 8, Math.min(vw - hw - 8, (minX + maxX) * 0.5));
-        const headerY = Math.max(hh + 10, minY - hh - (isWide ? 34 : 20));
+        const headerY = Math.max(hh + 10, minY - hh - headerOffset);
         const hBox = [boxCenterX - hw, headerY - hh, boxCenterX + hw, headerY + hh];
         if (!uiBoxes.some((ub) => boxOverlap(hBox, ub)) && !placedFam.some((pb) => boxOverlap(hBox, pb))) {
           best = [boxCenterX, headerY];
@@ -553,6 +598,26 @@
         if (onToggleCluster) onToggleCluster(g.id);
       });
       svgGroup.appendChild(grp);
+
+      // Dedicated Spoken Word mini-island boundary
+      if (g.is_spoken_group) {
+        const sPadX = isWide ? 24 : 14;
+        const sPadY = isWide ? 18 : 12;
+        const sx0 = Math.max(4, minX - sPadX);
+        const sy0 = Math.max(4, minY - sPadY);
+        const sx1 = Math.min(vw - 6, maxX + sPadX);
+        const sy1 = Math.min(vh - 6, maxY + sPadY);
+        if (sx1 - sx0 >= 20 && sy1 - sy0 >= 20) {
+          const sBox = document.createElementNS(NS, "rect");
+          sBox.setAttribute("class", "map-ai-territory-box map-spoken-island-box");
+          sBox.setAttribute("x", sx0.toFixed(1));
+          sBox.setAttribute("y", sy0.toFixed(1));
+          sBox.setAttribute("width", (sx1 - sx0).toFixed(1));
+          sBox.setAttribute("height", (sy1 - sy0).toFixed(1));
+          sBox.setAttribute("rx", "14");
+          svgGroup.insertBefore(sBox, svgGroup.firstChild);
+        }
+      }
 
       // Dedicated Generative AI territory boundary + internal Discogs genre sub-labels
       if (g.is_ai_group) {

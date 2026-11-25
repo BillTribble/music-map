@@ -94,7 +94,71 @@ EXCLUDED_PATH_SUBSTRS = (
     "heilung tenet edit",
     "beyond distance",
     "last dat",
+    "synaesthesia",
+    "vivaldi drill mix 01",
+    "suspense 01",
+    "getaway vdj edit",
 )
+EXCLUDED_EXACT_REL_PATHS = {
+    "02 - psychedailies/season 1 - psychedaily/^ shortlist psychedailies/01 getaway/getaway vdj edit.flac",
+    "^ jams/bill + liam/liam + bill 2018-09-14 01.mp3",
+    "^ jams/jam bill + john dickens 2018 07 12/jam bill + john dickens 2018 07 12 02 comp.mp3",
+    "^ jams/steph bill miki/steph miki bill rehearsal 2018 07 20/3chord.wav",
+    "^ jams/steph bill miki/steph miki bill rehearsal 2018 08 17/alphabets.aif",
+    "^ music sketches 2025/guitar loop for kinbana/export/guitar loop for kinbana.flac",
+    "^ remixes and commissions/vivaldi drill mix (veneris)/vivaldi drill mix 01.flac",
+    "archive me music 2013-18/blueridge.mp3",
+    "archive me music 2013-18/gloomcore guitar.mp3",
+    "archive me music 2013-18/john+jehn-down our streets (spudboy remix).mp3",
+    "archive me music 2013-18/masters - new mountains rising (spudboy remix).mp3",
+    "archive me music 2013-18/my toys like me - pneumatic (spudboy bmore '95 remix).mp3",
+    "archive me music 2013-18/spudboy - bionic buraka.mp3",
+    "archive me music 2013-18/spudboy - lightning boot.mp3",
+    "archive me music 2013-18/spudboy - prokov.mp3",
+    "archive me music 2013-18/spudboy - que que.mp3",
+    "archive me music 2013-18/spudboy - running the red light.mp3",
+    "archive me music 2013-18/underground railroad - russian doll (spudboy remix).mp3",
+    "me archive/present trax/- present mp3s/pr3s3nt/pr3s3nt  - as we enter.mp3",
+    "me archive/present trax/- present mp3s/pr3s3nt/pr3s3nt  - pengbata .mp3",
+    "me archive/present trax/mid tempo/suspense 01.wav",
+    "me music - 2005 hard drive/- caught at the door sketch.m4a",
+    "me music - 2005 hard drive/answer sketch.m4a",
+    "me music - 2005 hard drive/as we enter.m4a",
+    "me music - 2005 hard drive/barbed all.m4a",
+    "me music - 2005 hard drive/campfire sketch.m4a",
+    "me music - 2005 hard drive/discipline ruff.m4a",
+    "me music - 2005 hard drive/folk slinted.m4a",
+    "me music - 2005 hard drive/garden ruff.m4a",
+    "me music - 2005 hard drive/hip hop synaesthesia.m4a",
+    "me music - 2005 hard drive/love is the truth ruff mix.m4a",
+    "me music - 2005 hard drive/makeit sketch.m4a",
+    "me music - 2005 hard drive/makit on your own sketch.m4a",
+    "me music - 2005 hard drive/meltin away 2.m4a",
+    "me music - 2005 hard drive/no need.m4a",
+    "me music - 2005 hard drive/orch synaesthesia.m4a",
+    "me music - 2005 hard drive/set u free chorus ruff.m4a",
+    "me music - 2005 hard drive/set u free.m4a",
+    "me music - 2005 hard drive/sketch c.m4a",
+    "me music - 2005 hard drive/somethins begun 3.m4a",
+    "me music - 2005 hard drive/somethins begun sung quieter.m4a",
+    "me music - 2005 hard drive/stopme 04 bd.m4a",
+    "me music - 2005 hard drive/stopme 05 slint eq+vox dist.m4a",
+    "me music - 2005 hard drive/sunset ruff mix.m4a",
+    "music sketches archive. 2012-2020/stepper sketches 2012-2018/demo d hop 07-.aif",
+    "music sketches archive. 2012-2020/stepper sketches 2012-2018/demo d hop 08.aif",
+    "music sketches archive. 2012-2020/stepper sketches 2012-2018/demo d hop 09 no chor-.aif",
+    "music sketches archive. 2012-2020/stepper sketches 2012-2018/demo d hop in a# 05.aif",
+    "music sketches archive. 2012-2020/stepper sketches 2012-2018/demo g 02.aif",
+    "psykers/ouijaleaks.mp3",
+    "random bill bands/2002-2005/birds singin.ogg",
+    "random bill bands/2002-2005/innocent pleasure.ogg",
+    "random bill bands/2002-2005/know you.ogg",
+    "random bill bands/koala tube jam - awaiting here.wav",
+    "spudboy/spudboy - live at holy mountain 01 mini-mix.mp3",
+}
+TITLE_OVERRIDES_BY_REL_PATH = {
+    "me music - 2005 hard drive/as we enter mix2.m4a": "pr3s3nt - As we Enter",
+}
 EXCLUDED_FILE_TOKENS = ("stem", "backing", "drumloop")
 EXCLUDED_EXACT_FILES = {"bass.wav", "vocals.wav", "perc.wav", "other.wav"}
 SKETCH_FOLDER_MARKERS = ("^ music sketches", "rc505 looper sketches", "2019 sketches", "guitar sketches")
@@ -214,6 +278,8 @@ def is_excluded(rel_path: str, size_bytes: int, dirs_with_top_render: set[str]) 
         return "non_audio"
     if fname in EXCLUDED_EXACT_FILES:
         return "split_stem"
+    if low in EXCLUDED_EXACT_REL_PATHS:
+        return "excluded_curated_rel_path"
     if EXCLUDED_BAND_RE.search(low):
         return "excluded_band"
     if EXCLUDED_ZOMBIES_RE.search(low):
@@ -385,7 +451,7 @@ def build_manifest(raw_items: list[dict], ffprobe_bin: str | None = None, check_
         slot = era_counters[era]
         digest = hashlib.sha1(f"{era}:{winner['rel_path']}".encode("utf-8")).hexdigest()[:6]
         tid = f"{era}_{slot}_{digest}"
-        title = clean_title(winner["rel_path"])
+        title = TITLE_OVERRIDES_BY_REL_PATH.get(norm_nfc(winner["rel_path"]).lower()) or clean_title(winner["rel_path"])
         ext = Path(winner["rel_path"]).suffix.lower()
         has_lossless = ext in LOSSLESS_EXTS
 
