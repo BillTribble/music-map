@@ -104,8 +104,14 @@
     return Boolean(t && (t.released === true || (t.links && t.links.bandcamp)));
   }
 
+  const FORCE_SKETCH_IDS = new Set(["archive_2013_18_97"]);
+  const FORCE_SKETCH_TITLES = new Set(["massive dune patch"]);
+
   function isSketch(t) {
     if (!t || t.is_ai) return false;
+    const tid = String(t.id || "");
+    const lowTitle = String(t.title || "").trim().toLowerCase();
+    if (FORCE_SKETCH_IDS.has(tid) || FORCE_SKETCH_TITLES.has(lowTitle)) return true;
     if (typeof t.is_sketch === "boolean") return t.is_sketch;
     const dur = Number(t.full_duration_sec || 0);
     return !isReleased(t) && dur > 0 && dur < 75;
@@ -185,7 +191,7 @@
     const pills = [];
     const bpmRounded = Math.round(Number(t.bpm) || 0);
     if (bpmRounded > 0) {
-      pills.push(`<span class="badge badge-blue mono-num">${bpmRounded} BPM</span>`);
+      pills.push(`<span class="badge badge-blue">${bpmRounded} BPM</span>`);
     }
     const simpleKey = formatSimpleKey(t);
     if (simpleKey) {
@@ -1135,23 +1141,25 @@
 
     cardEl.innerHTML = `
       <div class="mp-head">
-        <button type="button" class="btn-tonal mp-play ${isPlaying ? "is-playing" : ""}" data-player-play="${esc(t.id)}" aria-label="${isPlaying ? "Pause" : "Play"}" title="${isPlaying ? "Pause (Space)" : "Play (Space)"}">
-          <span class="ms filled">${isPlaying ? "pause" : isPend ? "hourglass_top" : "play_arrow"}</span>
-        </button>
+        <div class="mp-head-bar">
+          <button type="button" class="btn-tonal mp-play ${isPlaying ? "is-playing" : ""}" data-player-play="${esc(t.id)}" aria-label="${isPlaying ? "Pause" : "Play"}" title="${isPlaying ? "Pause (Space)" : "Play (Space)"}">
+            <span class="ms filled">${isPlaying ? "pause" : isPend ? "hourglass_top" : "play_arrow"}</span>
+          </button>
+          <div class="mp-head-actions">
+            <button type="button" class="icon-btn mp-info-btn ${infoOpen ? "is-active" : ""}" id="mp-info-toggle" aria-expanded="${infoOpen}" aria-controls="mp-info-panel" aria-label="Musical analysis details" title="${infoOpen ? "Hide musical analysis" : "Show sonic profile & harmonic analysis"}">
+              <span class="ms">info</span>
+            </button>
+            <button type="button" class="star-btn ${isStar ? "is-starred" : ""}" data-player-star="${esc(t.id)}" aria-pressed="${isStar}" aria-label="${isStar ? "Unstar track" : "Star track"}" title="${isStar ? "Remove star" : "Star track"}">
+              <span class="ms">star</span>
+            </button>
+            <button type="button" class="icon-btn" id="mp-collapse" aria-label="Collapse player" title="Collapse to mini bar">
+              <span class="ms">expand_more</span>
+            </button>
+          </div>
+        </div>
         <div class="mp-titles">
           <div class="mp-name" title="${esc(t.title)}">${esc(t.title)}</div>
           <div class="mp-meta" title="${esc(metaFull)}"><span class="mp-meta-text">${esc(metaShort)}</span></div>
-        </div>
-        <div class="mp-head-actions">
-          <button type="button" class="icon-btn mp-info-btn ${infoOpen ? "is-active" : ""}" id="mp-info-toggle" aria-expanded="${infoOpen}" aria-controls="mp-info-panel" aria-label="Musical analysis details" title="${infoOpen ? "Hide musical analysis" : "Show sonic profile & harmonic analysis"}">
-            <span class="ms">info</span>
-          </button>
-          <button type="button" class="star-btn ${isStar ? "is-starred" : ""}" data-player-star="${esc(t.id)}" aria-pressed="${isStar}" aria-label="${isStar ? "Unstar track" : "Star track"}" title="${isStar ? "Remove star" : "Star track"}">
-            <span class="ms">star</span>
-          </button>
-          <button type="button" class="icon-btn" id="mp-collapse" aria-label="Collapse player" title="Collapse to mini bar">
-            <span class="ms">expand_more</span>
-          </button>
         </div>
       </div>
       <div class="mp-wave-section">

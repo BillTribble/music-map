@@ -45,11 +45,11 @@
   fill: transparent;
 }
 
-/* Groove Explorer cartographic floating family landmarks: muted-gray Google Sans Flex + surface knock-out halo */
+/* Expressive Syne cartographic floating family landmarks + surface knock-out halo */
 .map-family-label {
-  font: 600 14px var(--md-ref-typeface-brand, 'Google Sans Flex', 'Google Sans', sans-serif);
+  font: 600 11.2px var(--font-display);
   fill: var(--md-sys-color-outline);
-  letter-spacing: 0.01em;
+  letter-spacing: -0.015em;
   text-anchor: middle;
   pointer-events: none;
   paint-order: stroke;
@@ -59,16 +59,18 @@
   transition: fill 160ms var(--ease-std), opacity 180ms var(--ease-std);
 }
 .map.is-zoomed .map-family-label {
-  font-size: 17px;
+  font-size: 15.5px;
+  font-weight: 700;
   stroke-width: 4px;
 }
 @media (min-width: 841px) {
   .map-family-label {
-    font-size: 18px;
+    font-size: 16.5px;
+    font-weight: 700;
     stroke-width: 4px;
   }
   .map.is-zoomed .map-family-label {
-    font-size: 20px;
+    font-size: 18.5px;
   }
 }
 .map-family-group:hover .map-family-label {
@@ -93,9 +95,9 @@
   cursor: pointer;
 }
 .map-ai-sub-label {
-  font: 500 11.5px var(--md-ref-typeface-plain, 'Inter', sans-serif);
+  font: 600 11px var(--font-display);
   fill: var(--md-sys-color-on-surface-variant);
-  letter-spacing: 0.01em;
+  letter-spacing: -0.01em;
   text-anchor: middle;
   pointer-events: none;
   paint-order: stroke;
@@ -109,14 +111,15 @@
 }
 .map-ai-sub-group.is-active .map-ai-sub-label {
   fill: var(--md-sys-color-primary);
-  font-weight: 600;
+  font-weight: 700;
 }
 .map-ai-sub-group.is-dim .map-ai-sub-label {
   opacity: 0.24;
 }
 
 .era-wave-title {
-  font: 600 12.5px var(--md-ref-typeface-brand, 'Google Sans Flex', 'Google Sans', sans-serif);
+  font: 700 12px var(--font-display);
+  letter-spacing: -0.015em;
   fill: var(--md-sys-color-outline);
   paint-order: stroke;
   stroke: var(--md-sys-color-surface-container-lowest);
@@ -132,8 +135,7 @@
   fill: var(--md-sys-color-primary);
 }
 .era-tick-year {
-  font: 500 10.5px var(--md-ref-typeface-plain, 'Inter', sans-serif);
-  font-variant-numeric: tabular-nums;
+  font: 500 10.5px var(--font-sans);
   fill: var(--md-sys-color-on-surface-variant);
   paint-order: stroke;
   stroke: var(--md-sys-color-surface-container-lowest);
@@ -267,7 +269,7 @@
   backdrop-filter: blur(18px);
   -webkit-backdrop-filter: blur(18px);
   border-radius: 22px;
-  padding: 16px;
+  padding: 14px 16px 16px;
   box-shadow: 0 12px 34px color-mix(in srgb, var(--md-sys-color-shadow) 26%, transparent);
 }
 .player-card[hidden] { display: none; }
@@ -323,7 +325,7 @@
     0 0 6px var(--md-sys-color-surface-container-lowest),
     0 0 12px var(--md-sys-color-surface-container-lowest),
     0 1px 2px var(--md-sys-color-surface-container-lowest);
-  font-family: var(--font-display);
+  font-family: var(--font-sans);
   font-size: 13.5px;
   font-weight: 600;
   line-height: 1.2;
@@ -334,17 +336,33 @@
   pointer-events: none;
 }
 
-.mp-head { display: flex; align-items: flex-start; gap: 10px; }
-.mp-play { width: 42px; height: 42px; min-width: 42px; padding: 0; flex-shrink: 0; }
-.mp-titles { flex: 1; min-width: 0; }
+.mp-head {
+  display: flex;
+  flex-direction: column;
+  align-items: stretch;
+  gap: 8px;
+}
+.mp-head-bar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  width: 100%;
+}
+.mp-play { width: 38px; height: 38px; min-width: 38px; padding: 0; flex-shrink: 0; }
+.mp-titles { width: 100%; min-width: 0; }
 .mp-name {
-  font-family: var(--font-display);
-  font-size: 16px;
-  font-weight: 700;
+  font-family: var(--font-sans);
+  font-size: 16.5px;
+  font-weight: 600;
+  line-height: 1.28;
+  letter-spacing: -0.01em;
   color: var(--md-sys-color-on-surface);
+  display: -webkit-box;
+  -webkit-line-clamp: 2;
+  -webkit-box-orient: vertical;
   overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
+  overflow-wrap: anywhere;
 }
 .mp-meta {
   display: flex;
@@ -396,7 +414,7 @@
 
 /* ---- SoundCloud-Style Waveform + Transport Controls ---- */
 .mp-wave-section {
-  margin-top: 12px;
+  margin-top: 10px;
   display: flex;
   flex-direction: column;
   gap: 8px;
@@ -474,7 +492,6 @@
   background: var(--md-sys-color-surface-container-high);
   color: var(--md-sys-color-on-surface-variant);
   font-family: var(--font-sans);
-  font-variant-numeric: tabular-nums;
   font-size: 12px;
   font-weight: 500;
   white-space: nowrap;
@@ -561,7 +578,7 @@
   color: var(--md-sys-color-on-surface-variant);
   margin-bottom: 4px;
 }
-.mp-meter-lbl strong { color: var(--md-sys-color-on-surface); font-family: var(--font-mono); }
+.mp-meter-lbl strong { color: var(--md-sys-color-on-surface); font-family: var(--font-sans); }
 .mp-meter-track { height: 5px; border-radius: 999px; background: var(--md-sys-color-surface-container-high); overflow: hidden; }
 .mp-meter-fill { height: 100%; border-radius: 999px; }
 

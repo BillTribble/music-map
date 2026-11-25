@@ -155,6 +155,13 @@ def resolve_present_1997_2004_era(tid: str, cur_era: str, cur_year: int | None, 
         return "present_arcadian_03", 2003, int(cur_slot or 99)
     return cur_era, int(cur_year or 2016), int(cur_slot or 0)
 
+FORCE_SKETCH_IDS = {
+    "archive_2013_18_97",  # Massive Dune Patch (post-023356: sketch despite >= 75s)
+}
+FORCE_SKETCH_TITLES = {
+    "massive dune patch",
+}
+
 FINE_HARMONY_KEYS = [
     "dyad_5th",
     "dyad_4th",
@@ -1214,6 +1221,9 @@ def build_from_full_analysis(
                 t["era"] = new_era
                 t["year"] = new_yr
                 t["slot"] = new_slot
+            if str(t.get("id") or "") in FORCE_SKETCH_IDS or str(t.get("title") or "").strip().lower() in FORCE_SKETCH_TITLES:
+                t["is_sketch"] = True
+                t["wip_eligible"] = False
 
         merged_tracks.append(t)
 

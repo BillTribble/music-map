@@ -80,6 +80,7 @@
   font-family: var(--font-display);
   font-size: 20px;
   font-weight: 700;
+  letter-spacing: -0.02em;
   color: var(--md-sys-color-on-surface);
 }
 .view-insight {
@@ -106,7 +107,8 @@
   gap: 8px;
   font-family: var(--font-display);
   font-size: 14px;
-  font-weight: 600;
+  font-weight: 700;
+  letter-spacing: -0.01em;
   color: var(--md-sys-color-on-surface);
 }
 .muted { color: var(--md-sys-color-on-surface-variant); font-size: 12px; }
@@ -195,7 +197,7 @@ select.era-select {
   border-radius: 16px;
   background: var(--md-sys-color-surface-container-low);
 }
-.audio-now-title { font-family: var(--font-display); font-weight: 600; font-size: 14px; color: var(--md-sys-color-on-surface); }
+.audio-now-title { font-family: var(--font-sans); font-weight: 600; font-size: 14px; color: var(--md-sys-color-on-surface); }
 .audio-now-meta { font-size: 12px; color: var(--md-sys-color-on-surface-variant); margin-top: 2px; }
 .audio-beats { display: flex; align-items: center; gap: 5px; }
 .beat-led {
@@ -268,7 +270,7 @@ select.era-select {
   gap: 10px;
 }
 .track-mini-head { display: flex; align-items: flex-start; gap: 10px; }
-.track-mini-title { font-family: var(--font-display); font-size: 14px; font-weight: 600; color: var(--md-sys-color-on-surface); }
+.track-mini-title { font-family: var(--font-sans); font-size: 14px; font-weight: 600; color: var(--md-sys-color-on-surface); }
 .track-mini-sub { font-size: 12px; color: var(--md-sys-color-on-surface-variant); }
 .track-mini-bars { display: flex; flex-direction: column; gap: 6px; }
 .tbar-row { display: grid; grid-template-columns: 96px 1fr 34px; align-items: center; gap: 8px; font-size: 11px; }
@@ -281,7 +283,7 @@ select.era-select {
 .flavor-name { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; color: var(--md-sys-color-on-surface); }
 .flavor-track { height: 8px; border-radius: 999px; background: var(--md-sys-color-surface-container-highest); overflow: hidden; }
 .flavor-fill { height: 100%; border-radius: 999px; }
-.flavor-val { font-family: var(--font-mono); font-size: 11px; text-align: right; color: var(--md-sys-color-on-surface-variant); }
+.flavor-val { font-family: var(--font-sans); font-size: 11px; text-align: right; color: var(--md-sys-color-on-surface-variant); }
 
 /* Borderless Scrollable Heatmap Table */
 .heatmap-wrap { width: 100%; overflow-x: auto; border-radius: 14px; background: var(--md-sys-color-surface-container-low); }
@@ -416,7 +418,10 @@ select.era-select {
   align-items: center;
   justify-content: space-between;
   gap: 8px;
-  font-size: 13px;
+  font-family: var(--font-display);
+  font-size: 13.5px;
+  font-weight: 700;
+  letter-spacing: -0.01em;
 }
 .evidence-card ul { margin: 0; padding-left: 18px; font-size: 12px; }
 .inspector-kpis {
@@ -430,7 +435,7 @@ select.era-select {
   background: var(--md-sys-color-surface-container-low);
 }
 .kpi-lbl { font-size: 11px; color: var(--md-sys-color-on-surface-variant); }
-.kpi-val { font-family: var(--font-display); font-size: 14px; font-weight: 600; color: var(--md-sys-color-on-surface); margin-top: 2px; }
+.kpi-val { font-family: var(--font-sans); font-size: 14px; font-weight: 600; color: var(--md-sys-color-on-surface); margin-top: 2px; }
 
 @media (max-width: 840px) {
   .analysis-shell { padding: 12px 12px 96px; }

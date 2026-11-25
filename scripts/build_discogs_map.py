@@ -277,6 +277,13 @@ FORCE_NON_SKETCH_IDS = INDIE_GUITAR_KEEPER_IDS | SPOKEN_WORD_IDS | {
     "hd_2005_39",         # Soc All 164bpm
 }
 
+FORCE_SKETCH_IDS = {
+    "archive_2013_18_97",  # Massive Dune Patch (post-023356: sketch despite >= 75s)
+}
+FORCE_SKETCH_TITLES = {
+    "massive dune patch",
+}
+
 
 def is_excluded_by_folder_rule(path_str: str) -> bool:
   if not path_str:
@@ -742,11 +749,18 @@ def classify_folder_guidance(
       )
   )
 
-  # User rules (post-022787, post-023035): 100% of GenAI tracks and all full-length (>= 75s) tracks have is_sketch = False
+  # User rules (post-022787, post-023035, post-023356): 100% of GenAI tracks and full-length (>= 75s) tracks have is_sketch = False unless explicitly in FORCE_SKETCH_IDS
+  is_forced_sketch = (
+      tid in FORCE_SKETCH_IDS
+      or str(t.get("title") or "").strip().lower() in FORCE_SKETCH_TITLES
+  )
   is_sketch = False if (is_ai or is_spoken_word) else bool(
-      tid not in FORCE_NON_SKETCH_IDS
-      and not released
-      and full_dur < 75.0
+      is_forced_sketch
+      or (
+          tid not in FORCE_NON_SKETCH_IDS
+          and not released
+          and full_dur < 75.0
+      )
   )
 
   prior = np.zeros(10, dtype=np.float64)

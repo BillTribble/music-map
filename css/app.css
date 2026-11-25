@@ -1,7 +1,6 @@
 :root {
-  --font-display: var(--md-ref-typeface-brand, 'Google Sans Flex', 'Google Sans', sans-serif);
+  --font-display: var(--md-ref-typeface-brand, 'Syne', sans-serif);
   --font-sans: var(--md-ref-typeface-plain, 'Inter', sans-serif);
-  --font-mono: var(--md-ref-typeface-plain, 'Inter', sans-serif);
 
   --z-base: 1;
   --z-sticky: 20;

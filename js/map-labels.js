@@ -318,8 +318,9 @@
 
     const isWide = vw > 840;
     const zoomed = zoom.k >= 1.55;
-    const fs = zoomed ? (isWide ? 20 : 17) : (isWide ? 18 : 12.5);
-    const fontSpec = `600 ${fs}px "Google Sans Flex", "Google Sans", Inter, sans-serif`;
+    const fs = zoomed ? (isWide ? 18.5 : 15.5) : (isWide ? 16.5 : 11.2);
+    const fw = isWide || zoomed ? 700 : 600;
+    const fontSpec = `${fw} ${fs}px Syne, Inter, sans-serif`;
 
     const uiBoxes = getUiObstacleBoxes(mapWrap);
     const allDots = [];
@@ -791,7 +792,8 @@
             const distCore = Math.hypot(cx - mx, cy - my);
             if (distCore > 92) continue;
             const box = [cx - hw, cy - hh, cx + hw, cy + hh];
-            const p0 = cx - hw - 3.2, p1 = cy - hh - 3.2, p2 = cx + hw + 3.2, p3 = cy + hh + 3.2;
+            const fbPad = isWide ? 3.2 : 2.2;
+            const p0 = cx - hw - fbPad, p1 = cy - hh - fbPad, p2 = cx + hw + fbPad, p3 = cy + hh + fbPad;
             if (uiBoxes.some((ub) => boxOverlap(box, ub))) continue;
             if (reserveGuardBoxes.some((rb) => boxOverlap(box, rb))) continue;
             if (placedFam.some((pb) => boxOverlap(box, pb))) continue;
@@ -879,8 +881,8 @@
         const by1 = fullMaxY + padBot;
 
         if ((isWide || zoom.k >= 1.35) && Array.isArray(g.sub_groups)) {
-          const subFs = zoomed ? 12.5 : 11.5;
-          const subFont = `500 ${subFs}px Inter, -apple-system, sans-serif`;
+          const subFs = zoomed ? 12 : 11;
+          const subFont = `600 ${subFs}px Syne, Inter, sans-serif`;
           g.sub_groups.forEach((sg) => {
             const smem = (sg.members || [])
               .map((id) => nodeById.get(id))

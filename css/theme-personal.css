@@ -1,57 +1,66 @@
-/* Groove Explorer x GM3 Typography & Surface Layer — Google Sans Flex + Inter, Tabular Figures & Tactile Pills.
-   Strictly zero raw hex literals here; all colors reference --md-sys-color-*. */
+/* Personal Aesthetic Layer (billtribble.com × GM3) — Expressive Syne Display Headers, Clean Inter Sans Track Titles & Tactile Stadium Pills.
+   Strictly zero raw hex literals and zero monospace fonts here; all colors reference --md-sys-color-*. */
 
 :root {
-  --font-display: var(--md-ref-typeface-brand, 'Google Sans Flex', 'Google Sans', sans-serif);
+  --font-display: var(--md-ref-typeface-brand, 'Syne', sans-serif);
   --font-sans: var(--md-ref-typeface-plain, 'Inter', sans-serif);
-  --font-mono: var(--md-ref-typeface-plain, 'Inter', sans-serif);
 }
 
-/* Brand & heading typography in Google Sans Flex (matching Groove Explorer) */
+/* Expressive display typography in Syne (strictly brand, map cluster/era headers & section headings — never track titles) */
 .app-title,
+.view-title,
+.subpanel-title,
+.era-wave-title,
+.map-family-label,
+.map-ai-sub-label,
+.evidence-card h4 {
+  font-family: var(--font-display);
+}
+
+.app-title {
+  font-weight: 700;
+  font-size: 17.5px;
+  letter-spacing: -0.02em;
+}
+
+@media (max-width: 840px) {
+  .app-title {
+    font-size: clamp(12.5px, 3.4vw, 15.5px);
+    letter-spacing: -0.025em;
+  }
+}
+
+.view-title {
+  font-weight: 700;
+  font-size: 20px;
+  letter-spacing: -0.02em;
+}
+
+/* Clean proportional Inter sans for all track titles, buttons, pills, badges & static numeric labels */
 .mp-name,
 .mp-mini-title,
-.view-title,
 .track-mini-title,
+.audio-now-title,
 .kpi-val,
 .btn,
 .btn-primary-cta,
 .btn-secondary-pill,
-.era-wave-title,
-.map-family-label {
-  font-family: var(--font-display);
-  letter-spacing: 0;
-}
-
-.app-title {
-  font-weight: 500;
-  font-size: 20px;
-  letter-spacing: 0;
-}
-
-.mp-name {
-  font-weight: 600;
-  font-size: 17px;
-}
-
-.mp-mini-title {
-  font-weight: 600;
-  font-size: 13.5px;
-}
-
-.view-title {
-  font-weight: 600;
-  font-size: 20px;
-}
-
-/* Clean Inter tabular numerals for BPM, Energy, Duration, Years (no terminal monospace) */
-.mono-num,
 .mp-meter-lbl strong,
 .flavor-val,
 .era-tick-year,
 .action-sub {
   font-family: var(--font-sans);
-  font-variant-numeric: tabular-nums;
+}
+
+.mp-name {
+  font-weight: 600;
+  font-size: 16.5px;
+  letter-spacing: -0.01em;
+}
+
+.mp-mini-title {
+  font-weight: 600;
+  font-size: 13.5px;
 }
 
 .app-brand-mark {
@@ -83,7 +92,7 @@
   background: var(--md-sys-color-surface-container-lowest);
 }
 
-/* Tactile 9999px stadium-pill CTAs (Google Sans Flex 500, matching Groove Explorer .btn-tonal) */
+/* Tactile 9999px stadium-pill CTAs */
 .btn,
 .btn-primary-cta {
   display: inline-flex;
@@ -96,9 +105,9 @@
   border-radius: 9999px;
   background: var(--md-sys-color-primary);
   color: var(--md-sys-color-on-primary);
-  font-family: var(--font-display);
-  font-size: 14px;
-  font-weight: 500;
+  font-family: var(--font-sans);
+  font-size: 13.5px;
+  font-weight: 600;
   text-decoration: none;
   white-space: nowrap;
   cursor: pointer;
@@ -131,9 +140,9 @@
   border-radius: 9999px;
   background: var(--md-sys-color-secondary-container);
   color: var(--md-sys-color-on-secondary-container);
-  font-family: var(--font-display);
-  font-size: 14px;
-  font-weight: 500;
+  font-family: var(--font-sans);
+  font-size: 13.5px;
+  font-weight: 600;
   text-decoration: none;
   white-space: nowrap;
   cursor: pointer;

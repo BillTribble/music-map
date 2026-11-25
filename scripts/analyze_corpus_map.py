@@ -1425,11 +1425,18 @@ def enrich_track_tiers(t: dict, rel_repo: str = "BillTribble/music-map") -> None
     if rel_match:
         year = int(rel_match["year"])
     full_dur = t.get("full_duration_sec")
+    is_forced_sketch = (
+        tid in {"archive_2013_18_97"}
+        or str(t.get("title") or "").strip().lower() in {"massive dune patch"}
+    )
     is_sketch = False if t.get("is_ai") else bool(
-        not released and full_dur is not None and float(full_dur) < 75.0
+        is_forced_sketch
+        or (not released and full_dur is not None and float(full_dur) < 75.0)
     )
     tier = "released" if released else ("free_download" if t.get("is_ai") else ("archive_dl" if year < 2015 else "request"))
     t.update({"year": year, "released": released, "is_sketch": is_sketch, "tier": tier})
+    if is_forced_sketch:
+        t["wip_eligible"] = False
     if links:
         t["links"] = links
     else:
