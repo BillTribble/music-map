@@ -596,12 +596,20 @@
     if (fadingOut) syncVoiceVolume(fadingOut);
   }
 
+  function isVoiceActivelyPlaying(voice) {
+    if (!voice || voice.disposed) return false;
+    if (voice.htmlAudio) {
+      return !voice.htmlAudio.paused && !voice.htmlAudio.ended;
+    }
+    return true;
+  }
+
   function buildPlaybackState() {
     if (active && !active.disposed) {
       const b = getVoiceBounds(active);
       return {
         trackId: active.trackId,
-        playing: true,
+        playing: isVoiceActivelyPlaying(active),
         pending: false,
         currentTime: getVoiceCurrentTime(active),
         duration: b.duration,
@@ -1150,6 +1158,52 @@
         recordHistoryVisit(tr.id);
       }
     }
+
+    // Fast warm-deck resume if the requested track is already buffered & paused on active
+    if (
+      active &&
+      !active.disposed &&
+      active.trackId === tr.id &&
+      active.htmlAudio &&
+      active.htmlAudio.paused &&
+      active.htmlAudio.getAttribute("src") &&
+      !(crossfadeMs > 0) &&
+      (opts.stopIdx === undefined || opts.stopIdx === active.stopIdx)
+    ) {
+      const elWarm = active.htmlAudio;
+      lastPaused = null;
+      pending = null;
+      if (typeof opts.startSec === "number" && Number.isFinite(opts.startSec)) {
+        const dest = Math.max(0, opts.startSec);
+        if (elWarm.readyState >= 1) {
+          try { elWarm.currentTime = dest; active.seekPending = null; } catch (_) { active.seekPending = dest; }
+        } else {
+          active.seekPending = dest;
+        }
+      } else if (opts.fromStart) {
+        if (elWarm.readyState >= 1) {
+          try { elWarm.currentTime = 0; active.seekPending = null; } catch (_) { active.seekPending = 0; }
+        } else {
+          active.seekPending = 0;
+        }
+      }
+      active.fadeIn = false;
+      active.fadeFactor = 1.0;
+      cancelMushFade(active);
+      syncVoiceVolume(active);
+      startTickLoop();
+      const warmUrlIdx = active.urlIdx;
+      elWarm.play().catch(() => {
+        if (active && !active.disposed && active.urlIdx === warmUrlIdx) {
+          try { elWarm.pause(); } catch (_) {}
+          stopTickLoop();
+          notifyStateChange();
+        }
+      });
+      notifyStateChange({ skipAppCallback: Boolean(opts.fromAutoPlay) });
+      return true;
+    }
+
     lastPaused = null;
     pending = null;
 
@@ -1161,7 +1215,7 @@
         stopVoice(fadingOut);
         fadingOut = null;
       }
-      if (crossfadeMs > 0) {
+      if (crossfadeMs > 0 && isVoiceActivelyPlaying(active)) {
         const outgoing = active;
         active = null;
         const effMush = outgoing.mushFadeActive && Number.isFinite(outgoing.mushFadeFactor)
@@ -1383,11 +1437,46 @@
       }
     };
 
+    let playbackInitiated = false;
+
+    const onNativePlay = () => {
+      if (voice.disposed || active !== voice) return;
+      lastPaused = null;
+      syncVoiceVolume(voice);
+      startTickLoop();
+      notifyStateChange();
+    };
+
+    const onNativePause = () => {
+      if (!playbackInitiated || voice.disposed || active !== voice) return;
+      if (el.ended) return;
+      if (fadingOut && !fadingOut.disposed) {
+        stopVoice(fadingOut);
+        fadingOut = null;
+      }
+      voice.fadeIn = false;
+      voice.fadeFactor = 1.0;
+      cancelMushFade(voice);
+      const b = getVoiceBounds(voice);
+      lastPaused = {
+        trackId: voice.trackId,
+        currentTime: getVoiceCurrentTime(voice),
+        duration: b.duration,
+        previewStart: b.previewStart,
+        previewEnd: b.previewEnd,
+        isFullTrack: voice.isFullTrack,
+      };
+      stopTickLoop();
+      notifyStateChange();
+    };
+
     el.addEventListener("loadedmetadata", onLoadedMeta);
     el.addEventListener("canplay", onCanPlay);
     el.addEventListener("timeupdate", onTimeUpdate);
     el.addEventListener("ended", onEnded);
     el.addEventListener("error", onError);
+    el.addEventListener("play", onNativePlay);
+    el.addEventListener("pause", onNativePause);
 
     voice.cleanup = () => {
       el.removeEventListener("loadedmetadata", onLoadedMeta);
@@ -1395,6 +1484,8 @@
       el.removeEventListener("timeupdate", onTimeUpdate);
       el.removeEventListener("ended", onEnded);
       el.removeEventListener("error", onError);
+      el.removeEventListener("play", onNativePlay);
+      el.removeEventListener("pause", onNativePause);
     };
 
     active = voice;
@@ -1418,10 +1509,11 @@
 
     startTickLoop();
     if (crossfadeMs > 0) ensureFadeRaf();
-    notifyStateChange({ skipAppCallback: Boolean(opts.fromAutoPlay) });
 
     const initialAttemptIdx = voice.urlIdx;
+    playbackInitiated = true;
     el.play().catch((err) => handlePlayRejection(err, initialAttemptIdx));
+    notifyStateChange({ skipAppCallback: Boolean(opts.fromAutoPlay) });
     return true;
   }
 
@@ -1515,26 +1607,70 @@
     return false;
   }
 
-  function toggleTrack(trackId, opts = {}) {
-    if (active && active.trackId === trackId && !pending) {
-      const b = getVoiceBounds(active);
-      lastPaused = {
-        trackId: active.trackId,
-        currentTime: getVoiceCurrentTime(active),
-        duration: b.duration,
-        previewStart: b.previewStart,
-        previewEnd: b.previewEnd,
-        isFullTrack: active.isFullTrack,
-      };
+  function pauseActive() {
+    if (!active || active.disposed) return false;
+    const b = getVoiceBounds(active);
+    lastPaused = {
+      trackId: active.trackId,
+      currentTime: getVoiceCurrentTime(active),
+      duration: b.duration,
+      previewStart: b.previewStart,
+      previewEnd: b.previewEnd,
+      isFullTrack: active.isFullTrack,
+    };
+    if (fadingOut && !fadingOut.disposed) {
+      stopVoice(fadingOut);
+      fadingOut = null;
+    }
+    active.fadeIn = false;
+    active.fadeFactor = 1.0;
+    cancelMushFade(active);
+    clearPrewarm(false);
+    if (active.htmlAudio) {
+      // Keep el.src intact & buffered so iOS Safari / Android Chrome Lock-Screen
+      // MediaSession stays mounted while paused and resumes with zero network reload.
+      try { active.htmlAudio.pause(); } catch (_) {}
+    } else {
       generation++;
       stopVoice(active);
-      if (fadingOut) stopVoice(fadingOut);
       active = null;
-      fadingOut = null;
-      clearPrewarm(false);
-      stopTickLoop();
-      notifyStateChange();
-      return false;
+    }
+    stopTickLoop();
+    notifyStateChange();
+    return true;
+  }
+
+  function resumeActive() {
+    if (!active || active.disposed || !active.htmlAudio) return false;
+    if (!active.htmlAudio.paused && !active.htmlAudio.ended) return true;
+    lastPaused = null;
+    active.fadeIn = false;
+    active.fadeFactor = 1.0;
+    syncVoiceVolume(active);
+    startTickLoop();
+    active.htmlAudio.play().catch(() => {
+      if (active && !active.disposed) {
+        try { active.htmlAudio.pause(); } catch (_) {}
+        stopTickLoop();
+        notifyStateChange();
+      }
+    });
+    notifyStateChange();
+    return true;
+  }
+
+  function toggleTrack(trackId, opts = {}) {
+    if (active && !active.disposed && active.trackId === trackId && !pending) {
+      if (isVoiceActivelyPlaying(active)) {
+        pauseActive();
+        return false;
+      }
+      if (typeof opts.startSec === "number" && Number.isFinite(opts.startSec) && active.htmlAudio) {
+        try { active.htmlAudio.currentTime = Math.max(0, opts.startSec); } catch (_) {}
+      } else if (opts.fromStart && active.htmlAudio) {
+        try { active.htmlAudio.currentTime = 0; } catch (_) {}
+      }
+      return resumeActive();
     }
     if (pending && pending.trackId === trackId) {
       stop();
@@ -1638,6 +1774,8 @@
     setTrackIndex,
     playTrack,
     toggleTrack,
+    pause: pauseActive,
+    resume: resumeActive,
     stop,
     seek,
     restart,
@@ -1655,7 +1793,7 @@
     getPlayHistory: () => ({ ids: playHistory.slice(), cursor: historyCursor }),
     syncHistorySelection: (id) => recordHistoryVisit(id),
     resetPlayHistory: () => { playHistory.length = 0; historyCursor = -1; },
-    isPlaying: (id) => Boolean(active && !active.disposed && (id ? active.trackId === id : true)),
+    isPlaying: (id) => Boolean(isVoiceActivelyPlaying(active) && (id ? active.trackId === id : true)),
     visitedCount: () => visitedIds.size,
     getVisitedIds: () => Array.from(visitedIds),
     resetVisited: () => { visitedIds.clear(); },
@@ -1668,7 +1806,7 @@
     triggerBellNote,
     auditionScale,
     audition12Tet,
-    playing: () => (active && !active.disposed ? active.trackId : null),
+    playing: () => (isVoiceActivelyPlaying(active) ? active.trackId : null),
     pending: () => (pending ? pending.trackId : null),
     activeVoice: () => active,
     fadingVoice: () => fadingOut,
