@@ -581,9 +581,9 @@
   function resolveWavePalette() {
     if (typeof document === "undefined" || typeof getComputedStyle !== "function") {
       return {
-        primary: "rgb(14, 87, 208)",
-        secondary: "rgb(1, 99, 156)",
-        secondaryContainer: "rgb(193, 231, 255)",
+        primary: "rgb(94, 61, 198)",
+        secondary: "rgb(106, 76, 156)",
+        secondaryContainer: "rgb(232, 222, 248)",
         onSurface: "rgb(31, 31, 31)",
         onSurfaceVariant: "rgb(68, 71, 70)",
         outline: "rgb(116, 119, 117)",
@@ -597,9 +597,9 @@
     const pick = (prop, fb) => (cs.getPropertyValue(prop) || "").trim() || fb;
     cachedThemeKey = themeAttr;
     cachedPalette = {
-      primary: pick("--md-sys-color-primary", "rgb(14, 87, 208)"),
-      secondary: pick("--md-sys-color-secondary", "rgb(1, 99, 156)"),
-      secondaryContainer: pick("--md-sys-color-secondary-container", "rgb(193, 231, 255)"),
+      primary: pick("--md-sys-color-primary", "rgb(94, 61, 198)"),
+      secondary: pick("--md-sys-color-secondary", "rgb(106, 76, 156)"),
+      secondaryContainer: pick("--md-sys-color-secondary-container", "rgb(232, 222, 248)"),
       onSurface: pick("--md-sys-color-on-surface", "rgb(31, 31, 31)"),
       onSurfaceVariant: pick("--md-sys-color-on-surface-variant", "rgb(68, 71, 70)"),
       outline: pick("--md-sys-color-outline", "rgb(116, 119, 117)"),

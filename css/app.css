@@ -156,7 +156,7 @@ button:focus-visible, a:focus-visible, input:focus-visible, select:focus-visible
 
 .bar-spacer { flex: 1; min-width: 8px; }
 
-/* Connected Pill Tab Switcher (Sky Blue Selected) */
+/* Connected Pill Tab Switcher (GM3 Purple Selected) */
 .m3-pill-tabs.gm3-connected-dsp {
   display: inline-flex;
   align-items: center;
@@ -355,8 +355,8 @@ button:focus-visible, a:focus-visible, input:focus-visible, select:focus-visible
   padding: 0 14px;
   border: none;
   border-radius: 999px;
-  background: var(--md-sys-color-teal-tonal);
-  color: var(--md-sys-color-on-teal-tonal);
+  background: var(--md-sys-color-secondary-container);
+  color: var(--md-sys-color-on-secondary-container);
   font-size: 13px;
   font-weight: 600;
   transition: background 140ms var(--ease-std), color 140ms var(--ease-std);

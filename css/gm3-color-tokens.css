@@ -3,15 +3,15 @@
    Raw hex literals live EXCLUSIVELY here; all component CSS uses var(--md-sys-color-*). */
 
 :root {
-  /* Canonical GM3 System Tokens (Light Mode) */
-  --md-sys-color-primary: #0E57D0;
+  /* Canonical GM3 System Tokens (Light Mode — Expressive Purple) */
+  --md-sys-color-primary: #5E3DC6;
   --md-sys-color-on-primary: #FFFFFF;
-  --md-sys-color-primary-container: #D3E3FD;
-  --md-sys-color-on-primary-container: #0842A1;
-  --md-sys-color-secondary: #01639C;
+  --md-sys-color-primary-container: #EADDFF;
+  --md-sys-color-on-primary-container: #21005D;
+  --md-sys-color-secondary: #6A4C9C;
   --md-sys-color-on-secondary: #FFFFFF;
-  --md-sys-color-secondary-container: #C1E7FF;
-  --md-sys-color-on-secondary-container: #004A76;
+  --md-sys-color-secondary-container: #E8DEF8;
+  --md-sys-color-on-secondary-container: #261447;
   --md-sys-color-tertiary: #146C2E;
   --md-sys-color-on-tertiary: #FFFFFF;
   --md-sys-color-tertiary-container: #C4EED1;
@@ -34,8 +34,8 @@
   --md-sys-color-scrim: #000000;
   --md-sys-color-inverse-surface: #303030;
   --md-sys-color-inverse-on-surface: #F2F2F2;
-  --md-sys-color-inverse-primary: #A7C7FA;
-  --md-sys-color-surface-tint: #6991D6;
+  --md-sys-color-inverse-primary: #D0BCFF;
+  --md-sys-color-surface-tint: #5E3DC6;
   --md-sys-color-surface-dim: #D4DBE4;
   --md-sys-color-surface-bright: #FFFFFF;
 
@@ -47,14 +47,14 @@
   --md-sys-color-surface-container-highest: #DDE3E9;
 
   /* Fixed Accent Tokens */
-  --md-sys-color-primary-fixed: #D3E3FD;
-  --md-sys-color-on-primary-fixed: #031E49;
-  --md-sys-color-primary-fixed-dim: #A7C7FA;
-  --md-sys-color-on-primary-fixed-variant: #0842A1;
-  --md-sys-color-secondary-fixed: #C1E7FF;
-  --md-sys-color-on-secondary-fixed: #011D36;
-  --md-sys-color-secondary-fixed-dim: #80CFFF;
-  --md-sys-color-on-secondary-fixed-variant: #004A76;
+  --md-sys-color-primary-fixed: #EADDFF;
+  --md-sys-color-on-primary-fixed: #21005D;
+  --md-sys-color-primary-fixed-dim: #D0BCFF;
+  --md-sys-color-on-primary-fixed-variant: #4F378B;
+  --md-sys-color-secondary-fixed: #E8DEF8;
+  --md-sys-color-on-secondary-fixed: #261447;
+  --md-sys-color-secondary-fixed-dim: #C8B6FF;
+  --md-sys-color-on-secondary-fixed-variant: #4A386B;
   --md-sys-color-tertiary-fixed: #C4EED1;
   --md-sys-color-on-tertiary-fixed: #052712;
   --md-sys-color-tertiary-fixed-dim: #6DD58C;
@@ -64,9 +64,9 @@
   --md-sys-color-violet-accent: #6D28D9;
   --md-sys-color-indigo-wash: #EDE9FE;
   --md-sys-color-on-indigo-wash: #3B0764;
-  --md-sys-color-custom-tonal-bg: #D0F2F5;
-  --md-sys-color-custom-tonal-text: #052A2D;
-  --md-sys-color-custom-tonal-hover-bg: #BCECF0;
+  --md-sys-color-custom-tonal-bg: #EDE9FE;
+  --md-sys-color-custom-tonal-text: #3B0764;
+  --md-sys-color-custom-tonal-hover-bg: #DDD6FE;
   --md-sys-color-star-active: #D97706;
   --md-sys-color-star-container: #FEF3C7;
 
@@ -151,16 +151,16 @@
   --color-surface-container-highest: var(--md-sys-color-surface-container-highest);
 }
 
-/* Canonical GM3 System Tokens (Obsidian Dark Mode — billtribble.com palette) */
+/* Canonical GM3 System Tokens (Obsidian Dark Mode — Expressive Purple) */
 [data-theme='dark'] {
-  --md-sys-color-primary: #A7C7FA;
-  --md-sys-color-on-primary: #072E70;
-  --md-sys-color-primary-container: #0842A1;
-  --md-sys-color-on-primary-container: #D3E3FD;
-  --md-sys-color-secondary: #80CFFF;
-  --md-sys-color-on-secondary: #003355;
-  --md-sys-color-secondary-container: #004A77;
-  --md-sys-color-on-secondary-container: #C1E7FF;
+  --md-sys-color-primary: #D0BCFF;
+  --md-sys-color-on-primary: #381E72;
+  --md-sys-color-primary-container: #4F378B;
+  --md-sys-color-on-primary-container: #EADDFF;
+  --md-sys-color-secondary: #C8B6FF;
+  --md-sys-color-on-secondary: #2E1860;
+  --md-sys-color-secondary-container: #46346B;
+  --md-sys-color-on-secondary-container: #EFE5FF;
   --md-sys-color-tertiary: #6DD58C;
   --md-sys-color-on-tertiary: #0A3818;
   --md-sys-color-tertiary-container: #125223;
@@ -181,8 +181,8 @@
   --md-sys-color-scrim: #000000;
   --md-sys-color-inverse-surface: #E8E9EF;
   --md-sys-color-inverse-on-surface: #121215;
-  --md-sys-color-inverse-primary: #0E57D0;
-  --md-sys-color-surface-tint: #A7C7FA;
+  --md-sys-color-inverse-primary: #5E3DC6;
+  --md-sys-color-surface-tint: #D0BCFF;
   --md-sys-color-surface-dim: #0D0D10;
   --md-sys-color-surface-bright: #34353D;
 
@@ -194,14 +194,14 @@
   --md-sys-color-surface-container-highest: #32333E;
 
   /* Fixed Accent Tokens */
-  --md-sys-color-primary-fixed: #D3E3FD;
-  --md-sys-color-on-primary-fixed: #031E49;
-  --md-sys-color-primary-fixed-dim: #A7C7FA;
-  --md-sys-color-on-primary-fixed-variant: #072E70;
-  --md-sys-color-secondary-fixed: #C1E7FF;
-  --md-sys-color-on-secondary-fixed: #011D36;
-  --md-sys-color-secondary-fixed-dim: #80CFFF;
-  --md-sys-color-on-secondary-fixed-variant: #003355;
+  --md-sys-color-primary-fixed: #EADDFF;
+  --md-sys-color-on-primary-fixed: #21005D;
+  --md-sys-color-primary-fixed-dim: #D0BCFF;
+  --md-sys-color-on-primary-fixed-variant: #381E72;
+  --md-sys-color-secondary-fixed: #E8DEF8;
+  --md-sys-color-on-secondary-fixed: #261447;
+  --md-sys-color-secondary-fixed-dim: #C8B6FF;
+  --md-sys-color-on-secondary-fixed-variant: #2E1860;
   --md-sys-color-tertiary-fixed: #C4EED1;
   --md-sys-color-on-tertiary-fixed: #052712;
   --md-sys-color-tertiary-fixed-dim: #6DD58C;
@@ -211,9 +211,9 @@
   --md-sys-color-violet-accent: #7437D2;
   --md-sys-color-indigo-wash: #400B83;
   --md-sys-color-on-indigo-wash: #E9D5FF;
-  --md-sys-color-custom-tonal-bg: #0F2B2E;
-  --md-sys-color-custom-tonal-text: #9EF3FB;
-  --md-sys-color-custom-tonal-hover-bg: #163E42;
+  --md-sys-color-custom-tonal-bg: #3F2E63;
+  --md-sys-color-custom-tonal-text: #EADDFF;
+  --md-sys-color-custom-tonal-hover-bg: #4D3978;
   --md-sys-color-star-active: #FCD34D;
   --md-sys-color-star-container: rgba(130, 91, 0, 0.42);
 

@@ -98,7 +98,7 @@
         val("--md-sys-color-cluster-4", "#FBBF24"),
         val("--md-sys-color-cluster-7", "#FB7185"),
       ],
-      primary: val("--md-sys-color-primary", "#A7C7FA"),
+      primary: val("--md-sys-color-primary", "#D0BCFF"),
       outline: val("--md-sys-color-outline-variant", "#444746"),
       edgeLine: val("--md-sys-color-outline", "#8E9099"),
       edgeLineDark: val("--md-sys-color-on-surface-variant", "#C2C5D0"),
@@ -109,7 +109,7 @@
       bandAlt: val("--md-sys-color-surface-container", "#1C1C22"),
       bandActive: val("--md-sys-color-surface-container-high", "#262730"),
       gridLine: val("--md-sys-color-outline-variant", "#3D404A"),
-      spineGlow: val("--md-sys-color-primary-container", "#0842A1"),
+      spineGlow: val("--md-sys-color-primary-container", "#4F378B"),
     };
   }
 

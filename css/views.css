@@ -379,8 +379,8 @@ select.era-select {
 }
 .track-btn:hover { background: var(--md-sys-color-surface-container-highest); }
 .track-btn.is-playing {
-  background: var(--md-sys-color-teal-tonal);
-  color: var(--md-sys-color-on-teal-tonal);
+  background: var(--md-sys-color-secondary-container);
+  color: var(--md-sys-color-on-secondary-container);
   font-weight: 600;
 }
 
