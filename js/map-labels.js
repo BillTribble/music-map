@@ -395,9 +395,9 @@
         rCnt++;
       });
       if (rCnt > 0) {
-        const padX = rg.is_spoken_group ? (isWide ? 24 : 14) : (isWide ? 24 : 12);
-        const padTop = rg.is_spoken_group ? (isWide ? 18 : 12) : (isWide ? 24 : 14);
-        const padBot = rg.is_spoken_group ? (isWide ? 18 : 12) : (isWide ? 34 : 18);
+        const padX = rg.is_spoken_group ? (isWide ? 24 : 14) : (isWide ? 32 : 12);
+        const padTop = rg.is_spoken_group ? (isWide ? 18 : 12) : (isWide ? 28 : 14);
+        const padBot = rg.is_spoken_group ? (isWide ? 18 : 12) : (isWide ? 30 : 18);
         const gx0 = rMinX - padX;
         const gx1 = rMaxX + padX;
         if (gx1 > -24 && gx0 < vw + 24) {
@@ -420,8 +420,8 @@
           const rBoxCenterX = (vw - gx0 >= 2 * rHw + 12)
             ? Math.max(gx0 + rHw + 2, Math.min(gx1 - rHw - 2, Math.min(vw - rHw - 10, rRawCenterX)))
             : rRawCenterX;
-          const rHeaderY = Math.max(rHh + 10, rMinY - rHh - rHeaderOffset);
-          if (rBoxCenterX - rHw >= 4 && rBoxCenterX + rHw <= vw - 4) {
+          const rHeaderY = zoomed ? (rMinY - rHh - rHeaderOffset) : Math.max(rHh + 10, rMinY - rHh - rHeaderOffset);
+          if (rHeaderY - rHh >= 6 && rBoxCenterX - rHw >= 4 && rBoxCenterX + rHw <= vw - 4) {
             reserveGuardBoxes.push([
               rBoxCenterX - rHw - 6,
               rHeaderY - rHh - 4,
@@ -636,9 +636,9 @@
       let bestDotHits = Infinity;
 
       if (g.is_ai_group || g.is_spoken_group) {
-        const islPadX = g.is_spoken_group ? (isWide ? 24 : 14) : (isWide ? 24 : 12);
-        const islPadTop = g.is_spoken_group ? (isWide ? 18 : 12) : (isWide ? 24 : 14);
-        const islPadBot = g.is_spoken_group ? (isWide ? 18 : 12) : (isWide ? 34 : 18);
+        const islPadX = g.is_spoken_group ? (isWide ? 24 : 14) : (isWide ? 32 : 12);
+        const islPadTop = g.is_spoken_group ? (isWide ? 18 : 12) : (isWide ? 28 : 14);
+        const islPadBot = g.is_spoken_group ? (isWide ? 18 : 12) : (isWide ? 30 : 18);
         const islBx0 = fullMinX - islPadX;
         const islBx1 = fullMaxX + islPadX;
         const islBy0 = fullMinY - islPadTop;
@@ -676,10 +676,14 @@
         const boxCenterX = (vw - islBx0 >= 2 * hw + 12)
           ? Math.max(islBx0 + hw + 2, Math.min(islBx1 - hw - 2, Math.min(vw - hw - 10, rawCenterX)))
           : rawCenterX;
-        const headerY = Math.max(hh + 10, fullMinY - hh - headerOffset);
-        if (boxCenterX - hw >= 4 && boxCenterX + hw <= vw - 4) {
+        const headerY = zoomed ? (fullMinY - hh - headerOffset) : Math.max(hh + 10, fullMinY - hh - headerOffset);
+        if (headerY - hh >= 6 && boxCenterX - hw >= 4 && boxCenterX + hw <= vw - 4) {
           const hBox = [boxCenterX - hw, headerY - hh, boxCenterX + hw, headerY + hh];
-          if (!uiBoxes.some((ub) => boxOverlap(hBox, ub)) && !placedFam.some((pb) => boxOverlap(hBox, pb))) {
+          if (
+            !uiBoxes.some((ub) => boxOverlap(hBox, ub)) &&
+            !placedFam.some((pb) => boxOverlap(hBox, pb)) &&
+            !lastTrackBoxes.some((tb) => boxOverlap(hBox, tb))
+          ) {
             best = [boxCenterX, headerY];
             bestDotHits = 0;
           }
@@ -782,15 +786,15 @@
           }
         }
 
-        // Compact mobile fallback: guarantee interior islands (e.g. Meditative, Downtempo) never drop their header
-        // while still strictly forbidding UI/label overlaps and foreign-cluster dot hits.
-        if (!best && !isWide && !zoomed) {
+        // Interior cluster fallback: guarantee landlocked islands (e.g. Hypnotic/dub, Meditative, Downtempo)
+        // never drop their header while strictly forbidding UI/label overlaps and foreign-cluster dot hits.
+        if (!best && !zoomed) {
           for (let ci = 0; ci < cands.length; ci++) {
             const cx = clampX(cands[ci][0]);
             const cy = clampY(cands[ci][1]);
             if (cx - hw < 5 || cx + hw > vw - 5 || cy - hh < 8 || cy + hh > vh - 8) continue;
             const distCore = Math.hypot(cx - mx, cy - my);
-            if (distCore > 92) continue;
+            if (distCore > (isWide ? 145 : 98)) continue;
             const box = [cx - hw, cy - hh, cx + hw, cy + hh];
             const fbPad = isWide ? 3.2 : 2.2;
             const p0 = cx - hw - fbPad, p1 = cy - hh - fbPad, p2 = cx + hw + fbPad, p3 = cy + hh + fbPad;
@@ -823,7 +827,7 @@
             const ownD = ownD2 < Infinity ? Math.sqrt(ownD2) : Infinity;
             const ownCenterD = ownCenterD2 < Infinity ? Math.sqrt(ownCenterD2) : Infinity;
             const otherCenterD = otherCenterD2 < Infinity ? Math.sqrt(otherCenterD2) : Infinity;
-            if (ownCenterD > otherCenterD + 2.0 || ownD > 36) continue;
+            if (ownCenterD > otherCenterD + (isWide ? 6.0 : 2.5) || ownD > (isWide ? 44 : 38)) continue;
             const fbScore = ownHits * 8000 + distCore * 1.4 + ownD * 2.0 + ownCenterD * 0.5;
             if (fbScore < bestScore) {
               bestScore = fbScore;
@@ -872,9 +876,9 @@
 
       // Internal Discogs genre sub-labels inside the Generative AI territory box
       if (g.is_ai_group) {
-        const padX = isWide ? 24 : 12;
-        const padTop = isWide ? 24 : 14;
-        const padBot = isWide ? 34 : 18;
+        const padX = isWide ? 32 : 12;
+        const padTop = isWide ? 28 : 14;
+        const padBot = isWide ? 30 : 18;
         const bx0 = fullMinX - padX;
         const by0 = fullMinY - padTop;
         const bx1 = fullMaxX + padX;
@@ -883,7 +887,33 @@
         if ((isWide || zoom.k >= 1.35) && Array.isArray(g.sub_groups)) {
           const subFs = zoomed ? 12 : 11;
           const subFont = `600 ${subFs}px Syne, Inter, sans-serif`;
-          g.sub_groups.forEach((sg) => {
+          const aiMemberIds = new Set(g.members || []);
+          const orderedSubs = g.sub_groups.slice().sort((sa, sb) => {
+            const subCrowd = (sg) => {
+              const sSet = new Set(sg.members || []);
+              let sxS = 0, syS = 0, cnt = 0;
+              sSet.forEach((id) => {
+                const m = nodeById.get(id);
+                if (!m || (isHidden && isHidden(m.t))) return;
+                sxS += Number.isFinite(m.px) ? m.px : m.x * zoom.k + zoom.x;
+                syS += Number.isFinite(m.py) ? m.py : m.y * zoom.k + zoom.y;
+                cnt++;
+              });
+              if (!cnt) return 0;
+              const cx = sxS / cnt, cy = syS / cnt;
+              let nearOther = 0;
+              for (let di = 0; di < dotLen; di++) {
+                const did = allDots[di][2];
+                if (aiMemberIds.has(did) && !sSet.has(did) && Math.hypot(dotX[di] - cx, dotY[di] - cy) <= 115) {
+                  nearOther++;
+                }
+              }
+              return nearOther;
+            };
+            return subCrowd(sb) - subCrowd(sa);
+          });
+
+          orderedSubs.forEach((sg) => {
             const smem = (sg.members || [])
               .map((id) => nodeById.get(id))
               .filter((m) => m && !(isHidden && isHidden(m.t)));
@@ -910,64 +940,104 @@
             const smy = sys[sys.length >> 1];
             const sLbl = sg.short_label || sg.label;
             const stw = textWidth(subFont, sLbl);
-            const shw = Math.ceil(stw * 0.56 + 6);
-            const shh = Math.ceil(subFs * 0.64 + 3);
-            // Skip sub-pocket label when its pocket center cannot hold the full label inside the viewport (e.g. 30% right-edge peek)
+            const shw = Math.ceil(stw * 0.56 + 5);
+            const shh = Math.ceil(subFs * 0.64 + 2.5);
             if (smx - shw < 6 || smx + shw > vw - 6) return;
 
-            const clampLoX = bx0 + shw + 5;
-            const clampHiX = bx1 - shw - 5;
-            const clampLoY = Math.max(shh + 8, by0 + shh + 10);
-            const clampHiY = Math.min(vh - shh - 8, by1 - shh - 6);
+            const clampLoX = bx0 + shw + 4;
+            const clampHiX = bx1 - shw - 4;
+            const clampLoY = Math.max(shh + 8, by0 + shh + 5);
+            const clampHiY = Math.min(vh - shh - 8, by1 - shh - 5);
 
-            // Place sub-pocket labels consistently below each sub-pocket so adjacent rows never double-stack labels in one gap
+            // Coastal & channel candidate slots around each AI lobe (above top lobes, beside middle lobes, below bottom lobes)
             const sCands = [
-              [smx, sMaxY + shh + 9],
-              [smx, sMaxY + shh + 15],
-              [smx, sMaxY + shh + 22],
-              [smx - 10, sMaxY + shh + 10],
-              [smx + 10, sMaxY + shh + 10],
-              [smx - 20, sMaxY + shh + 11],
-              [smx + 20, sMaxY + shh + 11],
-              [smx, clampHiY],
-              [sMinX - shw - 9, smy],
-              [sMaxX + shw + 9, smy],
+              [smx, sMinY - shh - 7],
+              [smx - 12, sMinY - shh - 8],
+              [smx + 12, sMinY - shh - 8],
+              [smx, sMaxY + shh + 7],
+              [smx - 12, sMaxY + shh + 8],
+              [smx + 12, sMaxY + shh + 8],
+              [sMinX - shw - 7, smy],
+              [sMinX - shw - 7, smy - 12],
+              [sMinX - shw - 7, smy + 12],
+              [sMaxX + shw + 7, smy],
+              [sMaxX + shw + 7, smy - 12],
+              [sMaxX + shw + 7, smy + 12],
+              [sMinX, sMinY - shh - 7],
+              [sMaxX, sMinY - shh - 7],
+              [sMinX, sMaxY + shh + 7],
+              [sMaxX, sMaxY + shh + 7],
             ];
-            [14, 24, 36, 50].forEach((rad) => {
+            [12, 20, 30, 42, 56].forEach((rad) => {
               ANGLES.forEach((ang) => {
-                if (Math.sin(ang) >= 0.15) {
-                  sCands.push([smx + Math.cos(ang) * rad * 1.15, sMaxY + Math.sin(ang) * rad]);
-                }
+                sCands.push([smx + Math.cos(ang) * rad * 1.12, smy + Math.sin(ang) * rad]);
+                sCands.push([smx + Math.cos(ang) * rad * 1.10, sMinY + Math.sin(ang) * rad]);
+                sCands.push([smx + Math.cos(ang) * rad * 1.10, sMaxY + Math.sin(ang) * rad]);
+                sCands.push([sMinX + Math.cos(ang) * rad, smy + Math.sin(ang) * rad]);
+                sCands.push([sMaxX + Math.cos(ang) * rad, smy + Math.sin(ang) * rad]);
               });
             });
+            if (!zoomed && clampLoX <= clampHiX && clampLoY <= clampHiY) {
+              const gxLo = Math.max(clampLoX, sMinX - shw - 28);
+              const gxHi = Math.min(clampHiX, sMaxX + shw + 28);
+              const gyLo = Math.max(clampLoY, sMinY - shh - 26);
+              const gyHi = Math.min(clampHiY, sMaxY + shh + 26);
+              for (let gy = gyLo; gy <= gyHi; gy += 5) {
+                for (let gx = gxLo; gx <= gxHi; gx += 6) {
+                  sCands.push([gx, gy]);
+                }
+              }
+            }
 
             let sBest = null;
             let sBestScore = Infinity;
             const sIsOwn = new Uint8Array(dotLen);
+            const sIsAiForeign = new Uint8Array(dotLen);
             for (let di = 0; di < dotLen; di++) {
-              if (sOwn.has(allDots[di][2])) sIsOwn[di] = 1;
+              const did = allDots[di][2];
+              if (sOwn.has(did)) sIsOwn[di] = 1;
+              else if (aiMemberIds.has(did)) sIsAiForeign[di] = 1;
             }
+            const seenSCand = new Set();
             for (let sci = 0; sci < sCands.length; sci++) {
               const scx = clampLoX <= clampHiX ? Math.max(clampLoX, Math.min(clampHiX, sCands[sci][0])) : sCands[sci][0];
               const scy = clampLoY <= clampHiY ? Math.max(clampLoY, Math.min(clampHiY, sCands[sci][1])) : Math.max(shh + 8, Math.min(vh - shh - 8, sCands[sci][1]));
               if (scx - shw < 6 || scx + shw > vw - 6) continue;
-              const sp0 = scx - shw - 3, sp1 = scy - shh - 3, sp2 = scx + shw + 3, sp3 = scy + shh + 3;
+              const sKey = ((scx * 4) | 0) * 16384 + ((scy * 4) | 0);
+              if (seenSCand.has(sKey)) continue;
+              seenSCand.add(sKey);
+
+              const sp0 = scx - shw - 2.5, sp1 = scy - shh - 2.5, sp2 = scx + shw + 2.5, sp3 = scy + shh + 2.5;
               const sbox = [sp0, sp1, sp2, sp3];
               if (uiBoxes.some((ub) => boxOverlap(sbox, ub))) continue;
               if (placedFam.some((pb) => boxOverlap(sbox, pb))) continue;
               if (lastTrackBoxes.some((tb) => boxOverlap(sbox, tb))) continue;
 
-              const dAnchor = Math.hypot(scx - smx, scy - (sMaxY + shh + 9));
-              if (dAnchor > 115) continue;
+              const dCenter = Math.hypot(scx - smx, scy - smy);
+              if (dCenter > (zoomed ? 150 : 125)) continue;
 
               let dc = 0;
+              let ownD2 = Infinity;
+              let forD2 = Infinity;
               for (let di = 0; di < dotLen; di++) {
+                const px = dotX[di], py = dotY[di];
+                const ddx = px < sp0 ? sp0 - px : (px > sp2 ? px - sp2 : 0);
+                const ddy = py < sp1 ? sp1 - py : (py > sp3 ? py - sp3 : 0);
+                const d2 = ddx * ddx + ddy * ddy;
+                if (sIsOwn[di]) {
+                  if (d2 < ownD2) ownD2 = d2;
+                } else if (sIsAiForeign[di]) {
+                  if (d2 < forD2) forD2 = d2;
+                }
                 if (sp0 < dotBoxX1[di] && sp2 > dotBoxX0[di] && sp1 < dotBoxY1[di] && sp3 > dotBoxY0[di]) {
-                  dc += sIsOwn[di] ? 2600 : 5200;
+                  dc += sIsOwn[di] ? 3400 : 7600;
                 }
               }
-              const belowPenalty = scy >= sMaxY + shh + 3 ? -24 : 360;
-              const sc = dAnchor + Math.abs(scx - smx) * 0.45 + dc + belowPenalty;
+              const ownD = ownD2 < Infinity ? Math.sqrt(ownD2) : 0;
+              const forD = forD2 < Infinity ? Math.sqrt(forD2) : Infinity;
+              if (ownD > 42) continue;
+              const foreignPen = forD < ownD ? (ownD - forD) * 26 + 260 : 0;
+              const sc = ownD * 2.1 + dCenter * 0.55 + dc + foreignPen;
               if (sc < sBestScore) {
                 sBestScore = sc;
                 sBest = [scx, scy];

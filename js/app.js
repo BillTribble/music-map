@@ -897,8 +897,12 @@
       if (deepLinkTrack.is_sketch && window.ME_NODEMAP && typeof window.ME_NODEMAP.setShowSketches === "function") {
         window.ME_NODEMAP.setShowSketches(true);
       }
-      if (state.tab === "era" && deepLinkTrack.is_ai && window.ME_NODEMAP && typeof window.ME_NODEMAP.setShowEraGenAi === "function") {
-        window.ME_NODEMAP.setShowEraGenAi(true);
+      if (deepLinkTrack.is_ai && window.ME_NODEMAP) {
+        if (state.tab === "era" && typeof window.ME_NODEMAP.setShowEraGenAi === "function") {
+          window.ME_NODEMAP.setShowEraGenAi(true);
+        } else if (typeof window.ME_NODEMAP.setShowVibeGenAi === "function") {
+          window.ME_NODEMAP.setShowVibeGenAi(true, { animate: false });
+        }
       }
       if (window.BTMM_PLAYER && typeof window.BTMM_PLAYER.setCollapsed === "function") {
         window.BTMM_PLAYER.setCollapsed(false);

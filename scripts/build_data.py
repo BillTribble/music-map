@@ -11,6 +11,7 @@ from __future__ import annotations
 import argparse
 import json
 import math
+import re
 import statistics
 from collections import Counter, defaultdict
 from pathlib import Path
@@ -123,7 +124,6 @@ PRESENT_1997_2004_ORDERED_TRACKS: dict[str, tuple[int, list[str]]] = {
         "present_electro_46",  # Nameless (--new2004)
         "present_electro_4",   # Lime Angel Delight (--new2004)
         "present_electro_17",  # Pitstop II
-        "present_electro_7",   # Blame It on the Boogie
         "present_electro_9",   # Computer Ryhmes
         "present_electro_18",  # Pork Gelatin
         "present_electro_14",  # Ichi Ban
@@ -1014,6 +1014,9 @@ DEFAULT_EXCLUDED_IDS = {
     # MusicFX AI test — excluded by owner (post-023266)
     "archive_2018_23_45",
     "archive_2018_23_46",
+    # Owner track removals (post-023520, post-023524)
+    "present_electro_7",
+    "hd_2005_42",
 }
 
 TITLE_OVERRIDES = {
@@ -1023,6 +1026,91 @@ TITLE_OVERRIDES = {
     "hd_2005_23": "pr3s3nt - Grimy",
     "hd_2005_48": "pr3s3nt - WAR hard mix",
 }
+
+_TITLE_SEMANTIC_PREV_WORDS = {
+    "part", "pt", "pt.", "vol", "vol.", "volume", "phase", "season", "act", "chapter", "no", "no.",
+    "jan", "feb", "mar", "apr", "may", "jun", "jul", "aug", "sep", "sept", "oct", "nov", "dec",
+}
+_TITLE_PROTECTED_NUMS = {"303", "606", "707", "808", "909"}
+
+
+def clean_track_title(raw_title: str) -> str:
+    """Strip leading track/index numbers (e.g. '01 ', '04 ', '12 - ') and trailing DAW bounce/master/take
+    suffixes (e.g. ' 07', ' Master', ' Final Comp', ' (1)') while protecting genuine semantic titles
+    like '1 Thing Led 2 Another', '1st Idea', '4 D', 'Counterpoint-part-2', '808 Bomb', 'Nov 25', and years."""
+    s = re.sub(r"\s+", " ", str(raw_title or "")).strip()
+    if not s or re.fullmatch(r"\d+", s):
+        return s
+
+    stripped_prefix = False
+    if not re.match(
+        r"^(?:1\s+thing\b|\d+(?:st|nd|rd|th)\b|(?:303|606|707|808|909|19\d{2}|20\d{2})\b)",
+        s,
+        re.IGNORECASE,
+    ):
+        m_lead = re.match(r"^(\d{1,2})(?:\s*[-._)]+\s*|\s+)(.+)$", s)
+        if m_lead:
+            rem = m_lead.group(2).strip()
+            if len(rem) >= 2 and not re.fullmatch(r"\d+", rem):
+                s = rem
+                stripped_prefix = True
+
+    while True:
+        prev = s
+        m_par = re.match(r"^(.+?)(?:\s+|\s*[-_]\s*)(?:\(\d{1,3}\)|\[\d{1,3}\])$", s)
+        if m_par and len(m_par.group(1).strip()) >= 2:
+            s = m_par.group(1).strip()
+            continue
+
+        m_daw = re.match(
+            r"^(.+?)(?:\s+|\s*[-_+]+\s*)(?:"
+            r"\(?(?:final\s+master|master\s+20\d{2}|mastered|premaster(?:ed)?|unmastered|master|"
+            r"final\s+comp|comp|level\s*match|level|main\s+out)\)?|"
+            r"\(\d{2,3}(?:\.\d{1,2})?\s*bpm\)|"
+            r"bounce(?:\s*[-_]?\s*\d+)?|"
+            r"track\s+\d+|"
+            r"v\d+[a-z]?|ver\.?\s*\d+|#\d+|"
+            r"\d{2,3}\.\d{1,2}"
+            r")$",
+            s,
+            re.IGNORECASE,
+        )
+        if m_daw and len(m_daw.group(1).strip()) >= 2:
+            s = m_daw.group(1).strip()
+            continue
+
+        m_m1 = re.match(r"^(.+?\b\d{1,2})\s+M\d$", s)
+        if m_m1 and len(m_m1.group(1).strip()) >= 2:
+            s = m_m1.group(1).strip()
+            continue
+
+        if not re.search(r"\b[34567]\s*-\s*[48]$", s):
+            m_num = re.match(r"^(.+?)(?:\s+|\s*[-_]\s*)(\d{1,5})$", s)
+            if m_num:
+                base = m_num.group(1).strip()
+                num = m_num.group(2)
+                is_year = bool(re.fullmatch(r"(?:19|20)\d{2}", num))
+                tokens = [tok for tok in re.split(r"[\s\-_]+", base) if tok]
+                last_word = tokens[-1].lower().rstrip(".,:") if tokens else ""
+                is_chroma_007 = (num == "007" and last_word == "chroma")
+                if (
+                    len(base) >= 2
+                    and not re.fullmatch(r"\d+", base)
+                    and not is_year
+                    and num not in _TITLE_PROTECTED_NUMS
+                    and not is_chroma_007
+                    and last_word not in _TITLE_SEMANTIC_PREV_WORDS
+                ):
+                    s = base
+                    continue
+
+        s = re.sub(r"[\s\-_–—]+$", "", s).strip()
+        if s == prev:
+            break
+
+    if stripped_prefix and s and s[0].islower() and not s.startswith("pr3s3nt"):
+        s = s[0].upper() + s[1:]
+    return s
 
 PRIVATE_TRACK_KEYS = (
     "local_path",
@@ -1040,7 +1128,13 @@ def is_excluded_by_folder_rule(path_str: str) -> bool:
     if not path_str:
         return False
     low_p = path_str.lower()
-    if "ai music sandbox" in low_p or "musicfx ai test" in low_p or "bill in china" in low_p:
+    if (
+        "ai music sandbox" in low_p
+        or "musicfx ai test" in low_p
+        or "bill in china" in low_p
+        or "blame it on the boogie" in low_p
+        or "status quo 01 free" in low_p
+    ):
         return True
     parts = [p.strip() for p in low_p.split("/") if p.strip()]
     for idx, p in enumerate(parts[:-1]):
@@ -1186,7 +1280,13 @@ def build_from_full_analysis(
         t.update(src_t)
         if tid in TITLE_OVERRIDES:
             t["title"] = TITLE_OVERRIDES[tid]
-            t["shortTitle"] = TITLE_OVERRIDES[tid][:26]
+        else:
+            t["title"] = clean_track_title(str(t.get("title") or ""))
+        t["shortTitle"] = (
+            t["title"].split(" (")[0][:26]
+            if " (" in t["title"] and len(t["title"]) > 26
+            else t["title"][:26]
+        )
 
         # Merge Tier B 320k MP3 / lossless FLAC download metadata when available
         dl_entry = archive_dl.get(tid) if isinstance(archive_dl, dict) else None

@@ -69,7 +69,7 @@
   let filterSet = null;
   let starFilter = false;
   let showSketches = false;
-  let showVibeGenAi = true;
+  let showVibeGenAi = false;
   let showEraGenAi = false;
   let activeClusterId = null;
   let activeEraId = null;
@@ -283,29 +283,26 @@
     let virtualW = vw;
 
     if (hasHuman && hasAi && showVibeGenAi && aMaxX > hMinX + 0.05) {
-      // Frame default Vibe view over human islands with AI reserve ~30% visible on desktop, ~10% visible on mobile
-      const visFrac = isMobile ? 0.10 : 0.30;
-      const aiPadX = vw > 840 ? 24 : 12;
-      const leftPad = isMobile ? 20 : 76;
-      const rightWorldPad = isMobile ? 16 : 28;
-      const targetNormX = aMinX + visFrac * (aMaxX - aMinX);
-      const denom = Math.max(0.15, targetNormX - hMinX);
-      spanW = (vw - leftPad - (2 * visFrac - 1) * aiPadX) / denom;
+      // Show Gen AI is ON: fit both the handcrafted constellation and the cohesive AI constellation cleanly on screen
+      const aiPadX = vw > 840 ? 32 : 12;
+      const leftPad = isMobile ? 16 : 64;
+      const rightPad = isMobile ? 12 : 28;
+      const denom = Math.max(0.20, aMaxX - hMinX);
+      spanW = Math.max(180, (vw - leftPad - rightPad - aiPadX) / denom);
       offsetX = leftPad - hMinX * spanW;
-      const aiBoxRight = offsetX + aMaxX * spanW + aiPadX;
-      virtualW = Math.max(vw, Math.ceil(aiBoxRight + rightWorldPad));
+      virtualW = vw;
     } else if (hasHuman && !showVibeGenAi && hMaxX > hMinX + 0.05) {
-      // Show Gen AI is OFF: center 100% of the human-made catalog cleanly across the full viewport
-      const sideMargin = isMobile ? 24 : Math.max(88, Math.round(vw * 0.085));
+      // Show Gen AI is OFF (default): center 100% of the human-made catalog cleanly across the full viewport
+      const sideMargin = isMobile ? 22 : Math.max(88, Math.round(vw * 0.085));
       spanW = (vw - sideMargin * 2) / (hMaxX - hMinX);
       offsetX = sideMargin - hMinX * spanW;
       virtualW = vw;
     }
 
     const h = vh > vw * 1.15
-      ? Math.min(rawH, Math.max(rawW * 1.38, Math.min(spanW * 1.05, rawH * 0.88)))
+      ? Math.min(rawH, Math.max(rawH * 0.92, rawW * 1.45))
       : rawH;
-    const startY = topPad + (rawH - h) * 0.36;
+    const startY = topPad + (rawH - h) * 0.45;
     const spreadScale = Math.max(1, Math.min(1.55, Math.hypot(spanW / rawW, 1) / Math.SQRT2));
 
     return {
@@ -393,8 +390,9 @@
         if (t.is_spoken_word) return;
         const tTerr = territoryOf(t);
         const tConst = constellationKeyOf(t);
+        const minChordSim = tTerr === "ai" ? 0.50 : MIN_CHORD_SIM;
         const candidates = (trackNear[t.id] || []).filter(([nid, sim]) => {
-          if (sim < MIN_CHORD_SIM) return false;
+          if (sim < minChordSim) return false;
           if (!visSet.has(nid)) return false;
           const nb = nodeById.get(nid);
           if (!nb || territoryOf(nb.t) !== tTerr || constellationKeyOf(nb.t) !== tConst) return false;
@@ -462,10 +460,11 @@
           if (terr !== territoryOf(b.t)) return;
           const ca = constellationKeyOf(a.t), cb = constellationKeyOf(b.t);
           if (ca === cb) return;
-          const minSim = terr === "ai" ? 0.68 : 0.645;
+          const minSim = terr === "ai" ? 0.58 : 0.645;
           if (sim < minSim) return;
           const d = Math.hypot(a.tx - b.tx, a.ty - b.ty);
-          if (d > maxSpanBridgePx) return;
+          const maxSpanPx = terr === "ai" ? minDim * 0.26 * spreadScale : maxSpanBridgePx;
+          if (d > maxSpanPx) return;
           spanCands.push({ a: aId, b: bId, ca, cb, d, sim, cost: d / (sim * sim) });
         });
         spanCands.sort((p, q) => p.cost - q.cost);
@@ -489,11 +488,12 @@
           if (terr !== territoryOf(b.t)) return;
           const ca = constellationKeyOf(a.t), cb = constellationKeyOf(b.t);
           if (ca === cb) return;
-          const minSim = terr === "ai" ? 0.70 : 0.65;
+          const minSim = terr === "ai" ? 0.62 : 0.65;
           if (sim < minSim) return;
           const d = Math.hypot(a.tx - b.tx, a.ty - b.ty);
-          if (d > maxWebPx) return;
-          const score = sim - 0.20 * (d / maxWebPx);
+          const maxTerrWebPx = terr === "ai" ? minDim * 0.195 * spreadScale : minDim * 0.265 * spreadScale;
+          if (d > maxTerrWebPx) return;
+          const score = sim - 0.22 * (d / maxTerrWebPx);
           weaveCands.push({ a: aId, b: bId, ca, cb, terr, sim, score });
         });
         weaveCands.sort((p, q) => q.score - p.score);
@@ -501,7 +501,7 @@
           const maxNodeCross = 2;
           if ((crossDeg.get(c.a) || 0) >= maxNodeCross || (crossDeg.get(c.b) || 0) >= maxNodeCross) continue;
           const cKey = keyFor(c.ca, c.cb);
-          const maxPair = c.terr === "ai" ? 3 : 4;
+          const maxPair = c.terr === "ai" ? 5 : 4;
           if ((pairConstCnt.get(cKey) || 0) >= maxPair) continue;
           addEdge(c.a, c.b, c.sim, true);
           bumpCross(c.a, c.b, cKey);
@@ -856,11 +856,12 @@
     if (window.BTMM_PLAYER) window.BTMM_PLAYER.render();
   }
 
-  function tweenToTargets(animate) {
+  function tweenToTargets(animate, durMs = MORPH_MS) {
     stopMomentum();
     if (tweenRaf && typeof cancelAnimationFrame !== "undefined") cancelAnimationFrame(tweenRaf);
     nodes.forEach((n) => { n.sx = n.x; n.sy = n.y; });
-    const allowMorph = animate && nodes.length <= 400 && typeof requestAnimationFrame !== "undefined";
+    const reducedMotion = typeof window !== "undefined" && window.matchMedia && window.matchMedia("(prefers-reduced-motion: reduce)").matches;
+    const allowMorph = animate && !reducedMotion && nodes.length <= 800 && typeof requestAnimationFrame !== "undefined";
     if (!allowMorph) {
       nodes.forEach((n) => { n.x = n.tx; n.y = n.ty; });
       paint();
@@ -868,7 +869,7 @@
     }
     const t0 = performance.now();
     function step(now) {
-      const u = Math.min(1, (now - t0) / MORPH_MS);
+      const u = Math.min(1, (now - t0) / durMs);
       const ease = 1 - Math.pow(1 - u, 3);
       nodes.forEach((n) => {
         n.x = n.sx + (n.tx - n.sx) * ease;
@@ -1184,7 +1185,7 @@
     return showSketches;
   }
 
-  function setShowVibeGenAi(val) {
+  function setShowVibeGenAi(val, opts = {}) {
     const next = Boolean(val);
     if (next === showVibeGenAi) return showVibeGenAi;
     stopMomentum();
@@ -1206,9 +1207,15 @@
     }
     if (layout === "vibe") {
       computeTargetPositions();
-      nodes.forEach((n) => { n.x = n.tx; n.y = n.ty; });
       zoom = defaultMapZoom();
       clampZoom();
+      buildEdges();
+      const shouldAnimate = opts && typeof opts.animate === "boolean" ? opts.animate : true;
+      syncStarHud();
+      tweenToTargets(shouldAnimate, 320);
+      drawFloatingLabels();
+      if (window.BTMM_PLAYER) window.BTMM_PLAYER.render();
+      return showVibeGenAi;
     }
     buildEdges();
     paint();
