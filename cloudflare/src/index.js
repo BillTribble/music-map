@@ -12,6 +12,7 @@ const VALID_PLAY_SOURCES = new Set(["manual", "autoplay"]);
 const VALID_RANGES = new Set(["today", "7d", "30d", "90d", "all"]);
 const TRACK_ID_RE = /^[a-zA-Z0-9_.:-]{1,120}$/;
 const SESSION_HASH_RE = /^[a-f0-9]{12,64}$/i;
+const VISITOR_SEED_RE = /^[a-zA-Z0-9_.:-]{16,128}$/;
 const PLAY_ID_RE = /^[a-zA-Z0-9_-]{6,64}$/;
 const EMAIL_RE = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
 
@@ -47,6 +48,23 @@ async function sha256Hex(input, hexLen = 24) {
   const digest = await crypto.subtle.digest("SHA-256", bytes);
   const arr = Array.from(new Uint8Array(digest));
   return arr.map((b) => b.toString(16).padStart(2, "0")).join("").slice(0, hexLen);
+}
+
+function fnv1aHex(str, seedInit) {
+  let h = seedInit >>> 0;
+  for (let i = 0; i < str.length; i++) {
+    h ^= str.charCodeAt(i);
+    h = Math.imul(h, 16777619) >>> 0;
+  }
+  return h.toString(16).padStart(8, "0");
+}
+
+function fallbackHash24(input) {
+  return (
+    fnv1aHex(input, 0x811c9dc5) +
+    fnv1aHex("a:" + input, 0x9e3779b9) +
+    fnv1aHex("b:" + input, 0x85ebca6b)
+  ).slice(0, 24);
 }
 
 function parseAllowedOrigins(env) {
@@ -113,10 +131,17 @@ async function ensureSchema(db) {
         play_id TEXT NOT NULL DEFAULT '',
         listened_sec REAL NOT NULL DEFAULT 0,
         session_hash TEXT NOT NULL,
+        is_owner INTEGER NOT NULL DEFAULT 0,
         ip_hash TEXT NOT NULL DEFAULT '',
         country TEXT NOT NULL DEFAULT '',
         referrer TEXT NOT NULL DEFAULT '',
         note TEXT NOT NULL DEFAULT '',
+        created_at TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%SZ', 'now'))
+      )
+    `),
+    db.prepare(`
+      CREATE TABLE IF NOT EXISTS music_map_owner_sessions (
+        session_hash TEXT PRIMARY KEY,
         created_at TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%SZ', 'now'))
       )
     `),
@@ -126,6 +151,7 @@ async function ensureSchema(db) {
         session_hash TEXT NOT NULL,
         track_title TEXT NOT NULL,
         era TEXT NOT NULL DEFAULT '',
+        is_owner INTEGER NOT NULL DEFAULT 0,
         starred_at TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%SZ', 'now')),
         PRIMARY KEY (track_id, session_hash)
       )
@@ -138,6 +164,7 @@ async function ensureSchema(db) {
         first_played_at TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%SZ', 'now')),
         last_played_at TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%SZ', 'now')),
         play_count INTEGER NOT NULL DEFAULT 1,
+        is_owner INTEGER NOT NULL DEFAULT 0,
         PRIMARY KEY (track_id, session_hash)
       )
     `),
@@ -189,9 +216,11 @@ async function ensureSchema(db) {
     db.prepare(`CREATE INDEX IF NOT EXISTS idx_mm_requests_track ON music_map_requests(track_id, created_at DESC)`),
   ]);
 
-  // Self-heal any legacy v1 tables missing 'play' CHECK or play rollup columns
+  // Self-heal any legacy v1/v3 tables missing 'play' CHECK, play rollups, or 'is_owner' partitioning
   const ddlRows = await db
-    .prepare(`SELECT name, sql FROM sqlite_master WHERE type = 'table' AND name IN ('music_map_events', 'music_map_track_totals')`)
+    .prepare(
+      `SELECT name, sql FROM sqlite_master WHERE type = 'table' AND name IN ('music_map_events', 'music_map_track_totals', 'music_map_track_stars', 'music_map_track_listeners')`
+    )
     .all();
   const ddlByName = new Map(((ddlRows && ddlRows.results) || []).map((r) => [r.name, String(r.sql || "")]));
 
@@ -250,11 +279,34 @@ async function ensureSchema(db) {
     }
   }
 
+  const ownerColAlters = [];
+  const postMigrateDdlRows = await db
+    .prepare(
+      `SELECT name, sql FROM sqlite_master WHERE type = 'table' AND name IN ('music_map_events', 'music_map_track_stars', 'music_map_track_listeners')`
+    )
+    .all();
+  const postDdlByName = new Map(
+    ((postMigrateDdlRows && postMigrateDdlRows.results) || []).map((r) => [r.name, String(r.sql || "")])
+  );
+  for (const tbl of ["music_map_events", "music_map_track_stars", "music_map_track_listeners"]) {
+    const sqlText = postDdlByName.get(tbl) || "";
+    if (sqlText && !sqlText.includes("is_owner")) {
+      ownerColAlters.push(db.prepare(`ALTER TABLE ${tbl} ADD COLUMN is_owner INTEGER NOT NULL DEFAULT 0`));
+    }
+  }
+  if (ownerColAlters.length) {
+    await db.batch(ownerColAlters);
+  }
+
   await db.batch([
     db.prepare(`CREATE INDEX IF NOT EXISTS idx_mm_events_created ON music_map_events(created_at DESC, id DESC)`),
     db.prepare(`CREATE INDEX IF NOT EXISTS idx_mm_events_track ON music_map_events(track_id, event_type)`),
     db.prepare(`CREATE INDEX IF NOT EXISTS idx_mm_events_ip_window ON music_map_events(ip_hash, created_at DESC)`),
     db.prepare(`CREATE INDEX IF NOT EXISTS idx_mm_events_play_lookup ON music_map_events(track_id, session_hash, play_id)`),
+    db.prepare(`CREATE INDEX IF NOT EXISTS idx_mm_events_session ON music_map_events(session_hash)`),
+    db.prepare(`CREATE INDEX IF NOT EXISTS idx_mm_events_owner_created ON music_map_events(is_owner, created_at DESC, id DESC)`),
+    db.prepare(`CREATE INDEX IF NOT EXISTS idx_mm_stars_track_owner ON music_map_track_stars(track_id, is_owner)`),
+    db.prepare(`CREATE INDEX IF NOT EXISTS idx_mm_listeners_track_owner ON music_map_track_listeners(track_id, is_owner)`),
   ]);
 
   schemaInitialized = true;
@@ -844,12 +896,19 @@ async function handlePostEvent(request, env, ctx, corsHeaders) {
     return jsonResponse({ ok: false, error: "Rate limit exceeded" }, 429, corsHeaders);
   }
 
+  const enrolledOwnerRow = await env.DB.prepare(
+    `SELECT 1 AS ok FROM music_map_owner_sessions WHERE session_hash = ? LIMIT 1`
+  )
+    .bind(sessionHash)
+    .first();
+  const isOwnerRow = Boolean(body.is_owner) || Boolean(enrolledOwnerRow) ? 1 : 0;
+
   // Handle play completion delta (or idempotent same-play_id update) without double-counting plays
   if (isPlayFamily) {
     let existingPlay = null;
     if (playId) {
       existingPlay = await env.DB.prepare(
-        `SELECT id, listened_sec FROM music_map_events
+        `SELECT id, listened_sec, is_owner FROM music_map_events
          WHERE track_id = ? AND session_hash = ? AND play_id = ? AND event_type = 'play'
          ORDER BY id DESC LIMIT 1`
       )
@@ -861,24 +920,31 @@ async function handlePostEvent(request, env, ctx, corsHeaders) {
       const prevSec = Number(existingPlay.listened_sec || 0);
       const nextSec = Math.max(prevSec, listenedSec);
       const deltaSec = Math.round(Math.max(0, nextSec - prevSec) * 100) / 100;
+      const effectiveOwner = Number(existingPlay.is_owner || 0) === 1 || isOwnerRow === 1 ? 1 : 0;
       if (deltaSec > 0) {
-        await env.DB.batch([
-          env.DB.prepare(`UPDATE music_map_events SET listened_sec = ? WHERE id = ?`).bind(
+        const deltaStmts = [
+          env.DB.prepare(`UPDATE music_map_events SET listened_sec = ?, is_owner = ? WHERE id = ?`).bind(
             nextSec,
+            effectiveOwner,
             existingPlay.id
           ),
           env.DB.prepare(
-            `UPDATE music_map_track_totals
-             SET total_listen_sec = ROUND(total_listen_sec + ?, 2),
-                 updated_at = ?
-             WHERE track_id = ?`
-          ).bind(deltaSec, nowIso, trackId),
-          env.DB.prepare(
             `UPDATE music_map_track_listeners
-             SET last_played_at = ?
+             SET last_played_at = ?, is_owner = MAX(is_owner, ?)
              WHERE track_id = ? AND session_hash = ?`
-          ).bind(nowIso, trackId, sessionHash),
-        ]);
+          ).bind(nowIso, effectiveOwner, trackId, sessionHash),
+        ];
+        if (effectiveOwner === 0) {
+          deltaStmts.push(
+            env.DB.prepare(
+              `UPDATE music_map_track_totals
+               SET total_listen_sec = ROUND(total_listen_sec + ?, 2),
+                   updated_at = ?
+               WHERE track_id = ?`
+            ).bind(deltaSec, nowIso, trackId)
+          );
+        }
+        await env.DB.batch(deltaStmts);
         popularCache.clear();
       }
       const curTotals = (await env.DB.prepare(
@@ -893,6 +959,7 @@ async function handlePostEvent(request, env, ctx, corsHeaders) {
           ok: true,
           track_id: trackId,
           event_type: eventType,
+          is_owner: Boolean(effectiveOwner),
           play_updated: true,
           listened_sec: nextSec,
           active_stars: Number(curTotals.active_stars || 0),
@@ -914,6 +981,7 @@ async function handlePostEvent(request, env, ctx, corsHeaders) {
           ok: true,
           track_id: trackId,
           event_type: "play_end",
+          is_owner: Boolean(isOwnerRow),
           play_updated: false,
         },
         200,
@@ -922,39 +990,50 @@ async function handlePostEvent(request, env, ctx, corsHeaders) {
     }
   }
 
-  // Ensure track totals row exists
-  await env.DB.prepare(
-    `INSERT INTO music_map_track_totals (track_id, track_title, era, updated_at)
-     VALUES (?, ?, ?, ?)
-     ON CONFLICT(track_id) DO UPDATE SET
-       track_title = excluded.track_title,
-       era = CASE WHEN excluded.era != '' THEN excluded.era ELSE music_map_track_totals.era END,
-       updated_at = excluded.updated_at`
-  )
-    .bind(trackId, trackTitle, era, nowIso)
-    .run();
+  // Ensure visitor track totals row exists strictly for visitor activity (is_owner = 0)
+  if (isOwnerRow === 0) {
+    await env.DB.prepare(
+      `INSERT INTO music_map_track_totals (track_id, track_title, era, updated_at)
+       VALUES (?, ?, ?, ?)
+       ON CONFLICT(track_id) DO UPDATE SET
+         track_title = excluded.track_title,
+         era = CASE WHEN excluded.era != '' THEN excluded.era ELSE music_map_track_totals.era END,
+         updated_at = excluded.updated_at`
+    )
+      .bind(trackId, trackTitle, era, nowIso)
+      .run();
+  }
 
   let wasNewlyStarred = false;
 
   if (eventType === "star") {
     const insRes = await env.DB.prepare(
-      `INSERT OR IGNORE INTO music_map_track_stars (track_id, session_hash, track_title, era, starred_at)
-       VALUES (?, ?, ?, ?, ?)`
+      `INSERT OR IGNORE INTO music_map_track_stars (track_id, session_hash, track_title, era, is_owner, starred_at)
+       VALUES (?, ?, ?, ?, ?, ?)`
     )
-      .bind(trackId, sessionHash, trackTitle, era, nowIso)
+      .bind(trackId, sessionHash, trackTitle, era, isOwnerRow, nowIso)
       .run();
     wasNewlyStarred = Boolean(insRes && insRes.meta && Number(insRes.meta.changes) > 0);
+    if (!wasNewlyStarred && isOwnerRow === 1) {
+      await env.DB.prepare(
+        `UPDATE music_map_track_stars SET is_owner = 1 WHERE track_id = ? AND session_hash = ?`
+      )
+        .bind(trackId, sessionHash)
+        .run();
+    }
 
-    await env.DB.prepare(
-      `UPDATE music_map_track_totals
-       SET active_stars = (SELECT COUNT(*) FROM music_map_track_stars WHERE track_id = ?),
-           total_star_events = total_star_events + ?,
-           last_starred_at = ?,
-           updated_at = ?
-       WHERE track_id = ?`
-    )
-      .bind(trackId, wasNewlyStarred ? 1 : 0, nowIso, nowIso, trackId)
-      .run();
+    if (isOwnerRow === 0) {
+      await env.DB.prepare(
+        `UPDATE music_map_track_totals
+         SET active_stars = (SELECT COUNT(*) FROM music_map_track_stars WHERE track_id = ? AND is_owner = 0),
+             total_star_events = total_star_events + ?,
+             last_starred_at = ?,
+             updated_at = ?
+         WHERE track_id = ?`
+      )
+        .bind(trackId, wasNewlyStarred ? 1 : 0, nowIso, nowIso, trackId)
+        .run();
+    }
   } else if (eventType === "unstar") {
     await env.DB.prepare(
       `DELETE FROM music_map_track_stars WHERE track_id = ? AND session_hash = ?`
@@ -962,28 +1041,32 @@ async function handlePostEvent(request, env, ctx, corsHeaders) {
       .bind(trackId, sessionHash)
       .run();
 
-    await env.DB.prepare(
-      `UPDATE music_map_track_totals
-       SET active_stars = (SELECT COUNT(*) FROM music_map_track_stars WHERE track_id = ?),
-           updated_at = ?
-       WHERE track_id = ?`
-    )
-      .bind(trackId, nowIso, trackId)
-      .run();
+    if (isOwnerRow === 0) {
+      await env.DB.prepare(
+        `UPDATE music_map_track_totals
+         SET active_stars = (SELECT COUNT(*) FROM music_map_track_stars WHERE track_id = ? AND is_owner = 0),
+             updated_at = ?
+         WHERE track_id = ?`
+      )
+        .bind(trackId, nowIso, trackId)
+        .run();
+    }
   } else if (eventType === "download") {
-    const isFlac = format === "flac" ? 1 : 0;
-    const isMp3 = format === "mp3" || format === "mp3_320" ? 1 : 0;
-    await env.DB.prepare(
-      `UPDATE music_map_track_totals
-       SET total_downloads = total_downloads + 1,
-           mp3_downloads = mp3_downloads + ?,
-           flac_downloads = flac_downloads + ?,
-           last_downloaded_at = ?,
-           updated_at = ?
-       WHERE track_id = ?`
-    )
-      .bind(isMp3, isFlac, nowIso, nowIso, trackId)
-      .run();
+    if (isOwnerRow === 0) {
+      const isFlac = format === "flac" ? 1 : 0;
+      const isMp3 = format === "mp3" || format === "mp3_320" ? 1 : 0;
+      await env.DB.prepare(
+        `UPDATE music_map_track_totals
+         SET total_downloads = total_downloads + 1,
+             mp3_downloads = mp3_downloads + ?,
+             flac_downloads = flac_downloads + ?,
+             last_downloaded_at = ?,
+             updated_at = ?
+         WHERE track_id = ?`
+      )
+        .bind(isMp3, isFlac, nowIso, nowIso, trackId)
+        .run();
+    }
   } else if (eventType === "request") {
     await env.DB.prepare(
       `INSERT INTO music_map_requests
@@ -993,47 +1076,52 @@ async function handlePostEvent(request, env, ctx, corsHeaders) {
       .bind(trackId, trackTitle, era, requesterEmail, rawNote, sessionHash, country, nowIso)
       .run();
 
-    await env.DB.prepare(
-      `UPDATE music_map_track_totals
-       SET total_requests = total_requests + 1,
-           updated_at = ?
-       WHERE track_id = ?`
-    )
-      .bind(nowIso, trackId)
-      .run();
+    if (isOwnerRow === 0) {
+      await env.DB.prepare(
+        `UPDATE music_map_track_totals
+         SET total_requests = total_requests + 1,
+             updated_at = ?
+         WHERE track_id = ?`
+      )
+        .bind(nowIso, trackId)
+        .run();
+    }
   } else if (eventType === "play") {
     const isManual = playSource === "manual" ? 1 : 0;
     const isAutoplay = playSource === "autoplay" ? 1 : 0;
 
     await env.DB.prepare(
-      `INSERT INTO music_map_track_listeners (track_id, session_hash, first_played_at, last_played_at, play_count)
-       VALUES (?, ?, ?, ?, 1)
+      `INSERT INTO music_map_track_listeners (track_id, session_hash, first_played_at, last_played_at, play_count, is_owner)
+       VALUES (?, ?, ?, ?, 1, ?)
        ON CONFLICT(track_id, session_hash) DO UPDATE SET
          last_played_at = excluded.last_played_at,
-         play_count = music_map_track_listeners.play_count + 1`
+         play_count = music_map_track_listeners.play_count + 1,
+         is_owner = MAX(music_map_track_listeners.is_owner, excluded.is_owner)`
     )
-      .bind(trackId, sessionHash, nowIso, nowIso)
+      .bind(trackId, sessionHash, nowIso, nowIso, isOwnerRow)
       .run();
 
-    await env.DB.prepare(
-      `UPDATE music_map_track_totals
-       SET total_plays = total_plays + 1,
-           manual_plays = manual_plays + ?,
-           autoplay_plays = autoplay_plays + ?,
-           unique_listeners = (SELECT COUNT(*) FROM music_map_track_listeners WHERE track_id = ?),
-           total_listen_sec = ROUND(total_listen_sec + ?, 2),
-           last_played_at = ?,
-           updated_at = ?
-       WHERE track_id = ?`
-    )
-      .bind(isManual, isAutoplay, trackId, listenedSec, nowIso, nowIso, trackId)
-      .run();
+    if (isOwnerRow === 0) {
+      await env.DB.prepare(
+        `UPDATE music_map_track_totals
+         SET total_plays = total_plays + 1,
+             manual_plays = manual_plays + ?,
+             autoplay_plays = autoplay_plays + ?,
+             unique_listeners = (SELECT COUNT(*) FROM music_map_track_listeners WHERE track_id = ? AND is_owner = 0),
+             total_listen_sec = ROUND(total_listen_sec + ?, 2),
+             last_played_at = ?,
+             updated_at = ?
+         WHERE track_id = ?`
+      )
+        .bind(isManual, isAutoplay, trackId, listenedSec, nowIso, nowIso, trackId)
+        .run();
+    }
   }
 
   await env.DB.prepare(
     `INSERT INTO music_map_events
-       (track_id, track_title, era, event_type, format, source, play_id, listened_sec, session_hash, ip_hash, country, referrer, note, created_at)
-     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
+       (track_id, track_title, era, event_type, format, source, play_id, listened_sec, session_hash, is_owner, ip_hash, country, referrer, note, created_at)
+     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
   )
     .bind(
       trackId,
@@ -1045,6 +1133,7 @@ async function handlePostEvent(request, env, ctx, corsHeaders) {
       playId,
       listenedSec,
       sessionHash,
+      isOwnerRow,
       ipHash,
       country,
       clientReferrer,
@@ -1076,8 +1165,8 @@ async function handlePostEvent(request, env, ctx, corsHeaders) {
     total_listen_sec: 0,
   };
 
-  // Strictly NEVER trigger email notifications on play / unstar events
-  if (eventType === "star" || eventType === "download" || eventType === "request") {
+  // Strictly NEVER trigger email notifications on play / unstar events OR on owner-session activity (is_owner = 1)
+  if (isOwnerRow === 0 && (eventType === "star" || eventType === "download" || eventType === "request")) {
     const eventRecord = {
       track_id: trackId,
       track_title: trackTitle,
@@ -1107,6 +1196,7 @@ async function handlePostEvent(request, env, ctx, corsHeaders) {
       ok: true,
       track_id: trackId,
       event_type: eventType,
+      is_owner: Boolean(isOwnerRow),
       active_stars: Number(totals.active_stars || 0),
       total_downloads: Number(totals.total_downloads || 0),
       mp3_downloads: Number(totals.mp3_downloads || 0),
@@ -1160,7 +1250,79 @@ function computePopularityScore({
   return Math.round(raw * 100) / 100;
 }
 
+function normalizeAudience(raw) {
+  return String(raw || "visitors").toLowerCase() === "owner" ? "owner" : "visitors";
+}
+
+const OWNER_TOTALS_CTE_BODY = `
+  owner_ev_all AS (
+    SELECT
+      track_id,
+      MAX(track_title) AS track_title,
+      MAX(CASE WHEN era != '' THEN era ELSE NULL END) AS era,
+      SUM(CASE WHEN event_type = 'star' THEN 1 ELSE 0 END) AS total_star_events,
+      SUM(CASE WHEN event_type = 'download' THEN 1 ELSE 0 END) AS total_downloads,
+      SUM(CASE WHEN event_type = 'download' AND format IN ('mp3', 'mp3_320') THEN 1 ELSE 0 END) AS mp3_downloads,
+      SUM(CASE WHEN event_type = 'download' AND format = 'flac' THEN 1 ELSE 0 END) AS flac_downloads,
+      SUM(CASE WHEN event_type = 'request' THEN 1 ELSE 0 END) AS total_requests,
+      SUM(CASE WHEN event_type = 'play' THEN 1 ELSE 0 END) AS total_plays,
+      SUM(CASE WHEN event_type = 'play' AND source != 'autoplay' THEN 1 ELSE 0 END) AS manual_plays,
+      SUM(CASE WHEN event_type = 'play' AND source = 'autoplay' THEN 1 ELSE 0 END) AS autoplay_plays,
+      COUNT(DISTINCT CASE WHEN event_type = 'play' THEN session_hash END) AS unique_listeners,
+      ROUND(COALESCE(SUM(CASE WHEN event_type = 'play' THEN listened_sec ELSE 0 END), 0), 2) AS total_listen_sec,
+      MAX(CASE WHEN event_type = 'star' THEN created_at END) AS last_starred_at,
+      MAX(CASE WHEN event_type = 'download' THEN created_at END) AS last_downloaded_at,
+      MAX(CASE WHEN event_type = 'play' THEN created_at END) AS last_played_at,
+      MAX(created_at) AS updated_at
+    FROM music_map_events
+    WHERE is_owner = 1
+    GROUP BY track_id
+  ),
+  owner_stars_all AS (
+    SELECT
+      track_id,
+      MAX(track_title) AS star_title,
+      MAX(CASE WHEN era != '' THEN era ELSE NULL END) AS star_era,
+      COUNT(*) AS active_stars,
+      MAX(starred_at) AS latest_star_at
+    FROM music_map_track_stars
+    WHERE is_owner = 1
+    GROUP BY track_id
+  ),
+  owner_track_ids AS (
+    SELECT track_id FROM owner_ev_all
+    UNION
+    SELECT track_id FROM owner_stars_all
+  ),
+  owner_totals AS (
+    SELECT
+      ids.track_id,
+      COALESCE(e.track_title, s.star_title, ids.track_id) AS track_title,
+      COALESCE(e.era, s.star_era, '') AS era,
+      COALESCE(s.active_stars, 0) AS active_stars,
+      COALESCE(e.total_star_events, 0) AS total_star_events,
+      COALESCE(e.total_downloads, 0) AS total_downloads,
+      COALESCE(e.mp3_downloads, 0) AS mp3_downloads,
+      COALESCE(e.flac_downloads, 0) AS flac_downloads,
+      COALESCE(e.total_requests, 0) AS total_requests,
+      COALESCE(e.total_plays, 0) AS total_plays,
+      COALESCE(e.manual_plays, 0) AS manual_plays,
+      COALESCE(e.autoplay_plays, 0) AS autoplay_plays,
+      COALESCE(e.unique_listeners, 0) AS unique_listeners,
+      COALESCE(e.total_listen_sec, 0) AS total_listen_sec,
+      COALESCE(e.last_starred_at, s.latest_star_at) AS last_starred_at,
+      e.last_downloaded_at,
+      e.last_played_at,
+      COALESCE(e.updated_at, s.latest_star_at) AS updated_at
+    FROM owner_track_ids ids
+    LEFT JOIN owner_ev_all e ON e.track_id = ids.track_id
+    LEFT JOIN owner_stars_all s ON s.track_id = ids.track_id
+  )
+`;
+
 async function handleGetPopular(request, url, env, corsHeaders) {
+  const audience = normalizeAudience(url.searchParams.get("audience"));
+  const isOwnerVal = audience === "owner" ? 1 : 0;
   const rangeKey = normalizeRangeKey(url.searchParams.get("range"));
   const rawLimit = parseInt(url.searchParams.get("limit") || "200", 10);
   const limit = Math.max(1, Math.min(600, Number.isFinite(rawLimit) ? rawLimit : 200));
@@ -1168,7 +1330,7 @@ async function handleGetPopular(request, url, env, corsHeaders) {
     url.searchParams.get("fresh") === "1" ||
     /(no-cache|no-store)/i.test(request.headers.get("cache-control") || "");
 
-  const cacheKey = `${rangeKey}:${limit}`;
+  const cacheKey = `${audience}:${rangeKey}:${limit}`;
   const nowMs = Date.now();
   if (!bypassCache && popularCache.has(cacheKey)) {
     const hit = popularCache.get(cacheKey);
@@ -1193,10 +1355,14 @@ async function handleGetPopular(request, url, env, corsHeaders) {
     downloads: 0,
   };
 
+  const totalsSourceSql = audience === "owner" ? "owner_totals" : "music_map_track_totals";
+  const allTimePrefixCte = audience === "owner" ? `WITH ${OWNER_TOTALS_CTE_BODY}` : "";
+
   if (rangeKey === "all") {
     const [rowsRes, uniqueRow] = await Promise.all([
       env.DB.prepare(
-        `SELECT
+        `${allTimePrefixCte}
+         SELECT
            track_id,
            track_title,
            era,
@@ -1214,7 +1380,7 @@ async function handleGetPopular(request, url, env, corsHeaders) {
            last_downloaded_at,
            last_played_at,
            updated_at
-         FROM music_map_track_totals
+         FROM ${totalsSourceSql}
          WHERE (active_stars > 0 OR total_downloads > 0 OR total_plays > 0)
          ORDER BY (active_stars * 5.0 + total_downloads * 4.0 + unique_listeners * 2.0 + manual_plays * 1.5 + autoplay_plays * 0.5) DESC,
                   total_plays DESC,
@@ -1226,8 +1392,12 @@ async function handleGetPopular(request, url, env, corsHeaders) {
         .bind(limit)
         .all(),
       env.DB.prepare(
-        `SELECT COUNT(DISTINCT session_hash) AS unique_listeners FROM music_map_track_listeners`
-      ).first(),
+        `SELECT COUNT(DISTINCT session_hash) AS unique_listeners
+         FROM music_map_track_listeners
+         WHERE is_owner = ?`
+      )
+        .bind(isOwnerVal)
+        .first(),
     ]);
 
     const rawRows = (rowsRes && rowsRes.results) || [];
@@ -1284,9 +1454,11 @@ async function handleGetPopular(request, url, env, corsHeaders) {
     summary.unique_listeners = Number((uniqueRow && uniqueRow.unique_listeners) || 0);
   } else {
     const sinceIso = rangeToSinceIso(rangeKey);
+    const windowCtePrefix = audience === "owner" ? `WITH ${OWNER_TOTALS_CTE_BODY},` : "WITH";
     const [rowsRes, uniqueWinRow] = await Promise.all([
       env.DB.prepare(
-        `WITH win_events AS (
+        `${windowCtePrefix}
+         win_events AS (
            SELECT
              track_id,
              SUM(CASE WHEN event_type = 'download' THEN 1 ELSE 0 END) AS win_downloads,
@@ -1298,13 +1470,13 @@ async function handleGetPopular(request, url, env, corsHeaders) {
              COUNT(DISTINCT CASE WHEN event_type = 'play' THEN session_hash END) AS win_unique_listeners,
              ROUND(COALESCE(SUM(CASE WHEN event_type = 'play' THEN listened_sec ELSE 0 END), 0), 2) AS win_listen_sec
            FROM music_map_events
-           WHERE created_at >= ?
+           WHERE is_owner = ? AND created_at >= ?
            GROUP BY track_id
          ),
          win_stars AS (
            SELECT track_id, COUNT(*) AS win_stars
            FROM music_map_track_stars
-           WHERE starred_at >= ?
+           WHERE is_owner = ? AND starred_at >= ?
            GROUP BY track_id
          )
          SELECT
@@ -1333,7 +1505,7 @@ async function handleGetPopular(request, url, env, corsHeaders) {
            COALESCE(we.win_autoplay_plays, 0) AS win_autoplay_plays,
            COALESCE(we.win_unique_listeners, 0) AS win_unique_listeners,
            COALESCE(we.win_listen_sec, 0) AS win_listen_sec
-         FROM music_map_track_totals t
+         FROM ${totalsSourceSql} t
          LEFT JOIN win_events we ON we.track_id = t.track_id
          LEFT JOIN win_stars ws ON ws.track_id = t.track_id
          WHERE (COALESCE(ws.win_stars, 0) > 0 OR COALESCE(we.win_downloads, 0) > 0 OR COALESCE(we.win_plays, 0) > 0)
@@ -1344,14 +1516,14 @@ async function handleGetPopular(request, url, env, corsHeaders) {
                   t.updated_at DESC
          LIMIT ?`
       )
-        .bind(sinceIso, sinceIso, limit)
+        .bind(isOwnerVal, sinceIso, isOwnerVal, sinceIso, limit)
         .all(),
       env.DB.prepare(
         `SELECT COUNT(DISTINCT session_hash) AS unique_listeners
          FROM music_map_events
-         WHERE event_type = 'play' AND created_at >= ?`
+         WHERE is_owner = ? AND event_type = 'play' AND created_at >= ?`
       )
-        .bind(sinceIso)
+        .bind(isOwnerVal, sinceIso)
         .first(),
     ]);
 
@@ -1419,6 +1591,7 @@ async function handleGetPopular(request, url, env, corsHeaders) {
   const payload = {
     ok: true,
     generated_at: generatedAt,
+    audience,
     range: rangeKey,
     formula: "active_stars*5 + total_downloads*4 + unique_listeners*2 + manual_plays*1.5 + autoplay_plays*0.5",
     summary,
@@ -1432,20 +1605,27 @@ async function handleGetPopular(request, url, env, corsHeaders) {
   popularCache.set(cacheKey, { cachedAtMs: nowMs, payload });
 
   return jsonResponse(payload, 200, corsHeaders, {
-    "Cache-Control": bypassCache ? "no-store" : "public, max-age=15, stale-while-revalidate=45",
+    "Cache-Control": bypassCache || audience === "owner" ? "no-store" : "public, max-age=15, stale-while-revalidate=45",
   });
 }
 
 async function handleGetHotlist(url, env, corsHeaders) {
+  const audience = normalizeAudience(url.searchParams.get("audience"));
+  const isOwnerVal = audience === "owner" ? 1 : 0;
   const rangeKey = normalizeRangeKey(url.searchParams.get("range"));
   const rawLimit = parseInt(url.searchParams.get("limit") || "40", 10);
   const limit = Math.max(1, Math.min(100, Number.isFinite(rawLimit) ? rawLimit : 40));
   const sinceIso = rangeToSinceIso(rangeKey);
   const generatedAt = new Date().toISOString().replace(/\.\d{3}Z$/, "Z");
 
+  const totalsSourceSql = audience === "owner" ? "owner_totals" : "music_map_track_totals";
+  const aggCtePrefix = audience === "owner" ? `WITH ${OWNER_TOTALS_CTE_BODY}` : "";
+  const topCtePrefix = audience === "owner" ? `WITH ${OWNER_TOTALS_CTE_BODY},` : "WITH";
+
   const [aggTotals, windowAgg, uniqueRow, uniqueListenersRow, topRows, recentRows] = await Promise.all([
     env.DB.prepare(
-      `SELECT
+      `${aggCtePrefix}
+       SELECT
          COALESCE(SUM(active_stars), 0) AS active_stars,
          COALESCE(SUM(total_star_events), 0) AS total_star_events,
          COALESCE(SUM(total_downloads), 0) AS total_downloads,
@@ -1456,12 +1636,14 @@ async function handleGetHotlist(url, env, corsHeaders) {
          COALESCE(SUM(manual_plays), 0) AS manual_plays,
          COALESCE(SUM(autoplay_plays), 0) AS autoplay_plays,
          ROUND(COALESCE(SUM(total_listen_sec), 0), 2) AS total_listen_sec
-       FROM music_map_track_totals`
+       FROM ${totalsSourceSql}`
     ).first(),
     env.DB.prepare(
       `SELECT
-         (SELECT COUNT(*) FROM music_map_track_stars WHERE starred_at >= ?) AS window_stars,
+         (SELECT COUNT(*) FROM music_map_track_stars WHERE is_owner = ? AND starred_at >= ?) AS window_stars,
          COALESCE(SUM(CASE WHEN event_type = 'download' THEN 1 ELSE 0 END), 0) AS window_downloads,
+         COALESCE(SUM(CASE WHEN event_type = 'download' AND format IN ('mp3', 'mp3_320') THEN 1 ELSE 0 END), 0) AS window_mp3_downloads,
+         COALESCE(SUM(CASE WHEN event_type = 'download' AND format = 'flac' THEN 1 ELSE 0 END), 0) AS window_flac_downloads,
          COALESCE(SUM(CASE WHEN event_type = 'request' THEN 1 ELSE 0 END), 0) AS window_requests,
          COALESCE(SUM(CASE WHEN event_type = 'play' THEN 1 ELSE 0 END), 0) AS window_plays,
          COALESCE(SUM(CASE WHEN event_type = 'play' AND source != 'autoplay' THEN 1 ELSE 0 END), 0) AS window_manual_plays,
@@ -1469,18 +1651,27 @@ async function handleGetHotlist(url, env, corsHeaders) {
          COUNT(DISTINCT CASE WHEN event_type = 'play' THEN session_hash END) AS window_unique_listeners,
          ROUND(COALESCE(SUM(CASE WHEN event_type = 'play' THEN listened_sec ELSE 0 END), 0), 2) AS window_listen_sec
        FROM music_map_events
-       WHERE created_at >= ?`
+       WHERE is_owner = ? AND created_at >= ?`
     )
-      .bind(sinceIso, sinceIso)
+      .bind(isOwnerVal, sinceIso, isOwnerVal, sinceIso)
       .first(),
     env.DB.prepare(
-      `SELECT COUNT(DISTINCT session_hash) AS unique_visitors FROM music_map_events`
-    ).first(),
+      `SELECT COUNT(DISTINCT session_hash) AS unique_visitors
+       FROM music_map_events
+       WHERE is_owner = ?`
+    )
+      .bind(isOwnerVal)
+      .first(),
     env.DB.prepare(
-      `SELECT COUNT(DISTINCT session_hash) AS unique_listeners FROM music_map_track_listeners`
-    ).first(),
+      `SELECT COUNT(DISTINCT session_hash) AS unique_listeners
+       FROM music_map_track_listeners
+       WHERE is_owner = ?`
+    )
+      .bind(isOwnerVal)
+      .first(),
     env.DB.prepare(
-      `WITH win_events AS (
+      `${topCtePrefix}
+       win_events AS (
          SELECT
            track_id,
            SUM(CASE WHEN event_type = 'download' THEN 1 ELSE 0 END) AS window_downloads,
@@ -1490,13 +1681,13 @@ async function handleGetHotlist(url, env, corsHeaders) {
            COUNT(DISTINCT CASE WHEN event_type = 'play' THEN session_hash END) AS window_unique_listeners,
            ROUND(COALESCE(SUM(CASE WHEN event_type = 'play' THEN listened_sec ELSE 0 END), 0), 2) AS window_listen_sec
          FROM music_map_events
-         WHERE created_at >= ?
+         WHERE is_owner = ? AND created_at >= ?
          GROUP BY track_id
        ),
        win_stars AS (
          SELECT track_id, COUNT(*) AS window_stars
          FROM music_map_track_stars
-         WHERE starred_at >= ?
+         WHERE is_owner = ? AND starred_at >= ?
          GROUP BY track_id
        )
        SELECT
@@ -1524,7 +1715,7 @@ async function handleGetHotlist(url, env, corsHeaders) {
          COALESCE(we.window_autoplay_plays, 0) AS window_autoplay_plays,
          COALESCE(we.window_unique_listeners, 0) AS window_unique_listeners,
          COALESCE(we.window_listen_sec, 0) AS window_listen_sec
-       FROM music_map_track_totals t
+       FROM ${totalsSourceSql} t
        LEFT JOIN win_events we ON we.track_id = t.track_id
        LEFT JOIN win_stars ws ON ws.track_id = t.track_id
        WHERE (t.active_stars > 0 OR t.total_downloads > 0 OR t.total_requests > 0 OR t.total_plays > 0)
@@ -1535,15 +1726,17 @@ async function handleGetHotlist(url, env, corsHeaders) {
                 t.updated_at DESC
        LIMIT ?`
     )
-      .bind(sinceIso, sinceIso, limit)
+      .bind(isOwnerVal, sinceIso, isOwnerVal, sinceIso, limit)
       .all(),
     env.DB.prepare(
       `SELECT id, event_type, track_id, track_title, era, format, source, listened_sec, country, created_at
        FROM music_map_events
-       WHERE event_type IN ('star', 'download', 'request', 'play')
+       WHERE is_owner = ? AND event_type IN ('star', 'download', 'request', 'play')
        ORDER BY id DESC
        LIMIT 40`
-    ).all(),
+    )
+      .bind(isOwnerVal)
+      .all(),
   ]);
 
   const topTracks = ((topRows && topRows.results) || []).map((r) => {
@@ -1624,6 +1817,7 @@ async function handleGetHotlist(url, env, corsHeaders) {
     {
       ok: true,
       generated_at: generatedAt,
+      audience,
       range: rangeKey,
       summary: {
         active_stars: Number((aggTotals && aggTotals.active_stars) || 0),
@@ -1640,6 +1834,8 @@ async function handleGetHotlist(url, env, corsHeaders) {
         unique_listeners: Number((uniqueListenersRow && uniqueListenersRow.unique_listeners) || 0),
         window_stars: Number((windowAgg && windowAgg.window_stars) || 0),
         window_downloads: Number((windowAgg && windowAgg.window_downloads) || 0),
+        window_mp3_downloads: Number((windowAgg && windowAgg.window_mp3_downloads) || 0),
+        window_flac_downloads: Number((windowAgg && windowAgg.window_flac_downloads) || 0),
         window_requests: Number((windowAgg && windowAgg.window_requests) || 0),
         window_plays: Number((windowAgg && windowAgg.window_plays) || 0),
         window_manual_plays: Number((windowAgg && windowAgg.window_manual_plays) || 0),
@@ -1649,6 +1845,207 @@ async function handleGetHotlist(url, env, corsHeaders) {
       },
       top_tracks: topTracks,
       recent_events: recentEvents,
+    },
+    200,
+    corsHeaders
+  );
+}
+
+async function recomputeVisitorTrackTotals(db, trackIds) {
+  if (!trackIds || trackIds.length === 0) return;
+  const nowIso = new Date().toISOString().replace(/\.\d{3}Z$/, "Z");
+  const stmts = [];
+  for (const trackId of trackIds) {
+    stmts.push(
+      db.prepare(
+        `UPDATE music_map_track_totals
+         SET active_stars = (SELECT COUNT(*) FROM music_map_track_stars s WHERE s.track_id = music_map_track_totals.track_id AND s.is_owner = 0),
+             total_star_events = (SELECT COUNT(*) FROM music_map_events e WHERE e.track_id = music_map_track_totals.track_id AND e.is_owner = 0 AND e.event_type = 'star'),
+             total_downloads = (SELECT COUNT(*) FROM music_map_events e WHERE e.track_id = music_map_track_totals.track_id AND e.is_owner = 0 AND e.event_type = 'download'),
+             mp3_downloads = (SELECT COUNT(*) FROM music_map_events e WHERE e.track_id = music_map_track_totals.track_id AND e.is_owner = 0 AND e.event_type = 'download' AND e.format IN ('mp3', 'mp3_320')),
+             flac_downloads = (SELECT COUNT(*) FROM music_map_events e WHERE e.track_id = music_map_track_totals.track_id AND e.is_owner = 0 AND e.event_type = 'download' AND e.format = 'flac'),
+             total_requests = (SELECT COUNT(*) FROM music_map_events e WHERE e.track_id = music_map_track_totals.track_id AND e.is_owner = 0 AND e.event_type = 'request'),
+             total_plays = (SELECT COUNT(*) FROM music_map_events e WHERE e.track_id = music_map_track_totals.track_id AND e.is_owner = 0 AND e.event_type = 'play'),
+             manual_plays = (SELECT COUNT(*) FROM music_map_events e WHERE e.track_id = music_map_track_totals.track_id AND e.is_owner = 0 AND e.event_type = 'play' AND e.source != 'autoplay'),
+             autoplay_plays = (SELECT COUNT(*) FROM music_map_events e WHERE e.track_id = music_map_track_totals.track_id AND e.is_owner = 0 AND e.event_type = 'play' AND e.source = 'autoplay'),
+             unique_listeners = (SELECT COUNT(*) FROM music_map_track_listeners l WHERE l.track_id = music_map_track_totals.track_id AND l.is_owner = 0),
+             total_listen_sec = (SELECT ROUND(COALESCE(SUM(e.listened_sec), 0), 2) FROM music_map_events e WHERE e.track_id = music_map_track_totals.track_id AND e.is_owner = 0 AND e.event_type = 'play'),
+             last_starred_at = (SELECT MAX(e.created_at) FROM music_map_events e WHERE e.track_id = music_map_track_totals.track_id AND e.is_owner = 0 AND e.event_type = 'star'),
+             last_downloaded_at = (SELECT MAX(e.created_at) FROM music_map_events e WHERE e.track_id = music_map_track_totals.track_id AND e.is_owner = 0 AND e.event_type = 'download'),
+             last_played_at = (SELECT MAX(e.created_at) FROM music_map_events e WHERE e.track_id = music_map_track_totals.track_id AND e.is_owner = 0 AND e.event_type = 'play'),
+             updated_at = ?
+         WHERE track_id = ?`
+      ).bind(nowIso, trackId)
+    );
+    stmts.push(
+      db.prepare(
+        `DELETE FROM music_map_track_totals
+         WHERE track_id = ?
+           AND active_stars = 0
+           AND total_star_events = 0
+           AND total_downloads = 0
+           AND total_requests = 0
+           AND total_plays = 0`
+      ).bind(trackId)
+    );
+  }
+  await db.batch(stmts);
+}
+
+async function parseSessionIdPayload(request, corsHeaders) {
+  const contentLength = Number(request.headers.get("content-length") || 0);
+  if (contentLength > 4096) {
+    return { errorResp: jsonResponse({ ok: false, error: "Payload too large" }, 413, corsHeaders) };
+  }
+  let body;
+  try {
+    const rawText = await request.text();
+    if (rawText.length > 4096) {
+      return { errorResp: jsonResponse({ ok: false, error: "Payload too large" }, 413, corsHeaders) };
+    }
+    body = JSON.parse(rawText);
+  } catch (_) {
+    return { errorResp: jsonResponse({ ok: false, error: "Invalid JSON body" }, 400, corsHeaders) };
+  }
+
+  const rawSessionId = stripCrLf((body && (body.session_id || body.visitor_seed)) || "", 128);
+  if (!rawSessionId || !VISITOR_SEED_RE.test(rawSessionId)) {
+    return { errorResp: jsonResponse({ ok: false, error: "Valid session_id is required" }, 400, corsHeaders) };
+  }
+
+  const domainInput = `btmm-session-v1:${rawSessionId}`;
+  const primaryHash = (await sha256Hex(domainInput, 24)).toLowerCase();
+  const fallbackHash = fallbackHash24(domainInput).toLowerCase();
+  return { body, rawSessionId, primaryHash, fallbackHash };
+}
+
+async function findAffectedSessionTracks(db, primaryHash, fallbackHash) {
+  const affectedRes = await db
+    .prepare(
+      `SELECT DISTINCT track_id FROM (
+         SELECT track_id FROM music_map_events WHERE session_hash IN (?, ?)
+         UNION
+         SELECT track_id FROM music_map_track_stars WHERE session_hash IN (?, ?)
+         UNION
+         SELECT track_id FROM music_map_track_listeners WHERE session_hash IN (?, ?)
+       )`
+    )
+    .bind(primaryHash, fallbackHash, primaryHash, fallbackHash, primaryHash, fallbackHash)
+    .all();
+
+  return ((affectedRes && affectedRes.results) || [])
+    .map((r) => String((r && r.track_id) || "").trim())
+    .filter(Boolean);
+}
+
+async function handleEnrollOwnerSession(request, env, corsHeaders) {
+  const parsed = await parseSessionIdPayload(request, corsHeaders);
+  if (parsed.errorResp) return parsed.errorResp;
+  const { body, primaryHash, fallbackHash } = parsed;
+  const targetIsOwner = body && body.is_owner === false ? 0 : 1;
+  const nowIso = new Date().toISOString().replace(/\.\d{3}Z$/, "Z");
+
+  let migratedEvents = 0;
+  let affectedTrackIds = [];
+
+  if (targetIsOwner === 1) {
+    affectedTrackIds = await findAffectedSessionTracks(env.DB, primaryHash, fallbackHash);
+    const batchRes = await env.DB.batch([
+      env.DB.prepare(
+        `INSERT OR IGNORE INTO music_map_owner_sessions (session_hash, created_at) VALUES (?, ?)`
+      ).bind(primaryHash, nowIso),
+      env.DB.prepare(
+        `INSERT OR IGNORE INTO music_map_owner_sessions (session_hash, created_at) VALUES (?, ?)`
+      ).bind(fallbackHash, nowIso),
+      env.DB.prepare(
+        `UPDATE music_map_events SET is_owner = 1 WHERE session_hash IN (?, ?) AND is_owner = 0`
+      ).bind(primaryHash, fallbackHash),
+      env.DB.prepare(
+        `UPDATE music_map_track_stars SET is_owner = 1 WHERE session_hash IN (?, ?) AND is_owner = 0`
+      ).bind(primaryHash, fallbackHash),
+      env.DB.prepare(
+        `UPDATE music_map_track_listeners SET is_owner = 1 WHERE session_hash IN (?, ?) AND is_owner = 0`
+      ).bind(primaryHash, fallbackHash),
+    ]);
+    migratedEvents = Number((batchRes[2] && batchRes[2].meta && batchRes[2].meta.changes) || 0);
+    await recomputeVisitorTrackTotals(env.DB, affectedTrackIds);
+  } else {
+    await env.DB.prepare(`DELETE FROM music_map_owner_sessions WHERE session_hash IN (?, ?)`).bind(
+      primaryHash,
+      fallbackHash
+    ).run();
+  }
+
+  popularCache.clear();
+
+  return jsonResponse(
+    {
+      ok: true,
+      is_owner: Boolean(targetIsOwner),
+      migrated_events: migratedEvents,
+      affected_tracks: affectedTrackIds.length,
+    },
+    200,
+    corsHeaders
+  );
+}
+
+async function handlePurgeOwnSession(request, env, corsHeaders) {
+  const parsed = await parseSessionIdPayload(request, corsHeaders);
+  if (parsed.errorResp) return parsed.errorResp;
+  const { body, primaryHash, fallbackHash } = parsed;
+
+  const affectedTrackIds = await findAffectedSessionTracks(env.DB, primaryHash, fallbackHash);
+
+  const stmts = [
+    env.DB.prepare(`DELETE FROM music_map_track_stars WHERE session_hash IN (?, ?)`).bind(
+      primaryHash,
+      fallbackHash
+    ),
+    env.DB.prepare(`DELETE FROM music_map_track_listeners WHERE session_hash IN (?, ?)`).bind(
+      primaryHash,
+      fallbackHash
+    ),
+    env.DB.prepare(
+      `DELETE FROM music_map_events
+       WHERE session_hash IN (?, ?) AND event_type IN ('play', 'star', 'unstar', 'download')`
+    ).bind(primaryHash, fallbackHash),
+    env.DB.prepare(
+      `DELETE FROM music_map_email_dedup
+       WHERE dedup_key LIKE ? OR dedup_key LIKE ? OR dedup_key LIKE ? OR dedup_key LIKE ?`
+    ).bind(
+      `star:${primaryHash}:%`,
+      `download:${primaryHash}:%`,
+      `star:${fallbackHash}:%`,
+      `download:${fallbackHash}:%`
+    ),
+  ];
+
+  if (body && body.unenroll === true) {
+    stmts.push(
+      env.DB.prepare(`DELETE FROM music_map_owner_sessions WHERE session_hash IN (?, ?)`).bind(
+        primaryHash,
+        fallbackHash
+      )
+    );
+  }
+
+  const delBatch = await env.DB.batch(stmts);
+  const deletedStars = Number((delBatch[0] && delBatch[0].meta && delBatch[0].meta.changes) || 0);
+  const deletedListeners = Number((delBatch[1] && delBatch[1].meta && delBatch[1].meta.changes) || 0);
+  const deletedEvents = Number((delBatch[2] && delBatch[2].meta && delBatch[2].meta.changes) || 0);
+
+  await recomputeVisitorTrackTotals(env.DB, affectedTrackIds);
+  popularCache.clear();
+
+  return jsonResponse(
+    {
+      ok: true,
+      purged: deletedEvents + deletedStars + deletedListeners > 0,
+      deleted_events: deletedEvents,
+      deleted_stars: deletedStars,
+      deleted_listeners: deletedListeners,
+      affected_tracks: affectedTrackIds.length,
     },
     200,
     corsHeaders
@@ -1699,6 +2096,14 @@ export default {
 
     if (url.pathname === "/api/events" && request.method === "POST") {
       return handlePostEvent(request, env, ctx, corsHeaders);
+    }
+
+    if (url.pathname === "/api/enroll-owner-session" && request.method === "POST") {
+      return handleEnrollOwnerSession(request, env, corsHeaders);
+    }
+
+    if (url.pathname === "/api/purge-own-session" && request.method === "POST") {
+      return handlePurgeOwnSession(request, env, corsHeaders);
     }
 
     if (url.pathname === "/api/popular" && request.method === "GET") {

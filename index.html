@@ -97,7 +97,49 @@
   <link rel="stylesheet" href="css/map.css?v=20261125zb" />
   <link rel="stylesheet" href="css/views.css?v=20261125p2" />
   <link rel="stylesheet" href="css/theme-personal.css?v=20261125p2" />
-  <script data-goatcounter="https://billtribble-com.goatcounter.com/count" async src="https://gc.zgo.at/count.js"></script>
+  <script>
+    (function () {
+      var ignored = false;
+      try {
+        var u = new URL(window.location.href);
+        var ownerParam = u.searchParams.get("owner");
+        if (ownerParam === "1") {
+          localStorage.setItem("bt_ignore_analytics", "1");
+          localStorage.setItem("skipgc", "t");
+          window.__BT_OWNER_URL_OVERRIDE__ = true;
+          u.searchParams.delete("owner");
+          if (window.history && window.history.replaceState) {
+            window.history.replaceState(null, "", u.pathname + u.search + u.hash);
+          }
+        } else if (ownerParam === "0") {
+          localStorage.setItem("bt_ignore_analytics", "0");
+          localStorage.removeItem("skipgc");
+          window.__BT_OWNER_URL_OVERRIDE__ = false;
+          u.searchParams.delete("owner");
+          if (window.history && window.history.replaceState) {
+            window.history.replaceState(null, "", u.pathname + u.search + u.hash);
+          }
+        }
+        if (localStorage.getItem("bt_ignore_analytics") === "1") {
+          if (localStorage.getItem("skipgc") !== "t") {
+            localStorage.setItem("skipgc", "t");
+          }
+          ignored = true;
+        } else if (localStorage.getItem("skipgc") === "t") {
+          ignored = true;
+        }
+      } catch (_) {}
+      if (ignored) {
+        window.goatcounter = { no_onload: true, no_events: true, count: function () {} };
+      } else {
+        var gc = document.createElement("script");
+        gc.setAttribute("data-goatcounter", "https://billtribble-com.goatcounter.com/count");
+        gc.async = true;
+        gc.src = "https://gc.zgo.at/count.js";
+        document.head.appendChild(gc);
+      }
+    })();
+  </script>
 </head>
 <body>
   <div id="boot-banner" class="boot-banner" hidden></div>
@@ -207,7 +249,7 @@
   </div>
 
   <script src="js/data.js?v=20261125zb"></script>
-  <script src="js/events-client.js?v=20261125y"></script>
+  <script src="js/events-client.js?v=20261125zc"></script>
   <script src="js/audio-deck.js?v=20261125z"></script>
   <script src="js/timeline-era.js?v=20261125y"></script>
   <script src="js/player-card.js?v=20261125p2"></script>

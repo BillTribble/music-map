@@ -4,6 +4,8 @@
   "use strict";
 
   const VISITOR_SEED_KEY = "btmm.visitor_seed";
+  const IGNORE_ANALYTICS_KEY = "bt_ignore_analytics";
+  const SKIPGC_STORAGE_KEY = "skipgc";
   const STAR_STORAGE_KEY = "btmm.starred";
   const LEGACY_STAR_KEY = "me.starred";
   const STAR_DEBOUNCE_MS = 650;
@@ -60,6 +62,114 @@
       } catch (_) {}
     }
     return DEFAULT_API_BASE.replace(/\/+$/, "");
+  }
+
+  function isOwnerDevice() {
+    try {
+      return localStorage.getItem(IGNORE_ANALYTICS_KEY) === "1";
+    } catch (_) {
+      return false;
+    }
+  }
+
+  function syncGoatCounterIgnoreGuard() {
+    if (typeof window === "undefined") return;
+    try {
+      const ignored =
+        localStorage.getItem(IGNORE_ANALYTICS_KEY) === "1" ||
+        localStorage.getItem(SKIPGC_STORAGE_KEY) === "t";
+      if (localStorage.getItem(IGNORE_ANALYTICS_KEY) === "1" && localStorage.getItem(SKIPGC_STORAGE_KEY) !== "t") {
+        localStorage.setItem(SKIPGC_STORAGE_KEY, "t");
+      }
+      if (ignored) {
+        if (!window.goatcounter || typeof window.goatcounter.count !== "function") {
+          window.goatcounter = {
+            no_onload: true,
+            no_events: true,
+            count: function () {},
+          };
+        }
+      }
+    } catch (_) {}
+  }
+
+  async function enrollOwnerSession(isOwner = true) {
+    const base = getApiBase();
+    if (!base) return null;
+    const seed = getOrCreateVisitorSeed();
+    if (!seed || seed.length < 16) return null;
+    try {
+      const resp = await fetch(`${base}/api/enroll-owner-session`, {
+        method: "POST",
+        mode: "cors",
+        credentials: "omit",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ session_id: seed, is_owner: Boolean(isOwner) }),
+      });
+      if (!resp.ok) return null;
+      return await resp.json().catch(() => null);
+    } catch (_) {
+      return null;
+    }
+  }
+
+  async function purgeOwnSession(opts = {}) {
+    const base = getApiBase();
+    if (!base) return null;
+    let seed = "";
+    try {
+      seed = localStorage.getItem(VISITOR_SEED_KEY) || "";
+    } catch (_) {}
+    if (!seed || seed.length < 16) {
+      return { ok: true, purged: false, deleted_events: 0 };
+    }
+    try {
+      const resp = await fetch(`${base}/api/purge-own-session`, {
+        method: "POST",
+        mode: "cors",
+        credentials: "omit",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ session_id: seed, unenroll: Boolean(opts && opts.unenroll) }),
+      });
+      if (!resp.ok) return null;
+      return await resp.json().catch(() => null);
+    } catch (_) {
+      return null;
+    }
+  }
+
+  function applyOwnerUrlOverride() {
+    if (typeof window === "undefined") return;
+    let explicitOwnerToggle = null;
+    try {
+      const u = new URL(window.location.href);
+      const ownerParam = u.searchParams.get("owner");
+      if (ownerParam === "1") {
+        localStorage.setItem(IGNORE_ANALYTICS_KEY, "1");
+        localStorage.setItem(SKIPGC_STORAGE_KEY, "t");
+        explicitOwnerToggle = true;
+        u.searchParams.delete("owner");
+        if (window.history && typeof window.history.replaceState === "function") {
+          window.history.replaceState(null, "", u.pathname + u.search + u.hash);
+        }
+      } else if (ownerParam === "0") {
+        localStorage.setItem(IGNORE_ANALYTICS_KEY, "0");
+        localStorage.removeItem(SKIPGC_STORAGE_KEY);
+        explicitOwnerToggle = false;
+        u.searchParams.delete("owner");
+        if (window.history && typeof window.history.replaceState === "function") {
+          window.history.replaceState(null, "", u.pathname + u.search + u.hash);
+        }
+      }
+    } catch (_) {}
+    syncGoatCounterIgnoreGuard();
+    if (explicitOwnerToggle !== null) {
+      enrollOwnerSession(explicitOwnerToggle);
+    } else if (typeof window.__BT_OWNER_URL_OVERRIDE__ === "boolean") {
+      const target = window.__BT_OWNER_URL_OVERRIDE__;
+      delete window.__BT_OWNER_URL_OVERRIDE__;
+      enrollOwnerSession(target);
+    }
   }
 
   function fnv1aHex(str, seedInit) {
@@ -215,6 +325,7 @@
     const hash = sessionHashSync || (await ensureSessionHash());
     const bodyObj = {
       ...payload,
+      is_owner: isOwnerDevice(),
       session_hash: hash,
       referrer: (typeof document !== "undefined" && document.referrer) || "",
     };
@@ -666,9 +777,10 @@
     if (!base) return null;
     const range = encodeURIComponent(String(opts.range || "all"));
     const limit = encodeURIComponent(String(opts.limit || 200));
+    const audience = opts.audience === "owner" ? "&audience=owner" : "";
     const fresh = opts.fresh ? "&fresh=1" : "";
     try {
-      const resp = await fetch(`${base}/api/popular?range=${range}&limit=${limit}${fresh}`, {
+      const resp = await fetch(`${base}/api/popular?range=${range}&limit=${limit}${audience}${fresh}`, {
         method: "GET",
         mode: "cors",
         credentials: "omit",
@@ -681,6 +793,7 @@
   }
 
   function init() {
+    applyOwnerUrlOverride();
     hydrateCatalogIndex();
     ensureSessionHash();
     ensureAudioDeckBound();
@@ -710,6 +823,11 @@
       });
     }
     if (typeof window !== "undefined") {
+      window.addEventListener("storage", (ev) => {
+        if (!ev || !ev.key || ev.key === IGNORE_ANALYTICS_KEY || ev.key === SKIPGC_STORAGE_KEY) {
+          syncGoatCounterIgnoreGuard();
+        }
+      });
       window.addEventListener("pagehide", () => {
         flushAllPendingStars(true);
         sampleActivePlayback();
@@ -723,6 +841,11 @@
   if (typeof window !== "undefined") {
     window.BTMM_EVENTS = {
       getApiBase,
+      isOwnerDevice,
+      isAnalyticsIgnored: isOwnerDevice,
+      enrollOwnerSession,
+      purgeOwnSession,
+      getVisitorSeed: () => getOrCreateVisitorSeed(),
       recordStarToggle,
       recordDownload,
       recordRequest,
