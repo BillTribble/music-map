@@ -9,6 +9,8 @@
   const LEGACY_STAR_KEY = "me.starred";
   const REQ_EMAIL_RE = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
   const DEFAULT_PEAK_BARS = 160;
+  const EARLY_WAVE_HOVER_MAX_FRAC = 0.26;
+  const COLLAPSE_ANIM_MS = 310;
 
   // Official inline brand SVG paths (zero external icon CDNs)
   const BRAND_SVGS = {
@@ -44,6 +46,9 @@
   let isWaveScrubbing = false;
   let hasWaveDragged = false;
   let scrubFrac = null;
+  let activeScrubWrapEl = null;
+  let collapseSyncRafId = null;
+  let collapseSyncUntilMs = 0;
   let optimisticSeekTrackId = null;
   let optimisticSeekSec = null;
   let optimisticSeekUntilMs = 0;
@@ -707,48 +712,61 @@
     }
   }
 
+  function prepareCanvas2d(canvasEl, minH = 10) {
+    if (!canvasEl) return null;
+    const rect = canvasEl.getBoundingClientRect();
+    if (rect.width < 12 || rect.height < minH) return null;
+    const dpr = Math.min(3, (typeof window !== "undefined" && window.devicePixelRatio) || 1);
+    const pxW = Math.round(rect.width * dpr);
+    const pxH = Math.round(rect.height * dpr);
+    if (canvasEl.width !== pxW || canvasEl.height !== pxH) {
+      canvasEl.width = pxW;
+      canvasEl.height = pxH;
+    }
+    const ctx = canvasEl.getContext("2d");
+    if (!ctx) return null;
+    ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+    ctx.clearRect(0, 0, rect.width, rect.height);
+    return { ctx, W: rect.width, H: rect.height };
+  }
+
   function syncWaveVisuals() {
     if (!cardEl || cardEl.hidden || !selectedId || !byId.has(selectedId)) return;
     const t = byId.get(selectedId);
     const canvas = cardEl.querySelector("#mp-waveform");
+    const miniCanvas = cardEl.querySelector("#mp-mini-waveform");
     const wrapEl = cardEl.querySelector("#mp-wave-wrap");
+    const miniWrapEl = cardEl.querySelector("#mp-mini-wave-wrap");
     const timeEl = cardEl.querySelector("#mp-wave-time");
-    if (!canvas) return;
 
     const snap = readPlaybackSnapshot(t);
     if (timeEl) {
       const nextTxt = formatWaveTimeText(snap);
       if (timeEl.textContent !== nextTxt) timeEl.textContent = nextTxt;
     }
-    if (wrapEl) {
-      const vNow = String(Math.round(snap.currentTime));
-      const vMax = String(Math.round(snap.timelineDur));
-      if (wrapEl.getAttribute("aria-valuenow") !== vNow) wrapEl.setAttribute("aria-valuenow", vNow);
-      if (wrapEl.getAttribute("aria-valuemax") !== vMax) wrapEl.setAttribute("aria-valuemax", vMax);
-    }
-
-    const rect = canvas.getBoundingClientRect();
-    if (rect.width < 12 || rect.height < 12) return;
-    const dpr = Math.min(3, (typeof window !== "undefined" && window.devicePixelRatio) || 1);
-    const pxW = Math.round(rect.width * dpr);
-    const pxH = Math.round(rect.height * dpr);
-    if (canvas.width !== pxW || canvas.height !== pxH) {
-      canvas.width = pxW;
-      canvas.height = pxH;
-    }
-
-    const ctx = canvas.getContext("2d");
-    if (!ctx) return;
-    ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
-    ctx.clearRect(0, 0, rect.width, rect.height);
+    const vNow = String(Math.round(snap.currentTime));
+    const vMax = String(Math.round(snap.timelineDur));
+    [wrapEl, miniWrapEl].forEach((el) => {
+      if (!el) return;
+      if (el.getAttribute("aria-valuenow") !== vNow) el.setAttribute("aria-valuenow", vNow);
+      if (el.getAttribute("aria-valuemax") !== vMax) el.setAttribute("aria-valuemax", vMax);
+    });
 
     const pal = resolveWavePalette();
-    const W = rect.width;
-    const H = rect.height;
-    if (collapsed) {
-      drawMiniWaveform(ctx, W, H, t, snap, pal);
-      return;
+    const nowPerf = typeof performance !== "undefined" ? performance.now() : 0;
+    const isMorphing = nowPerf < collapseSyncUntilMs;
+
+    if (collapsed || isMorphing) {
+      const miniSurface = prepareCanvas2d(miniCanvas, 8);
+      if (miniSurface) {
+        drawMiniWaveform(miniSurface.ctx, miniSurface.W, miniSurface.H, t, snap, pal);
+      }
+      if (collapsed && !isMorphing) return;
     }
+
+    const expSurface = prepareCanvas2d(canvas, 8);
+    if (!expSurface) return;
+    const { ctx, W, H } = expSurface;
     const barStep = 3;
     const barW = 2;
     const sidePad = 8;
@@ -960,7 +978,7 @@
       const snap = readPlaybackSnapshot(t);
       syncWaveVisuals();
       const nowMs = typeof performance !== "undefined" ? performance.now() : 0;
-      if (snap.isPlaying || snap.isPend || isWaveScrubbing || nowMs < optimisticSeekUntilMs) {
+      if (snap.isPlaying || snap.isPend || isWaveScrubbing || nowMs < optimisticSeekUntilMs || nowMs < collapseSyncUntilMs) {
         waveRafId = requestAnimationFrame(tick);
       }
     }
@@ -1104,14 +1122,20 @@
   }
 
   function syncInPlaceButtons(t, snap) {
-    const playBtn = cardEl.querySelector("[data-player-play]");
-    if (playBtn) {
+    cardEl.querySelectorAll("[data-player-play]").forEach((playBtn) => {
       playBtn.classList.toggle("is-playing", snap.isPlaying);
       playBtn.setAttribute("aria-label", snap.isPlaying ? "Pause" : "Play");
       playBtn.title = snap.isPlaying ? "Pause (Space)" : "Play (Space)";
       const ic = playBtn.querySelector(".ms");
       if (ic) ic.textContent = snap.isPlaying ? "pause" : snap.isPend ? "hourglass_top" : "play_arrow";
-    }
+    });
+    const isStar = starred.has(t.id);
+    cardEl.querySelectorAll("[data-player-star]").forEach((starBtn) => {
+      starBtn.classList.toggle("is-starred", isStar);
+      starBtn.setAttribute("aria-pressed", String(isStar));
+      starBtn.setAttribute("aria-label", isStar ? "Unstar track" : "Star track");
+      starBtn.title = isStar ? "Remove star" : "Star track";
+    });
     const autoBtn = cardEl.querySelector("#mp-autoplay-toggle");
     if (autoBtn) {
       autoBtn.classList.toggle("is-active", snap.autoPlay);
@@ -1132,11 +1156,60 @@
     }
   }
 
+  function syncCollapseStateDom(isReqSheetOpen) {
+    if (!cardEl) return;
+    cardEl.classList.toggle("is-collapsed", collapsed);
+    cardEl.classList.toggle("mp-collapsed", collapsed);
+    cardEl.classList.toggle("is-requesting", Boolean(isReqSheetOpen));
+    const miniShell = cardEl.querySelector("#mp-mini-shell");
+    const expandShell = cardEl.querySelector("#mp-expand-shell");
+    if (miniShell) {
+      miniShell.setAttribute("aria-hidden", collapsed ? "false" : "true");
+      if ("inert" in miniShell) miniShell.inert = !collapsed;
+    }
+    if (expandShell) {
+      expandShell.setAttribute("aria-hidden", collapsed ? "true" : "false");
+      if ("inert" in expandShell) expandShell.inert = collapsed;
+      if (collapsed) {
+        const expWave = expandShell.querySelector("#mp-wave-wrap");
+        if (expWave) expWave.classList.remove("is-early-hover");
+      }
+    }
+  }
+
+  function setCollapsedState(nextCollapsed, opts = {}) {
+    const nextVal = Boolean(nextCollapsed);
+    const changed = collapsed !== nextVal;
+    const prevActive = typeof document !== "undefined" ? document.activeElement : null;
+    const hadKeyboardFocus = Boolean(
+      opts.preserveKeyboardFocus &&
+      prevActive &&
+      cardEl &&
+      cardEl.contains(prevActive)
+    );
+    collapsed = nextVal;
+    waveHoverFrac = null;
+    saveCollapsed();
+    if (changed && typeof performance !== "undefined") {
+      collapseSyncUntilMs = performance.now() + COLLAPSE_ANIM_MS;
+    }
+    render();
+    if (changed) {
+      ensureWaveRaf();
+      if (hadKeyboardFocus && cardEl) {
+        const targetBtn = cardEl.querySelector(collapsed ? "#mp-expand" : "#mp-collapse");
+        if (targetBtn && typeof targetBtn.focus === "function") {
+          try { targetBtn.focus({ preventScroll: true }); } catch (_) { targetBtn.focus(); }
+        }
+      }
+    }
+  }
+
   function render() {
     if (!cardEl || !hooks) return;
     if (!selectedId || !byId.has(selectedId)) {
       cardEl.hidden = true;
-      cardEl.classList.remove("is-requesting");
+      cardEl.classList.remove("is-requesting", "is-collapsed", "mp-collapsed");
       lastRenderedTrackId = null;
       lastRenderedCollapsed = null;
       lastRenderedFormState = "";
@@ -1153,53 +1226,22 @@
     const isReqSheetOpen = !collapsed && formOpenForId === t.id && !requestedIds.has(t.id);
     const formStateKey = `${formOpenForId || ""}|${sendingId || ""}|${reqError}|${requestedIds.has(t.id) ? 1 : 0}|${infoOpen ? 1 : 0}`;
 
-    if (
-      lastRenderedTrackId === t.id &&
-      lastRenderedCollapsed === collapsed &&
-      lastRenderedFormState === formStateKey &&
-      (collapsed ||
-        isWaveScrubbing ||
-        (formOpenForId === t.id &&
-          typeof document !== "undefined" &&
-          cardEl.contains(document.activeElement) &&
-          (document.activeElement.tagName === "INPUT" || document.activeElement.tagName === "TEXTAREA")))
-    ) {
+    if (lastRenderedTrackId === t.id && lastRenderedFormState === formStateKey) {
+      const collapsedFlipped = lastRenderedCollapsed !== collapsed;
+      lastRenderedCollapsed = collapsed;
+      syncCollapseStateDom(isReqSheetOpen);
       syncInPlaceButtons(t, snap);
       syncWaveVisuals();
-      if (isPlaying || isPend || isWaveScrubbing) ensureWaveRaf();
-      else stopWaveRaf();
+      const nowPerf = typeof performance !== "undefined" ? performance.now() : 0;
+      if (isPlaying || isPend || isWaveScrubbing || collapsedFlipped || nowPerf < collapseSyncUntilMs) {
+        ensureWaveRaf();
+      } else {
+        stopWaveRaf();
+      }
       return;
     }
 
     cardEl.hidden = false;
-    cardEl.classList.toggle("is-collapsed", collapsed);
-    cardEl.classList.toggle("is-requesting", isReqSheetOpen);
-
-    if (collapsed) {
-      cardEl.innerHTML = `
-        <div class="mp-mini-row">
-          <button type="button" class="btn-tonal mp-play ${isPlaying ? "is-playing" : ""}" data-player-play="${esc(t.id)}" aria-label="${isPlaying ? "Pause" : "Play"}" title="${isPlaying ? "Pause (Space)" : "Play (Space)"}">
-            <span class="ms filled">${isPlaying ? "pause" : isPend ? "hourglass_top" : "play_arrow"}</span>
-          </button>
-          <div class="mp-wave-wrap mp-mini-wave-wrap" id="mp-wave-wrap" role="slider" tabindex="0" aria-label="Seek ${esc(t.title)}" aria-valuemin="0" aria-valuemax="${Math.round(snap.timelineDur)}" aria-valuenow="${Math.round(snap.currentTime)}" title="${esc(t.title)} — click or drag to seek">
-            <canvas id="mp-waveform" class="mp-wave-canvas mp-mini-wave-canvas" aria-hidden="true"></canvas>
-            <div class="mp-mini-title-overlay">
-              <span class="mp-mini-title">${esc(t.title)}</span>
-            </div>
-          </div>
-          <button type="button" class="icon-btn mp-expand-btn" id="mp-expand" aria-label="Expand player" title="Expand player">
-            <span class="ms">expand_less</span>
-          </button>
-        </div>`;
-      lastRenderedTrackId = t.id;
-      lastRenderedCollapsed = true;
-      lastRenderedFormState = formStateKey;
-      observeWaveWrap();
-      syncWaveVisuals();
-      if (isPlaying || isPend) ensureWaveRaf();
-      else stopWaveRaf();
-      return;
-    }
 
     const released = isReleased(t);
     const sketch = isSketch(t);
@@ -1211,7 +1253,65 @@
     const metaFull = `${eraLong} · ${clusterName}${wip ? " · Work in progress" : ""}`;
     const timeReadout = formatWaveTimeText(snap);
 
-    cardEl.innerHTML = `
+    const prevFocusedId =
+      typeof document !== "undefined" &&
+      document.activeElement &&
+      cardEl.contains(document.activeElement) &&
+      document.activeElement.id
+        ? document.activeElement.id
+        : "";
+
+    let miniShell = cardEl.querySelector("#mp-mini-shell");
+    let expandInner = cardEl.querySelector("#mp-expand-inner");
+
+    if (!miniShell || !expandInner) {
+      cardEl.innerHTML = `
+        <div id="mp-mini-shell" class="mp-mini-shell" aria-hidden="${collapsed ? "false" : "true"}">
+          <div class="mp-shell-inner">
+            <div class="mp-mini-row">
+              <div class="mp-mini-transport">
+                <button type="button" class="btn-tonal mp-play ${isPlaying ? "is-playing" : ""}" id="mp-mini-play" data-player-play="${esc(t.id)}" aria-label="${isPlaying ? "Pause" : "Play"}" title="${isPlaying ? "Pause (Space)" : "Play (Space)"}">
+                  <span class="ms filled">${isPlaying ? "pause" : isPend ? "hourglass_top" : "play_arrow"}</span>
+                </button>
+                <div class="mp-mini-skip-group" role="group" aria-label="Skip between similar tracks">
+                  <button type="button" class="icon-btn mp-mini-skip-btn" id="mp-mini-prev" data-player-prev="1" aria-label="Previous similar track" title="Previous similar track">
+                    <span class="ms" aria-hidden="true">skip_previous</span>
+                  </button>
+                  <button type="button" class="icon-btn mp-mini-skip-btn" id="mp-mini-next" data-player-next="1" aria-label="Next similar track" title="Next similar track">
+                    <span class="ms" aria-hidden="true">skip_next</span>
+                  </button>
+                </div>
+              </div>
+              <div class="mp-wave-wrap mp-mini-wave-wrap" id="mp-mini-wave-wrap" data-wave-wrap="mini" role="slider" tabindex="0" aria-label="Seek ${esc(t.title)}" aria-valuemin="0" aria-valuemax="${Math.round(snap.timelineDur)}" aria-valuenow="${Math.round(snap.currentTime)}" title="${esc(t.title)} — click or drag to seek">
+                <canvas id="mp-mini-waveform" class="mp-wave-canvas mp-mini-wave-canvas" aria-hidden="true"></canvas>
+                <div class="mp-mini-title-overlay">
+                  <span class="mp-mini-title" id="mp-mini-title-text">${esc(t.title)}</span>
+                </div>
+              </div>
+              <button type="button" class="icon-btn mp-expand-btn" id="mp-expand" aria-label="Expand player" title="Expand player">
+                <span class="ms">expand_less</span>
+              </button>
+            </div>
+          </div>
+        </div>
+        <div id="mp-expand-shell" class="mp-expand-shell" aria-hidden="${collapsed ? "true" : "false"}">
+          <div id="mp-expand-inner" class="mp-shell-inner"></div>
+        </div>`;
+      miniShell = cardEl.querySelector("#mp-mini-shell");
+      expandInner = cardEl.querySelector("#mp-expand-inner");
+    } else {
+      const miniPlayBtn = miniShell.querySelector("#mp-mini-play");
+      if (miniPlayBtn) miniPlayBtn.setAttribute("data-player-play", t.id);
+      const miniTitleEl = miniShell.querySelector("#mp-mini-title-text");
+      if (miniTitleEl && miniTitleEl.textContent !== t.title) miniTitleEl.textContent = t.title;
+      const miniWaveWrap = miniShell.querySelector("#mp-mini-wave-wrap");
+      if (miniWaveWrap) {
+        miniWaveWrap.setAttribute("aria-label", `Seek ${t.title}`);
+        miniWaveWrap.title = `${t.title} — click or drag to seek`;
+      }
+    }
+
+    expandInner.innerHTML = `
       <div class="mp-head">
         <div class="mp-head-bar">
           <button type="button" class="btn-tonal mp-play ${isPlaying ? "is-playing" : ""}" data-player-play="${esc(t.id)}" aria-label="${isPlaying ? "Pause" : "Play"}" title="${isPlaying ? "Pause (Space)" : "Play (Space)"}">
@@ -1235,16 +1335,24 @@
         </div>
       </div>
       <div class="mp-wave-section">
-        <div class="mp-wave-wrap" id="mp-wave-wrap" role="slider" tabindex="0" aria-label="Track waveform seek" aria-valuemin="0" aria-valuemax="${Math.round(snap.timelineDur)}" aria-valuenow="${Math.round(snap.currentTime)}">
+        <div class="mp-wave-wrap" id="mp-wave-wrap" data-wave-wrap="expanded" role="slider" tabindex="0" aria-label="Track waveform seek" aria-valuemin="0" aria-valuemax="${Math.round(snap.timelineDur)}" aria-valuenow="${Math.round(snap.currentTime)}">
           <canvas id="mp-waveform" class="mp-wave-canvas" aria-hidden="true"></canvas>
+          <button type="button" class="mp-wave-restart-btn" id="mp-wave-restart" data-player-restart="${esc(t.id)}" aria-label="Restart track from 0:00" title="Restart track from 0:00">
+            <span class="ms filled" aria-hidden="true">skip_previous</span>
+            <span>0:00</span>
+          </button>
           <div id="mp-wave-time" class="mp-wave-time">${esc(timeReadout)}</div>
         </div>
         ${buildPlayerMetaPillsHtml(t, { released, sketch, wip, er })}
         <div class="mp-transport-row">
-          <button type="button" class="mp-ctrl-btn" id="mp-restart" data-player-restart="${esc(t.id)}" aria-label="Play from start (0:00)" title="Restart track from 0:00">
-            <span class="ms">skip_previous</span>
-            <span>0:00</span>
-          </button>
+          <div class="mp-skip-group" role="group" aria-label="Skip between similar tracks">
+            <button type="button" class="mp-ctrl-btn mp-skip-btn" id="mp-prev-track" data-player-prev="1" aria-label="Previous similar track" title="Previous similar track">
+              <span class="ms" aria-hidden="true">skip_previous</span>
+            </button>
+            <button type="button" class="mp-ctrl-btn mp-skip-btn" id="mp-next-track" data-player-next="1" aria-label="Next similar track" title="Next similar track">
+              <span class="ms" aria-hidden="true">skip_next</span>
+            </button>
+          </div>
           <button type="button" class="mp-ctrl-btn ${copiedForId === t.id ? "is-copied" : ""}" id="mp-copy-link" data-player-copy-link="${esc(t.id)}" aria-label="${copiedForId === t.id ? "Link copied" : "Copy direct link to track"}" title="Copy direct link that opens &amp; plays this track">
             <span class="ms">${copiedForId === t.id ? "check" : "link"}</span>
             <span class="mp-copy-lbl">${copiedForId === t.id ? "Copied" : "Copy link"}</span>
@@ -1277,19 +1385,29 @@
       ${buildTierActionsHtml(t)}`;
 
     lastRenderedTrackId = t.id;
-    lastRenderedCollapsed = false;
+    lastRenderedCollapsed = collapsed;
     lastRenderedFormState = formStateKey;
+    syncCollapseStateDom(isReqSheetOpen);
+    syncInPlaceButtons(t, snap);
     observeWaveWrap();
     syncWaveVisuals();
-    if (isPlaying || isPend) ensureWaveRaf();
+    if (!collapsed && (prevFocusedId === "mp-prev-track" || prevFocusedId === "mp-next-track")) {
+      const restoreEl = cardEl.querySelector(`#${prevFocusedId}`);
+      if (restoreEl && typeof restoreEl.focus === "function") {
+        try { restoreEl.focus({ preventScroll: true }); } catch (_) {}
+      }
+    }
+    const nowPerf = typeof performance !== "undefined" ? performance.now() : 0;
+    if (isPlaying || isPend || nowPerf < collapseSyncUntilMs) ensureWaveRaf();
     else stopWaveRaf();
   }
 
   function observeWaveWrap() {
     if (!waveResizeObserver || !cardEl) return;
     waveResizeObserver.disconnect();
-    const wrapEl = cardEl.querySelector("#mp-wave-wrap");
-    if (wrapEl) waveResizeObserver.observe(wrapEl);
+    cardEl.querySelectorAll("[data-wave-wrap]").forEach((wrapEl) => {
+      waveResizeObserver.observe(wrapEl);
+    });
   }
 
   function fracFromPointerEvent(wrapEl, ev) {
@@ -1374,6 +1492,24 @@
     }
     syncWaveVisuals();
     ensureWaveRaf();
+  }
+
+  function handleSkipSimilar(dir) {
+    if (typeof window !== "undefined") {
+      if (window.ME_EVENTS && typeof window.ME_EVENTS.markPlayIntent === "function") {
+        try { window.ME_EVENTS.markPlayIntent("manual"); } catch (_) {}
+      }
+      const ma = window.ME_AUDIO;
+      if (ma) {
+        if (dir < 0 && typeof ma.prevSimilarTrack === "function") {
+          return ma.prevSimilarTrack();
+        }
+        if (dir > 0 && typeof ma.nextSimilarTrack === "function") {
+          return ma.nextSimilarTrack();
+        }
+      }
+    }
+    return null;
   }
 
   function handleToggleAutoPlay() {
@@ -1580,16 +1716,26 @@
       }
     });
 
-    // Pointer scrubbing & hover preview on SoundCloud waveform
+    // Pointer scrubbing, early-waveform restart hover & hover preview on SoundCloud waveform
     cardEl.addEventListener("pointerdown", (ev) => {
-      const wrap = ev.target.closest("#mp-wave-wrap");
+      if (ev.target && typeof ev.target.closest === "function" && ev.target.closest("[data-player-restart]")) {
+        ev.stopPropagation();
+        return;
+      }
+      const wrap = ev.target && typeof ev.target.closest === "function"
+        ? ev.target.closest("[data-wave-wrap]")
+        : null;
       if (!wrap || (ev.button !== undefined && ev.button !== 0)) return;
       ev.stopPropagation();
       isWaveScrubbing = true;
       hasWaveDragged = false;
+      activeScrubWrapEl = wrap;
       const frac = fracFromPointerEvent(wrap, ev);
       scrubFrac = frac;
       waveHoverFrac = frac;
+      if (wrap.id === "mp-wave-wrap") {
+        wrap.classList.remove("is-early-hover");
+      }
       if (typeof wrap.setPointerCapture === "function") {
         try { wrap.setPointerCapture(ev.pointerId); } catch (_) {}
       }
@@ -1597,9 +1743,11 @@
     });
 
     cardEl.addEventListener("pointermove", (ev) => {
-      const wrap = ev.target.closest("#mp-wave-wrap");
+      const wrap = ev.target && typeof ev.target.closest === "function"
+        ? ev.target.closest("[data-wave-wrap]")
+        : null;
       if (isWaveScrubbing) {
-        const activeWrap = cardEl.querySelector("#mp-wave-wrap");
+        const activeWrap = activeScrubWrapEl || cardEl.querySelector(collapsed ? "#mp-mini-wave-wrap" : "#mp-wave-wrap");
         if (!activeWrap) return;
         hasWaveDragged = true;
         const frac = fracFromPointerEvent(activeWrap, ev);
@@ -1608,23 +1756,41 @@
         seekToFraction(frac, { dragging: true });
         return;
       }
+      const expWave = cardEl.querySelector("#mp-wave-wrap");
       if (wrap) {
-        waveHoverFrac = fracFromPointerEvent(wrap, ev);
+        const onRestartBtn = Boolean(
+          ev.target &&
+          typeof ev.target.closest === "function" &&
+          ev.target.closest("#mp-wave-restart")
+        );
+        const rawFrac = fracFromPointerEvent(wrap, ev);
+        waveHoverFrac = onRestartBtn ? 0 : rawFrac;
+        if (expWave) {
+          const isEarly =
+            wrap === expWave &&
+            ev.pointerType !== "touch" &&
+            (onRestartBtn || rawFrac <= EARLY_WAVE_HOVER_MAX_FRAC);
+          expWave.classList.toggle("is-early-hover", isEarly);
+        }
         syncWaveVisuals();
-      } else if (waveHoverFrac !== null) {
-        waveHoverFrac = null;
-        syncWaveVisuals();
+      } else {
+        if (expWave) expWave.classList.remove("is-early-hover");
+        if (waveHoverFrac !== null) {
+          waveHoverFrac = null;
+          syncWaveVisuals();
+        }
       }
     });
 
     const finishWaveScrub = (ev) => {
       if (!isWaveScrubbing) return;
-      const activeWrap = cardEl.querySelector("#mp-wave-wrap");
+      const activeWrap = activeScrubWrapEl || cardEl.querySelector(collapsed ? "#mp-mini-wave-wrap" : "#mp-wave-wrap");
       const finalFrac = activeWrap && ev ? fracFromPointerEvent(activeWrap, ev) : scrubFrac;
       const didDrag = hasWaveDragged;
       isWaveScrubbing = false;
       hasWaveDragged = false;
       scrubFrac = null;
+      activeScrubWrapEl = null;
       if (activeWrap && ev && typeof activeWrap.releasePointerCapture === "function") {
         try { activeWrap.releasePointerCapture(ev.pointerId); } catch (_) {}
       }
@@ -1637,9 +1803,12 @@
       isWaveScrubbing = false;
       hasWaveDragged = false;
       scrubFrac = null;
+      activeScrubWrapEl = null;
       syncWaveVisuals();
     });
     cardEl.addEventListener("pointerleave", () => {
+      const expWave = cardEl.querySelector("#mp-wave-wrap");
+      if (expWave) expWave.classList.remove("is-early-hover");
       if (!isWaveScrubbing && waveHoverFrac !== null) {
         waveHoverFrac = null;
         syncWaveVisuals();
@@ -1657,7 +1826,9 @@
         ev.stopPropagation();
         return;
       }
-      const wrap = ev.target.closest("#mp-wave-wrap");
+      const wrap = ev.target && typeof ev.target.closest === "function"
+        ? ev.target.closest("[data-wave-wrap]")
+        : null;
       if (!wrap || !selectedId || !byId.has(selectedId)) return;
       const t = byId.get(selectedId);
       const snap = readPlaybackSnapshot(t);
@@ -1679,21 +1850,26 @@
         return;
       }
       if (ev.target.closest("#mp-collapse")) {
-        collapsed = true;
-        waveHoverFrac = null;
-        saveCollapsed();
-        render();
+        setCollapsedState(true, { preserveKeyboardFocus: ev.detail === 0 });
         return;
       }
       if (ev.target.closest("#mp-expand")) {
-        collapsed = false;
-        waveHoverFrac = null;
-        saveCollapsed();
-        render();
+        setCollapsedState(false, { preserveKeyboardFocus: ev.detail === 0 });
+        return;
+      }
+      if (ev.target.closest("[data-player-prev]")) {
+        ev.stopPropagation();
+        handleSkipSimilar(-1);
+        return;
+      }
+      if (ev.target.closest("[data-player-next]")) {
+        ev.stopPropagation();
+        handleSkipSimilar(1);
         return;
       }
       const restartBtn = ev.target.closest("[data-player-restart]");
       if (restartBtn) {
+        ev.stopPropagation();
         handleRestartTrack(restartBtn.getAttribute("data-player-restart"));
         return;
       }
@@ -1779,6 +1955,14 @@
       optimisticSeekSec = null;
     }
     selectedId = tid;
+    if (
+      !(opts && opts.fromHistoryNav) &&
+      typeof window !== "undefined" &&
+      window.ME_AUDIO &&
+      typeof window.ME_AUDIO.syncHistorySelection === "function"
+    ) {
+      window.ME_AUDIO.syncHistorySelection(tid);
+    }
     if (typeof window !== "undefined" && window.BTMM_EVENTS && typeof window.BTMM_EVENTS.notifyTrackIntent === "function") {
       window.BTMM_EVENTS.notifyTrackIntent(tid, { source: opts && opts.fromAutoPlay ? "autoplay" : "manual" });
     }
@@ -1830,7 +2014,9 @@
     starredSet: () => starred,
     starredCount: () => starred.size,
     isCollapsed: () => collapsed,
-    setCollapsed(v) { collapsed = Boolean(v); waveHoverFrac = null; saveCollapsed(); render(); },
+    setCollapsed(v) { setCollapsedState(v); },
+    nextSimilarTrack: () => handleSkipSimilar(1),
+    prevSimilarTrack: () => handleSkipSimilar(-1),
     isInfoOpen: () => infoOpen,
     setInfoOpen(v) { infoOpen = Boolean(v); render(); },
     setWeb3FormsKey() {},

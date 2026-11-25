@@ -24,6 +24,8 @@
   let explicitTrackMap = null;
   const fallbackVecCache = new Map();
   const visitedIds = new Set();
+  const playHistory = [];
+  let historyCursor = -1;
 
   // Retained for legacy API compatibility on same-origin decoded buffers
   const bufferCache = new Map();
@@ -136,11 +138,20 @@
         fallbackVecCache.set(tr.id, buildFallbackVec(tr, coordsLookup));
       }
     }
-    // Prune any visited IDs no longer in the catalog
+    // Prune any visited IDs or playHistory entries no longer in the catalog
     if (visitedIds.size > 0) {
       Array.from(visitedIds).forEach((id) => {
         if (!byId.has(id)) visitedIds.delete(id);
       });
+    }
+    if (playHistory.length > 0) {
+      let nextCursorId = historyCursor >= 0 && historyCursor < playHistory.length
+        ? playHistory[historyCursor]
+        : null;
+      for (let i = playHistory.length - 1; i >= 0; i--) {
+        if (!byId.has(playHistory[i])) playHistory.splice(i, 1);
+      }
+      historyCursor = nextCursorId ? playHistory.lastIndexOf(nextCursorId) : (playHistory.length - 1);
     }
   }
 
@@ -186,27 +197,104 @@
     return null;
   }
 
-  function isWalkEligible(cand, curIsAi) {
+  function isActiveViewFilterMatch(cand) {
     if (!cand) return false;
-    if (cand.is_spoken_word) return false;
-    if (Boolean(cand.is_ai) !== curIsAi) return false;
+    if (typeof document !== "undefined") {
+      const starBtn = document.getElementById("star-filter-btn");
+      if (
+        starBtn &&
+        starBtn.getAttribute("aria-pressed") === "true" &&
+        typeof window !== "undefined" &&
+        window.BTMM_PLAYER &&
+        typeof window.BTMM_PLAYER.isStarred === "function" &&
+        !window.BTMM_PLAYER.isStarred(cand.id)
+      ) {
+        return false;
+      }
+      const searchEl = document.getElementById("search-input");
+      const ql = searchEl && typeof searchEl.value === "string" ? searchEl.value.trim().toLowerCase() : "";
+      if (ql) {
+        if (ql === "has:mush" || ql === "is:mush" || ql === "tag:mush") {
+          return Boolean(cand.has_mush === true && Number.isFinite(Number(cand.mush_onset_sec)));
+        }
+        const cd = getCorpusMetaObj();
+        const erasArr = (cd && cd.eras) || [];
+        let eraLbl = "";
+        for (let i = 0; i < erasArr.length; i++) {
+          if (erasArr[i] && erasArr[i].id === cand.era) {
+            eraLbl = String(erasArr[i].label || "").toLowerCase();
+            break;
+          }
+        }
+        const hit =
+          String(cand.title || "").toLowerCase().includes(ql) ||
+          eraLbl.includes(ql) ||
+          String(cand.cluster_label || "").toLowerCase().includes(ql) ||
+          String(cand.key_label || "").toLowerCase().includes(ql) ||
+          (typeof window !== "undefined" &&
+            typeof window.formatSimpleKey === "function" &&
+            window.formatSimpleKey(cand).toLowerCase() === ql) ||
+          (Array.isArray(cand.discogs_styles) && cand.discogs_styles.some((s) => String(s).toLowerCase().includes(ql))) ||
+          (Array.isArray(cand.mood_tags) && cand.mood_tags.some((s) => String(s).toLowerCase().includes(ql))) ||
+          (Array.isArray(cand.instrument_tags) && cand.instrument_tags.some((s) => String(s).toLowerCase().includes(ql))) ||
+          (ql.length >= 3 &&
+            typeof window !== "undefined" &&
+            window.BTMM_PLAYER &&
+            typeof window.BTMM_PLAYER.isWorkInProgress === "function" &&
+            window.BTMM_PLAYER.isWorkInProgress(cand) &&
+            ("work in progress".includes(ql) || "wip".startsWith(ql))) ||
+          (Boolean(cand.has_mush) && (ql === "mush" || ql === "ai mush" || (ql.length >= 3 && "mush".startsWith(ql))));
+        if (!hit) return false;
+      }
+    }
+    return true;
+  }
+
+  function isWalkEligible(cand, curIsAi, opts = {}) {
+    if (!cand) return false;
+    if (cand.is_spoken_word && !opts.allowSpoken) return false;
+    if (!opts.anyTerritory && Boolean(cand.is_ai) !== curIsAi) return false;
     const nm = typeof window !== "undefined" ? window.ME_NODEMAP : null;
     const sketchesShown =
       nm && typeof nm.getShowSketches === "function"
         ? Boolean(nm.getShowSketches())
         : false;
     if (!sketchesShown && cand.is_sketch) return false;
-    if (
-      nm &&
-      typeof nm.getLayout === "function" &&
-      nm.getLayout() === "era" &&
-      typeof nm.getShowEraGenAi === "function" &&
-      !nm.getShowEraGenAi() &&
-      cand.is_ai
-    ) {
-      return false;
+    if (nm && cand.is_ai) {
+      const lay = typeof nm.getLayout === "function" ? nm.getLayout() : "vibe";
+      if (lay === "era" && typeof nm.getShowEraGenAi === "function" && !nm.getShowEraGenAi()) {
+        return false;
+      }
+      if (lay !== "era" && typeof nm.getShowVibeGenAi === "function" && !nm.getShowVibeGenAi()) {
+        return false;
+      }
     }
+    if (!opts.ignoreViewFilter && !isActiveViewFilterMatch(cand)) return false;
     return true;
+  }
+
+  function collectSimilarCandidatePool(currentId, curTrack, effectiveVisited, extraExclude) {
+    const curIsAi = Boolean(curTrack && curTrack.is_ai);
+    const curSpoken = Boolean(curTrack && curTrack.is_spoken_word);
+    const passes = [
+      { allowSpoken: curSpoken, anyTerritory: false, ignoreViewFilter: false },
+      { allowSpoken: curSpoken, anyTerritory: true, ignoreViewFilter: false },
+      { allowSpoken: curSpoken, anyTerritory: false, ignoreViewFilter: true },
+      { allowSpoken: true, anyTerritory: true, ignoreViewFilter: true },
+    ];
+    for (let p = 0; p < passes.length; p++) {
+      const pOpts = passes[p];
+      const out = [];
+      for (let i = 0; i < tracksList.length; i++) {
+        const tr = tracksList[i];
+        if (!tr || tr.id === currentId) continue;
+        if (effectiveVisited && effectiveVisited.has(tr.id)) continue;
+        if (extraExclude && extraExclude.has(tr.id)) continue;
+        if (isWalkEligible(tr, curIsAi, pOpts)) out.push(tr);
+      }
+      if (out.length > 0) return { pool: out, eligOpts: pOpts };
+    }
+    return { pool: [], eligOpts: passes[0] };
   }
 
   function pickNextSimilarTrack(currentId, opts = {}) {
@@ -214,18 +302,19 @@
     if (tracksList.length === 1) return tracksList[0];
 
     const curTrack = currentId ? byId.get(currentId) : null;
-    if (curTrack && curTrack.is_spoken_word) return null;
+    if (curTrack && curTrack.is_spoken_word && !opts.allowSpoken) return null;
     const curIsAi = Boolean(curTrack && curTrack.is_ai);
 
     const peekOnly = Boolean(opts.peekOnly);
+    const extraExclude = opts.excludeIds instanceof Set ? opts.excludeIds : null;
     let effectiveVisited = visitedIds;
-    let unvisited = [];
-    for (let i = 0; i < tracksList.length; i++) {
-      const tr = tracksList[i];
-      if (tr && tr.id !== currentId && isWalkEligible(tr, curIsAi) && !effectiveVisited.has(tr.id)) {
-        unvisited.push(tr);
-      }
-    }
+
+    let { pool: unvisited, eligOpts } = collectSimilarCandidatePool(
+      currentId,
+      curTrack,
+      effectiveVisited,
+      extraExclude
+    );
 
     if (unvisited.length === 0) {
       if (peekOnly) {
@@ -241,18 +330,15 @@
         if (currentId && byId.has(currentId)) visitedIds.add(currentId);
         effectiveVisited = visitedIds;
       }
-      unvisited = [];
-      for (let i = 0; i < tracksList.length; i++) {
-        const tr = tracksList[i];
-        if (tr && tr.id !== currentId && isWalkEligible(tr, curIsAi) && !effectiveVisited.has(tr.id)) {
-          unvisited.push(tr);
-        }
-      }
+      const retry = collectSimilarCandidatePool(currentId, curTrack, effectiveVisited, null);
+      unvisited = retry.pool;
+      eligOpts = retry.eligOpts;
       if (!unvisited.length) return curTrack || tracksList[0];
     }
 
     if (!curTrack) return unvisited[0];
 
+    const poolSet = new Set(unvisited.map((t) => t.id));
     // 1. Check currentTrack.track_near (or CORPUS_DATA.meta.track_near[currentId]) first
     const nearLookup = getTrackNearLookup();
     const nearList = Array.isArray(curTrack.track_near)
@@ -261,13 +347,13 @@
 
     for (let i = 0; i < nearList.length; i++) {
       const nid = extractNeighborId(nearList[i]);
-      if (nid && nid !== currentId && byId.has(nid) && !effectiveVisited.has(nid)) {
+      if (nid && nid !== currentId && poolSet.has(nid)) {
         const cand = byId.get(nid);
-        if (isWalkEligible(cand, curIsAi)) return cand;
+        if (cand && isWalkEligible(cand, curIsAi, eligOpts)) return cand;
       }
     }
 
-    // 2. All direct track_near neighbors visited -> find closest unvisited track within same territory
+    // 2. All direct track_near neighbors visited -> find closest unvisited track in candidate pool
     let bestTrack = unvisited[0];
     let bestDist = Infinity;
     for (let i = 0; i < unvisited.length; i++) {
@@ -279,6 +365,81 @@
       }
     }
     return bestTrack;
+  }
+
+  function pickPrevSimilarTrack(currentId, opts = {}) {
+    if (!tracksList.length) return null;
+    if (tracksList.length === 1) return tracksList[0];
+
+    const curTrack = currentId ? byId.get(currentId) : null;
+    if (!curTrack) return tracksList[0];
+
+    // Reserve the primary forward neighbor when >= 2 candidates exist so Prev and Next step to distinct neighbors from index 0
+    const forwardPrimary = pickNextSimilarTrack(currentId, { peekOnly: true, allowSpoken: true });
+    const excludeSet = new Set(playHistory);
+    if (forwardPrimary && forwardPrimary.id && forwardPrimary.id !== currentId) {
+      excludeSet.add(forwardPrimary.id);
+    }
+
+    let { pool, eligOpts } = collectSimilarCandidatePool(currentId, curTrack, null, excludeSet);
+    if (pool.length === 0) {
+      const fallbackExclude = new Set(currentId ? [currentId] : []);
+      if (forwardPrimary && forwardPrimary.id && tracksList.length > 2) {
+        fallbackExclude.add(forwardPrimary.id);
+      }
+      const fb = collectSimilarCandidatePool(currentId, curTrack, null, fallbackExclude);
+      pool = fb.pool;
+      eligOpts = fb.eligOpts;
+    }
+    if (pool.length === 0) {
+      return forwardPrimary || curTrack;
+    }
+
+    const curIsAi = Boolean(curTrack.is_ai);
+    const poolSet = new Set(pool.map((t) => t.id));
+    const nearLookup = getTrackNearLookup();
+    const nearList = Array.isArray(curTrack.track_near)
+      ? curTrack.track_near
+      : (nearLookup[currentId] || []);
+
+    for (let i = 0; i < nearList.length; i++) {
+      const nid = extractNeighborId(nearList[i]);
+      if (nid && nid !== currentId && poolSet.has(nid)) {
+        const cand = byId.get(nid);
+        if (cand && isWalkEligible(cand, curIsAi, eligOpts)) return cand;
+      }
+    }
+
+    let bestTrack = pool[0];
+    let bestDist = Infinity;
+    for (let i = 0; i < pool.length; i++) {
+      const cand = pool[i];
+      const dist = sonicDistance(curTrack, cand);
+      if (dist < bestDist) {
+        bestDist = dist;
+        bestTrack = cand;
+      }
+    }
+    return bestTrack;
+  }
+
+  function recordHistoryVisit(trackId) {
+    if (!trackId || !byId.has(trackId)) return;
+    if (historyCursor >= 0 && playHistory[historyCursor] === trackId) return;
+    if (historyCursor >= 0 && historyCursor + 1 < playHistory.length) {
+      if (playHistory[historyCursor + 1] === trackId) {
+        historyCursor += 1;
+        return;
+      }
+      playHistory.splice(historyCursor + 1);
+    }
+    if (playHistory[playHistory.length - 1] !== trackId) {
+      playHistory.push(trackId);
+    }
+    if (playHistory.length > 500) {
+      playHistory.shift();
+    }
+    historyCursor = playHistory.length - 1;
   }
 
   function ensureCtx() {
@@ -734,6 +895,117 @@
     }
   }
 
+  function resolveHistoryAnchorId() {
+    if (active && !active.disposed && active.trackId && byId.has(active.trackId)) {
+      return active.trackId;
+    }
+    const idleId = resolveIdleTargetTrackId();
+    if (idleId && byId.has(idleId)) return idleId;
+    if (historyCursor >= 0 && historyCursor < playHistory.length && byId.has(playHistory[historyCursor])) {
+      return playHistory[historyCursor];
+    }
+    if (typeof window !== "undefined" && window.ME_NODEMAP && typeof window.ME_NODEMAP.firstVisibleTrackId === "function") {
+      const visId = window.ME_NODEMAP.firstVisibleTrackId();
+      if (visId && byId.has(visId)) return visId;
+    }
+    return tracksList[0] ? tracksList[0].id : null;
+  }
+
+  function markManualPlayIntent(targetId) {
+    if (typeof window === "undefined") return;
+    if (window.ME_EVENTS && typeof window.ME_EVENTS.markPlayIntent === "function") {
+      try { window.ME_EVENTS.markPlayIntent("manual"); } catch (_) {}
+    }
+    if (targetId && window.BTMM_EVENTS && typeof window.BTMM_EVENTS.notifyTrackIntent === "function") {
+      try { window.BTMM_EVENTS.notifyTrackIntent(targetId, { source: "manual" }); } catch (_) {}
+    }
+  }
+
+  function applyManualHistorySkip(targetTrack, opts = {}) {
+    if (!targetTrack || !targetTrack.id) return null;
+    const wasMushFading = Boolean(active && !active.disposed && active.mushFadeActive);
+    if (active && !active.disposed) {
+      cancelMushFade(active);
+    }
+    markManualPlayIntent(targetTrack.id);
+
+    const fadeMs = Number.isFinite(opts.crossfadeMs)
+      ? Math.max(0, opts.crossfadeMs)
+      : (active && !active.disposed && !wasMushFading ? 160 : 0);
+
+    if (typeof window !== "undefined") {
+      if (window.ME_NODEMAP && typeof window.ME_NODEMAP.setSelectedSilent === "function") {
+        window.ME_NODEMAP.setSelectedSilent(targetTrack.id);
+      }
+      if (window.BTMM_PLAYER && typeof window.BTMM_PLAYER.select === "function") {
+        window.BTMM_PLAYER.select(targetTrack.id, { silent: true, fromHistoryNav: true });
+      }
+    }
+
+    playTrack(targetTrack, {
+      isManual: true,
+      fromHistoryNav: true,
+      crossfadeMs: fadeMs,
+    });
+    return targetTrack.id;
+  }
+
+  function nextSimilarTrack(opts = {}) {
+    if (!tracksList.length) return null;
+    const curId = resolveHistoryAnchorId();
+    if (curId && (historyCursor < 0 || playHistory[historyCursor] !== curId)) {
+      recordHistoryVisit(curId);
+    }
+
+    while (historyCursor >= 0 && historyCursor + 1 < playHistory.length) {
+      historyCursor += 1;
+      const forwardId = playHistory[historyCursor];
+      if (forwardId && byId.has(forwardId) && forwardId !== curId) {
+        return applyManualHistorySkip(byId.get(forwardId), opts);
+      }
+    }
+
+    const nextTrack = pickNextSimilarTrack(curId, {
+      peekOnly: false,
+      allowSpoken: true,
+      excludeIds: new Set(playHistory),
+    });
+    if (!nextTrack) return null;
+    if (playHistory[playHistory.length - 1] !== nextTrack.id) {
+      playHistory.push(nextTrack.id);
+    }
+    if (playHistory.length > 500) playHistory.shift();
+    historyCursor = playHistory.length - 1;
+    visitedIds.add(nextTrack.id);
+    return applyManualHistorySkip(nextTrack, opts);
+  }
+
+  function prevSimilarTrack(opts = {}) {
+    if (!tracksList.length) return null;
+    const curId = resolveHistoryAnchorId();
+    if (curId && (historyCursor < 0 || playHistory[historyCursor] !== curId)) {
+      recordHistoryVisit(curId);
+    }
+
+    while (historyCursor > 0) {
+      historyCursor -= 1;
+      const prevId = playHistory[historyCursor];
+      if (prevId && byId.has(prevId) && prevId !== curId) {
+        return applyManualHistorySkip(byId.get(prevId), opts);
+      }
+    }
+
+    const prevNeighbor = pickPrevSimilarTrack(curId, { allowSpoken: true });
+    if (!prevNeighbor) return null;
+    if (playHistory[0] !== prevNeighbor.id) {
+      playHistory.unshift(prevNeighbor.id);
+    }
+    if (playHistory.length > 500) playHistory.pop();
+    historyCursor = 0;
+    visitedIds.add(prevNeighbor.id);
+    return applyManualHistorySkip(prevNeighbor, opts);
+  }
+
   function advanceToNextSimilar(opts = {}) {
     if (!active || active.disposed) return null;
     const prevId = active.trackId;
@@ -863,8 +1135,13 @@
     const crossfadeMs = Number.isFinite(opts.crossfadeMs) && opts.crossfadeMs > 0 ? opts.crossfadeMs : 0;
     const now = nowMs();
 
-    // Seed visited set for no-repeat ~550-track walk
-    if (tr.id) visitedIds.add(tr.id);
+    // Seed visited set & session history for no-repeat ~550-track walk
+    if (tr.id) {
+      visitedIds.add(tr.id);
+      if (!opts.fromHistoryNav) {
+        recordHistoryVisit(tr.id);
+      }
+    }
     lastPaused = null;
     pending = null;
 
@@ -879,12 +1156,20 @@
       if (crossfadeMs > 0) {
         const outgoing = active;
         active = null;
+        const effMush = outgoing.mushFadeActive && Number.isFinite(outgoing.mushFadeFactor)
+          ? clamp(outgoing.mushFadeFactor, MUSH_MIN_FACTOR, 1)
+          : 1.0;
+        outgoing.mushFadeActive = false;
+        outgoing.mushFadeStartMs = 0;
+        outgoing.mushFadeFactor = 1.0;
         outgoing.fadeIn = false;
         outgoing.fadeStartMs = now;
         outgoing.fadeDurMs = crossfadeMs;
-        outgoing.fadeStartFactor = Number.isFinite(outgoing.fadeFactor) ? outgoing.fadeFactor : 1.0;
+        outgoing.fadeStartFactor = (Number.isFinite(outgoing.fadeFactor) ? outgoing.fadeFactor : 1.0) * effMush;
+        syncVoiceVolume(outgoing);
         fadingOut = outgoing;
       } else {
+        cancelMushFade(active);
         stopVoice(active);
         active = null;
       }
@@ -1349,8 +1634,15 @@
     getAutoPlay: () => autoPlay,
     setAutoPlay,
     onStateChange,
-    skipNextSimilar: () => advanceToNextSimilar({ crossfadeMs: CROSSFADE_MS }),
+    nextSimilarTrack: (opts) => nextSimilarTrack(opts),
+    prevSimilarTrack: (opts) => prevSimilarTrack(opts),
+    skipNextSimilar: (opts) => nextSimilarTrack(opts),
+    skipPrevSimilar: (opts) => prevSimilarTrack(opts),
     pickNextSimilarTrack: (id, opts) => pickNextSimilarTrack(id, opts),
+    pickPrevSimilarTrack: (id, opts) => pickPrevSimilarTrack(id, opts),
+    getPlayHistory: () => ({ ids: playHistory.slice(), cursor: historyCursor }),
+    syncHistorySelection: (id) => recordHistoryVisit(id),
+    resetPlayHistory: () => { playHistory.length = 0; historyCursor = -1; },
     isPlaying: (id) => Boolean(active && !active.disposed && (id ? active.trackId === id : true)),
     visitedCount: () => visitedIds.size,
     getVisitedIds: () => Array.from(visitedIds),

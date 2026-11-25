@@ -264,6 +264,7 @@
   width: min(376px, calc(100vw - 32px));
   max-height: calc(100dvh - var(--bar-h) - 36px);
   overflow-y: auto;
+  overflow-x: hidden;
   z-index: var(--z-panel);
   background: color-mix(in srgb, var(--md-sys-color-surface-container-low) 92%, transparent);
   backdrop-filter: blur(18px);
@@ -271,14 +272,70 @@
   border-radius: 22px;
   padding: 14px 16px 16px;
   box-shadow: 0 12px 34px color-mix(in srgb, var(--md-sys-color-shadow) 26%, transparent);
+  transition:
+    width 280ms var(--ease-std),
+    padding 280ms var(--ease-std),
+    border-radius 280ms var(--ease-std),
+    box-shadow 280ms var(--ease-std);
 }
 .player-card[hidden] { display: none; }
+.player-card :focus-visible {
+  outline-offset: -2px;
+}
 
-.player-card.is-collapsed {
+.player-card.is-collapsed,
+.player-card.mp-collapsed {
   width: min(364px, calc(100vw - 32px));
   padding: 6px;
-  border-radius: 9999px;
+  border-radius: 24px;
   overflow: hidden;
+}
+
+.mp-mini-shell {
+  display: grid;
+  grid-template-rows: 0fr;
+  opacity: 0;
+  pointer-events: none;
+  transition:
+    grid-template-rows 280ms var(--ease-std),
+    opacity 180ms var(--ease-std);
+}
+.player-card.is-collapsed .mp-mini-shell,
+.player-card.mp-collapsed .mp-mini-shell {
+  grid-template-rows: 1fr;
+  opacity: 1;
+  pointer-events: auto;
+  transition:
+    grid-template-rows 280ms var(--ease-std),
+    opacity 210ms 50ms var(--ease-std);
+}
+
+.mp-expand-shell {
+  display: grid;
+  grid-template-rows: 1fr;
+  opacity: 1;
+  transform: translateY(0);
+  pointer-events: auto;
+  transition:
+    grid-template-rows 280ms var(--ease-std),
+    opacity 210ms 40ms var(--ease-std),
+    transform 280ms var(--ease-std);
+}
+.player-card.is-collapsed .mp-expand-shell,
+.player-card.mp-collapsed .mp-expand-shell {
+  grid-template-rows: 0fr;
+  opacity: 0;
+  transform: translateY(4px);
+  pointer-events: none;
+  transition:
+    grid-template-rows 280ms var(--ease-std),
+    opacity 170ms var(--ease-std),
+    transform 240ms var(--ease-std);
+}
+
+.mp-shell-inner {
+  overflow: hidden;
+  min-height: 0;
 }
 
 .mp-mini-row {
@@ -289,12 +346,63 @@
   height: 36px;
   min-height: 36px;
 }
+.mp-mini-transport {
+  display: inline-flex;
+  align-items: center;
+  flex-shrink: 0;
+}
 .mp-mini-row .mp-play,
 .mp-mini-row .mp-expand-btn {
   width: 36px;
   height: 36px;
   min-width: 36px;
   flex-shrink: 0;
+}
+.mp-mini-skip-group {
+  display: inline-flex;
+  align-items: center;
+  gap: 2px;
+  max-width: 0;
+  margin-left: 0;
+  opacity: 0;
+  overflow: hidden;
+  pointer-events: none;
+  transition:
+    max-width 220ms var(--ease-std),
+    margin-left 220ms var(--ease-std),
+    opacity 170ms var(--ease-std);
+}
+.player-card.is-collapsed:hover .mp-mini-skip-group,
+.player-card.is-collapsed:focus-within .mp-mini-skip-group,
+.player-card.mp-collapsed:hover .mp-mini-skip-group,
+.player-card.mp-collapsed:focus-within .mp-mini-skip-group {
+  max-width: 70px;
+  margin-left: 4px;
+  opacity: 1;
+  pointer-events: auto;
+}
+.mp-mini-skip-btn {
+  width: 32px;
+  height: 32px;
+  min-width: 32px;
+  padding: 0;
+  border-radius: 999px;
+  background: var(--md-sys-color-surface-container-high);
+  color: var(--md-sys-color-on-surface-variant);
+  flex-shrink: 0;
+  transition: background 140ms var(--ease-std), color 140ms var(--ease-std), transform 120ms var(--ease-std);
+}
+.mp-mini-skip-btn:first-child { border-radius: 999px 6px 6px 999px; }
+.mp-mini-skip-btn:last-child { border-radius: 6px 999px 999px 6px; }
+.mp-mini-skip-btn .ms {
+  font-size: 19px;
+}
+.mp-mini-skip-btn:hover {
+  background: var(--md-sys-color-surface-container-highest);
+  color: var(--md-sys-color-on-surface);
+}
+.mp-mini-skip-btn:active {
+  transform: scale(0.95);
 }
 .mp-wave-wrap.mp-mini-wave-wrap {
   flex: 1;
@@ -441,6 +549,56 @@
   height: 100%;
 }
 
+.mp-wave-restart-btn {
+  position: absolute;
+  left: 8px;
+  top: 50%;
+  z-index: 2;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 3px;
+  height: 28px;
+  padding: 0 9px 0 6px;
+  border: none;
+  border-radius: 999px;
+  background: color-mix(in srgb, var(--md-sys-color-surface-container-highest) 94%, transparent);
+  backdrop-filter: blur(10px);
+  -webkit-backdrop-filter: blur(10px);
+  color: var(--md-sys-color-on-surface);
+  box-shadow: 0 3px 10px color-mix(in srgb, var(--md-sys-color-shadow) 24%, transparent);
+  font-family: var(--font-sans);
+  font-size: 11.5px;
+  font-weight: 600;
+  line-height: 1;
+  letter-spacing: 0.01em;
+  white-space: nowrap;
+  opacity: 0;
+  pointer-events: none;
+  transform: translateY(-50%) scale(0.94);
+  transition:
+    opacity 150ms var(--ease-std),
+    transform 150ms var(--ease-std),
+    background 140ms var(--ease-std),
+    color 140ms var(--ease-std);
+}
+.mp-wave-restart-btn .ms {
+  font-size: 16px;
+}
+.mp-wave-wrap.is-early-hover .mp-wave-restart-btn,
+.mp-wave-restart-btn:focus-visible {
+  opacity: 1;
+  pointer-events: auto;
+  transform: translateY(-50%) scale(1);
+}
+.mp-wave-restart-btn:hover {
+  background: var(--md-sys-color-secondary-container);
+  color: var(--md-sys-color-on-secondary-container);
+}
+.mp-wave-restart-btn:active {
+  transform: translateY(-50%) scale(0.96);
+}
+
 .mp-wave-time {
   position: absolute;
   right: 7px;
@@ -478,6 +636,28 @@
   align-items: center;
   justify-content: space-between;
   gap: 8px;
+}
+
+.mp-skip-group {
+  display: inline-flex;
+  align-items: center;
+  gap: 2px;
+  flex-shrink: 0;
+}
+.mp-ctrl-btn.mp-skip-btn {
+  width: 36px;
+  min-width: 36px;
+  height: 30px;
+  padding: 0;
+}
+.mp-ctrl-btn.mp-skip-btn:first-child {
+  border-radius: 999px 6px 6px 999px;
+}
+.mp-ctrl-btn.mp-skip-btn:last-child {
+  border-radius: 6px 999px 999px 6px;
+}
+.mp-ctrl-btn.mp-skip-btn .ms {
+  font-size: 19px;
 }
 
 .mp-ctrl-btn {
@@ -797,7 +977,8 @@
   .player-card.is-requesting {
     max-height: calc(100dvh - var(--bar-h) - 20px);
   }
-  .player-card.is-collapsed {
+  .player-card.is-collapsed,
+  .player-card.mp-collapsed {
     left: 10px;
     right: 10px;
     width: auto;
@@ -815,4 +996,20 @@
 
 @media (max-width: 350px) {
   .mp-meters { grid-template-columns: 1fr; }
+  .mp-transport-row { gap: 5px; }
+  .mp-ctrl-btn { padding: 0 8px 0 6px; font-size: 11.5px; }
+  .mp-ctrl-btn.mp-skip-btn { width: 32px; min-width: 32px; padding: 0; }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .player-card,
+  .mp-mini-shell,
+  .mp-expand-shell,
+  .mp-mini-skip-group,
+  .mp-mini-skip-btn,
+  .mp-wave-restart-btn,
+  .mp-ctrl-btn {
+    transition-duration: 0.01ms !important;
+    transition-delay: 0ms !important;
+  }
 }
