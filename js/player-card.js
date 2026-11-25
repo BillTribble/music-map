@@ -130,6 +130,8 @@
     return Boolean(t && (t.released === true || (t.links && t.links.bandcamp)));
   }
 
+  const PSYCHEDAILIES_NOTE = "Made in one day, with help from friends on Endlesss.";
+
   const FORCE_SKETCH_IDS = new Set(["archive_2013_18_97", "sketches_2024_25_24"]);
   const FORCE_SKETCH_TITLES = new Set([
     "massive dune patch",
@@ -138,8 +140,22 @@
     "granular perc (gamelanish)",
   ]);
 
+  function isPsychedailiesTrack(t) {
+    if (!t) return false;
+    const era = String(t.era || "").trim().toLowerCase();
+    const tid = String(t.id || "").trim().toLowerCase();
+    return era === "psychedailies" || tid.startsWith("psychedailies_");
+  }
+
+  function getTrackNote(t) {
+    if (!t) return "";
+    if (typeof t.note === "string" && t.note.trim()) return t.note.trim();
+    if (isPsychedailiesTrack(t)) return PSYCHEDAILIES_NOTE;
+    return "";
+  }
+
   function isSketch(t) {
-    if (!t || t.is_ai) return false;
+    if (!t || t.is_ai || isPsychedailiesTrack(t)) return false;
     const tid = String(t.id || "");
     const lowTitle = String(t.title || "").trim().toLowerCase();
     if (FORCE_SKETCH_IDS.has(tid) || FORCE_SKETCH_TITLES.has(lowTitle)) return true;
@@ -1183,6 +1199,7 @@
     const eraLong = t.is_ai ? `Gen AI (${t.year || "2025"})` : eraLabel;
     const metaShort = `${eraShort} · ${clusterName}`;
     const metaFull = `${eraLong} · ${clusterName}${wip ? " · Work in progress" : ""}`;
+    const trackNote = getTrackNote(t);
     const timeReadout = formatWaveTimeText(snap);
 
     const prevFocusedId =
@@ -1285,6 +1302,7 @@
         <div class="mp-titles">
           <div id="mp-title" class="mp-name mp-title" title="${esc(t.title)}">${esc(t.title)}</div>
           <div class="mp-meta" title="${esc(metaFull)}"><span class="mp-meta-text">${esc(metaShort)}</span></div>
+          ${trackNote ? `<p class="mp-track-note">${esc(trackNote)}</p>` : ""}
         </div>
       </div>
       <div class="mp-wave-section">
@@ -1317,6 +1335,7 @@
         </div>
       </div>
       <div id="mp-info-panel" class="mp-info-panel" ${infoOpen ? "" : "hidden"}>
+        ${trackNote ? `<div class="mp-info-note">${esc(trackNote)}</div>` : ""}
         <div class="mp-info-header">
           <span class="badge ${energyBadgeCls(t.energy)}" title="Energy level (1–10)">E${t.energy}/10</span>
           ${Array.isArray(t.discogs_styles) && t.discogs_styles.length ? `

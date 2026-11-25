@@ -1,8 +1,8 @@
 {
   "summary": {
-    "total_tracks": 565,
-    "drum_tracks": 408,
-    "drumless_tracks": 157,
+    "total_tracks": 558,
+    "drum_tracks": 407,
+    "drumless_tracks": 151,
     "drop_tracks": 245,
     "clusters": {
       "Generative AI · Afro, house & cumbia": {
@@ -11,12 +11,12 @@
         "drops": 49
       },
       "IDM, glitch & industrial": {
-        "total": 63,
+        "total": 58,
         "drums": 37,
         "drops": 16
       },
       "Ambient & soundscapes": {
-        "total": 62,
+        "total": 61,
         "drums": 0,
         "drops": 0
       },
@@ -61,8 +61,8 @@
         "drops": 14
       },
       "Downtempo & leftfield": {
-        "total": 21,
-        "drums": 15,
+        "total": 19,
+        "drums": 13,
         "drops": 8
       },
       "Generative AI · Orchestral & choir": {
@@ -76,8 +76,8 @@
         "drops": 5
       },
       "Indie, post-punk & guitar": {
-        "total": 12,
-        "drums": 7,
+        "total": 13,
+        "drums": 8,
         "drops": 4
       },
       "Generative AI · Drum & bass": {
@@ -1059,7 +1059,7 @@
     "hd_2005_7": {
       "id": "hd_2005_7",
       "title": "Happy",
-      "cluster_label": "Downtempo & leftfield",
+      "cluster_label": "Indie, post-punk & guitar",
       "is_ai": false,
       "has_drums": true,
       "drum_score": 1.078,
@@ -1228,17 +1228,6 @@
       "has_drop": false,
       "old_preview_start_sec": 24.52,
       "preview_start_sec": 24.52
-    },
-    "hd_2005_33": {
-      "id": "hd_2005_33",
-      "title": "Not 2 L8",
-      "cluster_label": "Downtempo & leftfield",
-      "is_ai": false,
-      "has_drums": true,
-      "drum_score": 0.657,
-      "has_drop": false,
-      "old_preview_start_sec": 55.73,
-      "preview_start_sec": 55.73
     },
     "hd_2005_34": {
       "id": "hd_2005_34",
@@ -1830,17 +1819,6 @@
       "old_preview_start_sec": 85.26,
       "preview_start_sec": 85.26
     },
-    "archive_2013_18_34": {
-      "id": "archive_2013_18_34",
-      "title": "Chord-ideas (1)-- Best",
-      "cluster_label": "IDM, glitch & industrial",
-      "is_ai": false,
-      "has_drums": false,
-      "drum_score": 0.535,
-      "has_drop": false,
-      "old_preview_start_sec": 95.39,
-      "preview_start_sec": 95.39
-    },
     "archive_2013_18_35": {
       "id": "archive_2013_18_35",
       "title": "Clean 29 Test Track",
@@ -1872,17 +1850,6 @@
       "post_sub_norm": 0.66,
       "pre4_combo_norm": 0.36,
       "min_pre3_norm": 0.24
-    },
-    "archive_2013_18_37": {
-      "id": "archive_2013_18_37",
-      "title": "Counterpoint-part-2",
-      "cluster_label": "IDM, glitch & industrial",
-      "is_ai": false,
-      "has_drums": false,
-      "drum_score": 0.578,
-      "has_drop": false,
-      "old_preview_start_sec": 9.75,
-      "preview_start_sec": 9.75
     },
     "archive_2013_18_38": {
       "id": "archive_2013_18_38",
@@ -2233,17 +2200,6 @@
       "old_preview_start_sec": 9.57,
       "preview_start_sec": 9.57
     },
-    "archive_2013_18_76": {
-      "id": "archive_2013_18_76",
-      "title": "jamstik -A7 D7 C7",
-      "cluster_label": "IDM, glitch & industrial",
-      "is_ai": false,
-      "has_drums": false,
-      "drum_score": 0.68,
-      "has_drop": false,
-      "old_preview_start_sec": 13.28,
-      "preview_start_sec": 13.28
-    },
     "archive_2013_18_77": {
       "id": "archive_2013_18_77",
       "title": "Jamstik -ambient",
@@ -2481,17 +2437,6 @@
       "has_drop": false,
       "old_preview_start_sec": 114.71,
       "preview_start_sec": 114.71
-    },
-    "archive_2013_18_103": {
-      "id": "archive_2013_18_103",
-      "title": "Minor Chord Rave Riff",
-      "cluster_label": "IDM, glitch & industrial",
-      "is_ai": false,
-      "has_drums": false,
-      "drum_score": 0.895,
-      "has_drop": false,
-      "old_preview_start_sec": 7.99,
-      "preview_start_sec": 7.99
     },
     "archive_2013_18_106": {
       "id": "archive_2013_18_106",
@@ -4497,17 +4442,6 @@
       "old_preview_start_sec": 141.92,
       "preview_start_sec": 141.92
     },
-    "archive_2018_23_66": {
-      "id": "archive_2018_23_66",
-      "title": "War Machine",
-      "cluster_label": "IDM, glitch & industrial",
-      "is_ai": false,
-      "has_drums": false,
-      "drum_score": 0.786,
-      "has_drop": false,
-      "old_preview_start_sec": 95.86,
-      "preview_start_sec": 95.86
-    },
     "archive_2018_23_68": {
       "id": "archive_2018_23_68",
       "title": "You Will Try",
@@ -5300,17 +5234,6 @@
       "has_drop": false,
       "old_preview_start_sec": 12.82,
       "preview_start_sec": 12.82
-    },
-    "sketches_2024_25_32": {
-      "id": "sketches_2024_25_32",
-      "title": "Wireless",
-      "cluster_label": "Ambient & soundscapes",
-      "is_ai": false,
-      "has_drums": false,
-      "drum_score": 0.0,
-      "has_drop": false,
-      "old_preview_start_sec": 82.94,
-      "preview_start_sec": 82.94
     },
     "ecstatic_wave_1": {
       "id": "ecstatic_wave_1",

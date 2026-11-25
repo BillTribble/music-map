@@ -702,11 +702,18 @@ DEFAULT_EXCLUDED_IDS = {
     # MusicFX AI test — excluded by owner (post-023266)
     "archive_2018_23_45",
     "archive_2018_23_46",
-    # Owner track removals (post-023520, post-023524, post-023576, post-023651)
+    # Owner track removals (post-023520, post-023524, post-023576, post-023651, post-023691, post-023696, post-023750)
     "present_electro_7",
     "hd_2005_42",
     "archive_2013_18_146",
     "archive_2013_18_18",
+    "archive_2013_18_34",
+    "archive_2018_23_66",
+    "archive_2013_18_37",
+    "archive_2013_18_76",
+    "archive_2013_18_103",
+    "hd_2005_33",
+    "sketches_2024_25_32",
 }
 
 CANONICAL_ARCHETYPES: list[tuple[str, str, int]] = [
@@ -1439,12 +1446,15 @@ def enrich_track_tiers(t: dict, rel_repo: str = "BillTribble/music-map") -> None
             "granular perc (gamelanish)",
         }
     )
-    is_sketch = False if t.get("is_ai") else bool(
+    is_psychedailies = str(era or "").strip().lower() == "psychedailies" or str(tid).startswith("psychedailies_")
+    is_sketch = False if (t.get("is_ai") or is_psychedailies) else bool(
         is_forced_sketch
         or (not released and full_dur is not None and float(full_dur) < 75.0)
     )
     tier = "released" if released else ("free_download" if t.get("is_ai") else ("archive_dl" if year < 2015 else "request"))
     t.update({"year": year, "released": released, "is_sketch": is_sketch, "tier": tier})
+    if is_psychedailies:
+        t["note"] = "Made in one day, with help from friends on Endlesss."
     if is_forced_sketch:
         t["wip_eligible"] = False
     if links:
@@ -1502,6 +1512,13 @@ def is_excluded_by_folder_rule(path_str: str) -> bool:
         or "status quo 01 free" in low_p
         or "take you chords 02-sketch vox" in low_p
         or low_p.endswith("/arps test.mp3")
+        or "chord-ideas (1)-- best" in low_p
+        or "counterpoint-part-2" in low_p
+        or "jamstik -a7 d7 c7" in low_p
+        or "minor chord rave riff" in low_p
+        or "not 2 l8" in low_p
+        or "war machine/war machine 04" in low_p
+        or "wireless-bounce-1" in low_p
     ):
         return True
     parts = [p.strip() for p in low_p.split("/") if p.strip()]

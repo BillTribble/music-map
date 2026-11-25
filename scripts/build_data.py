@@ -49,7 +49,7 @@ ERA_META = [
     ("nihon_forever", "Nihon Forever", "Nihon", "~2015–17", "phase1_early", "P1", ""),
     ("ep_concepts", "EP Concepts", "EP Conc", "~2016–18", "phase1_early", "P1", "Includes 'Le Garage ≤2018' folder"),
     ("le_garage", "Le Garage", "Garage", "2018–19", "phase2_mid", "P2", "Le Garage Hermétique (5/9 microtonal or gamelan)"),
-    ("psychedailies", "Psychedailies", "Psych", "2019–21", "phase2_mid", "P2", "Audio-first sketches"),
+    ("psychedailies", "Psychedailies", "Psych", "2019–21", "phase2_mid", "P2", "Made in one day, with help from friends on Endlesss."),
     ("archive_2018_23", "Archive 18–23", "Arch 18", "2018–23", "phase2_mid", "P2", "Audio-heavy archive"),
     ("spirit_guides", "Spirit Guides", "Spirit", "~2020–22", "phase3_ambient", "P3", ""),
     ("lucid_crystal", "Lucid Crystal", "Lucid", "~2021–23", "phase3_ambient", "P3", ""),
@@ -1014,11 +1014,18 @@ DEFAULT_EXCLUDED_IDS = {
     # MusicFX AI test — excluded by owner (post-023266)
     "archive_2018_23_45",
     "archive_2018_23_46",
-    # Owner track removals (post-023520, post-023524, post-023576, post-023651)
+    # Owner track removals (post-023520, post-023524, post-023576, post-023651, post-023691, post-023696, post-023750)
     "present_electro_7",
     "hd_2005_42",
     "archive_2013_18_146",
     "archive_2013_18_18",
+    "archive_2013_18_34",
+    "archive_2018_23_66",
+    "archive_2013_18_37",
+    "archive_2013_18_76",
+    "archive_2013_18_103",
+    "hd_2005_33",
+    "sketches_2024_25_32",
 }
 
 TITLE_OVERRIDES = {
@@ -1138,6 +1145,13 @@ def is_excluded_by_folder_rule(path_str: str) -> bool:
         or "status quo 01 free" in low_p
         or "take you chords 02-sketch vox" in low_p
         or low_p.endswith("/arps test.mp3")
+        or "chord-ideas (1)-- best" in low_p
+        or "counterpoint-part-2" in low_p
+        or "jamstik -a7 d7 c7" in low_p
+        or "minor chord rave riff" in low_p
+        or "not 2 l8" in low_p
+        or "war machine/war machine 04" in low_p
+        or "wireless-bounce-1" in low_p
     ):
         return True
     parts = [p.strip() for p in low_p.split("/") if p.strip()]
@@ -1329,7 +1343,10 @@ def build_from_full_analysis(
                 t["era"] = new_era
                 t["year"] = new_yr
                 t["slot"] = new_slot
-            if str(t.get("id") or "") in FORCE_SKETCH_IDS or str(t.get("title") or "").strip().lower() in FORCE_SKETCH_TITLES:
+            if str(t.get("era") or "").strip().lower() == "psychedailies" or str(t.get("id") or "").startswith("psychedailies_"):
+                t["is_sketch"] = False
+                t["note"] = "Made in one day, with help from friends on Endlesss."
+            elif str(t.get("id") or "") in FORCE_SKETCH_IDS or str(t.get("title") or "").strip().lower() in FORCE_SKETCH_TITLES:
                 t["is_sketch"] = True
                 t["wip_eligible"] = False
 

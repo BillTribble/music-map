@@ -116,6 +116,13 @@ EXCLUDED_PATH_SUBSTRS = (
     "status quo 01 free",
     "take you chords 02-sketch vox",
     "stepper sketches 2012-2018/arps test",
+    "chord-ideas (1)-- best",
+    "counterpoint-part-2",
+    "jamstik -a7 d7 c7",
+    "minor chord rave riff",
+    "not 2 l8",
+    "war machine/war machine 04",
+    "wireless-bounce-1",
 )
 EXCLUDED_EXACT_REL_PATHS = {
     "02 - psychedailies/season 1 - psychedaily/^ shortlist psychedailies/01 getaway/getaway vdj edit.flac",
@@ -191,6 +198,13 @@ EXCLUDED_EXACT_REL_PATHS = {
     "music sketches archive. 2012-2020/stepper sketches 2012-2018/take you chords 02-sketch vox.wav",
     "music sketches archive. 2012-2020/stepper sketches 2012-2018/take you chords 02-straight.mp3",
     "music sketches archive. 2012-2020/stepper sketches 2012-2018/take you chords 02-straight.wav",
+    "music sketches archive. 2012-2020/stepper sketches 2012-2018/chord-ideas (1)-- best.mp3",
+    "music sketches archive. 2012-2020/stepper sketches 2012-2018/counterpoint-part-2.mp3",
+    "music sketches archive. 2012-2020/stepper sketches 2012-2018/jamstik -a7 d7 c7.mp3",
+    "music sketches archive. 2012-2020/stepper sketches 2012-2018/0 minor chord rave riff.mp3",
+    "archive me music 2018-23/2019 sketches/^ ancient/war machine/war machine 04.aif",
+    "me music - 2005 hard drive/not 2 l8 comp.m4a",
+    "^ music sketches 2024/simple mics setup for ecstatic/bounce/wireless-bounce-1.wav",
 }
 TITLE_OVERRIDES_BY_REL_PATH = {
     "me music - 2005 hard drive/as we enter mix2.m4a": "pr3s3nt - As we Enter",
@@ -540,10 +554,11 @@ def build_manifest(raw_items: list[dict], ffprobe_bin: str | None = None, check_
                 "granular perc (gamelanish)",
             }
         )
-        is_sketch = False if is_ai_track else bool(is_forced_sketch or (not released and dur_sec is not None and dur_sec < 75.0))
+        is_psychedailies = str(era or "").strip().lower() == "psychedailies"
+        is_sketch = False if (is_ai_track or is_psychedailies) else bool(is_forced_sketch or (not released and dur_sec is not None and dur_sec < 75.0))
         tier = "released" if released else ("free_download" if is_ai_track else ("archive_dl" if year < 2015 else "request"))
 
-        selected.append({
+        item_out = {
             "id": tid,
             "era": era,
             "slot": slot,
@@ -564,7 +579,10 @@ def build_manifest(raw_items: list[dict], ffprobe_bin: str | None = None, check_
             "links": links,
             "dedup_variants": len(candidates),
             "slug": slugify(title),
-        })
+        }
+        if is_psychedailies:
+            item_out["note"] = "Made in one day, with help from friends on Endlesss."
+        selected.append(item_out)
 
     return {
         "n_raw_candidates": len(raw_items),

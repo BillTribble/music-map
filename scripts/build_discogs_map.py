@@ -216,11 +216,18 @@ DEFAULT_EXCLUDED_IDS = {
     # MusicFX AI test — excluded by owner (post-023266)
     "archive_2018_23_45",
     "archive_2018_23_46",
-    # Owner track removals (post-023520, post-023524, post-023576, post-023651)
+    # Owner track removals (post-023520, post-023524, post-023576, post-023651, post-023691, post-023696, post-023750)
     "present_electro_7",
     "hd_2005_42",
     "archive_2013_18_146",
     "archive_2013_18_18",
+    "archive_2013_18_34",
+    "archive_2018_23_66",
+    "archive_2013_18_37",
+    "archive_2013_18_76",
+    "archive_2013_18_103",
+    "hd_2005_33",
+    "sketches_2024_25_32",
 }
 
 # Tracks genuinely rendered in 2026 move to the '2026' Era column (post-023035),
@@ -261,6 +268,7 @@ TITLE_OVERRIDES = {
 }
 
 INDIE_GUITAR_KEEPER_IDS = {
+    "hd_2005_7",          # Happy (post-023691: curated into Indie, post-punk & guitar)
     "hd_2005_29",         # Mello Heart
     "hd_2005_28",         # Mary J Slinted 2003
     "archive_2013_18_65", # Spudboy - Green Lanes
@@ -274,6 +282,12 @@ INDIE_GUITAR_KEEPER_IDS = {
     "bands_archive_20",   # Yon-Santa Claus Asbo (Yon)
     "bands_archive_21",   # Yon - Robots Will Replace You (Yon)
 }
+
+CLUSTER_OVERRIDES: dict[str, int] = {
+    "hd_2005_7": 4,       # Happy -> Indie, post-punk & guitar (d4_indie_guitar, post-023691)
+}
+
+PSYCHEDAILIES_NOTE = "Made in one day, with help from friends on Endlesss."
 
 SPOKEN_WORD_IDS: set[str] = set()
 
@@ -307,6 +321,13 @@ def is_excluded_by_folder_rule(path_str: str) -> bool:
       or "status quo 01 free" in low_p
       or "take you chords 02-sketch vox" in low_p
       or low_p.endswith("/arps test.mp3")
+      or "chord-ideas (1)-- best" in low_p
+      or "counterpoint-part-2" in low_p
+      or "jamstik -a7 d7 c7" in low_p
+      or "minor chord rave riff" in low_p
+      or "not 2 l8" in low_p
+      or "war machine/war machine 04" in low_p
+      or "wireless-bounce-1" in low_p
   ):
     return True
   parts = [p.strip() for p in low_p.split("/") if p.strip()]
@@ -768,12 +789,17 @@ def classify_folder_guidance(
       )
   )
 
-  # User rules (post-022787, post-023035, post-023356): 100% of GenAI tracks and full-length (>= 75s) tracks have is_sketch = False unless explicitly in FORCE_SKETCH_IDS
+  # User rules (post-022787, post-023035, post-023356, post-023691): 100% of GenAI tracks, Psychedailies tracks, and full-length (>= 75s) tracks have is_sketch = False unless explicitly in FORCE_SKETCH_IDS
+  is_psychedailies = (
+      str(t.get("era") or "").strip().lower() == "psychedailies"
+      or tid.startswith("psychedailies_")
+      or "02 - psychedailies" in low
+  )
   is_forced_sketch = (
       tid in FORCE_SKETCH_IDS
       or str(t.get("title") or "").strip().lower() in FORCE_SKETCH_TITLES
   )
-  is_sketch = False if (is_ai or is_spoken_word) else bool(
+  is_sketch = False if (is_ai or is_spoken_word or is_psychedailies) else bool(
       is_forced_sketch
       or (
           tid not in FORCE_NON_SKETCH_IDS
@@ -847,6 +873,18 @@ def classify_folder_guidance(
         "prior": prior,
         "allowed": {4},
         "rule": "curated:spoken_word_island",
+    }
+
+  if tid in CLUSTER_OVERRIDES:
+    override_cidx = int(CLUSTER_OVERRIDES[tid])
+    prior[override_cidx] += 0.45
+    return {
+        "is_ai": False,
+        "is_spoken_word": False,
+        "is_sketch": is_sketch,
+        "prior": prior,
+        "allowed": {override_cidx},
+        "rule": f"curated:cluster_override_{override_cidx}",
     }
 
   if tid in INDIE_GUITAR_KEEPER_IDS:
@@ -1673,6 +1711,12 @@ def build_dataset(
         or "status quo 01 free" in tl
         or "take you chords 02-sketch vox" in tl
         or tl == "arps test"
+        or "chord-ideas (1)-- best" in tl
+        or tl in ("war machine", "war machine 04")
+        or tl == "counterpoint-part-2"
+        or ("jamstik" in tl and "a7 d7 c7" in tl)
+        or "minor chord rave riff" in tl
+        or tl in ("not 2 l8", "not 2 l8 comp", "wireless", "wireless-bounce-1")
     )
 
   feats = np.load(features_path)
@@ -2076,6 +2120,9 @@ def build_dataset(
           and eff_era in WIP_ELIGIBLE_ERAS
           and tid not in NON_WIP_REMASTER_IDS
       )
+      if eff_era == "psychedailies" or tid.startswith("psychedailies_"):
+        upd["is_sketch"] = False
+        upd["note"] = PSYCHEDAILIES_NOTE
 
     drop_entry = drop_previews_by_id.get(tid)
     if isinstance(drop_entry, dict) and drop_entry.get("has_drop"):
@@ -2195,6 +2242,7 @@ def build_dataset(
       er_copy["label"] = elabel
       er_copy["shortLabel"] = eshort
       er_copy["sublabel"] = eyears
+      er_copy["note"] = enote
       er_copy["audio_files"] = len(e_trks)
       er_copy["tracks"] = e_trks
       rebuilt_eras.append(er_copy)
@@ -2220,6 +2268,19 @@ def build_dataset(
               extra={"daw": "Early DAWs & Archive", "note": "Pre-2013 audio archive bounces", "tracks": p0_rep_tracks},
           )
       )
+    elif isinstance(item, dict):
+      ph_copy = dict(item)
+      ph_tracks = []
+      for sub_t in ph_copy.get("tracks", []):
+        if isinstance(sub_t, dict) and str(sub_t.get("id")) in tracks_by_id:
+          stid = str(sub_t["id"])
+          if stid in ai_id_set:
+            continue
+          merged_sub = dict(sub_t)
+          merged_sub.update(tracks_by_id[stid])
+          ph_tracks.append(merged_sub)
+      ph_copy["tracks"] = ph_tracks
+      rebuilt_phases.append(ph_copy)
     else:
       rebuilt_phases.append(item)
   data["phases"] = rebuilt_phases
