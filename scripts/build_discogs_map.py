@@ -4,6 +4,7 @@
 import argparse
 from collections import Counter
 import json
+import math
 import os
 import re
 
@@ -12,12 +13,14 @@ from sklearn.cluster import KMeans
 from sklearn.decomposition import PCA
 from sklearn.manifold import TSNE
 from sklearn.metrics import silhouette_score
-from sklearn.preprocessing import normalize
+from sklearn.preprocessing import StandardScaler, normalize
+import umap
 
 _ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 DEFAULT_DATA_JS = os.path.join(_ROOT, "js", "data.js")
 DEFAULT_FEATURES = "/tmp/music_map_discogs_features.npz"
 DEFAULT_GENAI_BUNDLE = os.path.join(_ROOT, "scripts", "genai_catalog_227.json")
+DEFAULT_YON_BUNDLE = os.path.join(_ROOT, "scripts", "yon_recovered_track.json")
 DEFAULT_CATALOG = os.path.expanduser("~/tmp/music_map_staging/catalog_587_enriched.json")
 DEFAULT_EXCLUSIONS = os.path.expanduser("~/tmp/music_map_staging/exclusions.json")
 DEFAULT_OUT_JS = os.path.join(_ROOT, "js", "data.js")
@@ -147,6 +150,13 @@ DEFAULT_EXCLUDED_IDS = {
     "remixes_commissions_20",
     "present_electro_58",
     "psychedailies_12",
+    "ep_concepts_27",
+    "ep_concepts_29",
+    "ecstatic_wave_12",
+    "ep_concepts_19",
+    "archive_2013_18_26",
+    "bands_archive_11",
+    "archive_2018_23_43",
 }
 
 TITLE_OVERRIDES = {
@@ -165,6 +175,7 @@ INDIE_GUITAR_KEEPER_IDS = {
     "hd_2005_14",         # Cuntray
     "bands_archive_18",   # Mic Test2 Rev (Yon)
     "bands_archive_20",   # Yon-Santa Claus Asbo (Yon)
+    "bands_archive_21",   # Yon - Robots Will Replace You (Yon)
 }
 
 SPOKEN_WORD_IDS = {
@@ -206,7 +217,7 @@ STYLE_SLOTS = [
     {
         "idx": 0,
         "id": "d0_ambient",
-        "label": "Ambient & meditative",
+        "label": "Ambient & soundscapes",
         "short_label": "Ambient",
         "hue": 210,
         "discogs_kw": {
@@ -214,10 +225,12 @@ STYLE_SLOTS = [
             "Electronic---Dungeon Synth": 1.5,
             "Electronic---New Age": 1.5,
             "Electronic---Dark Ambient": 1.8,
-            "Electronic---Drone": 1.8,
+            "Electronic---Drone": 2.0,
+            "Classical---Post-Modern": 1.8,
+            "Classical---Impressionist": 1.4,
         },
-        "mood_kw": {"relaxing": 1.8, "meditative": 2.0, "soundscape": 1.5, "space": 0.9},
-        "inst_kw": {"synthesizer": 0.6},
+        "mood_kw": {"relaxing": 1.8, "meditative": 1.8, "soundscape": 2.0, "space": 1.2},
+        "inst_kw": {"synthesizer": 0.6, "piano": 0.9},
     },
     {
         "idx": 1,
@@ -315,12 +328,13 @@ STYLE_SLOTS = [
             "Electronic---Experimental": 2.4,
             "Electronic---Noise": 2.8,
             "Electronic---Industrial": 2.6,
-            "Electronic---Chiptune": 2.4,
-            "Electronic---Glitch": 2.4,
-            "Electronic---IDM": 2.0,
+            "Electronic---Chiptune": 2.6,
+            "Electronic---Glitch": 2.8,
+            "Electronic---IDM": 2.6,
+            "Electronic---Abstract": 2.0,
             "Electronic---Power Electronics": 2.2,
         },
-        "mood_kw": {"dark": 2.2, "heavy": 1.0},
+        "mood_kw": {"dark": 1.8, "heavy": 1.0, "energetic": 0.6},
         "inst_kw": {"synthesizer": 1.0},
     },
     {
@@ -341,20 +355,30 @@ STYLE_SLOTS = [
     },
     {
         "idx": 8,
-        "id": "d8_piano_acoustic",
-        "label": "Piano, classical & folk",
-        "short_label": "Piano & acoustic",
+        "id": "d8_meditative_beats",
+        "label": "Meditative beats",
+        "short_label": "Meditative beats",
         "hue": 190,
         "discogs_kw": {
-            "Classical---Post-Modern": 3.0,
-            "Classical---Impressionist": 2.5,
-            "Classical---Modern": 2.4,
-            "Classical---Contemporary": 2.4,
-            "Folk, World, & Country---Folk": 2.6,
-            "Rock---Neofolk": 2.2,
+            "Electronic---Ambient": 2.8,
+            "Electronic---Downtempo": 2.5,
+            "Electronic---Dub": 1.6,
+            "Electronic---New Age": 1.8,
+            "Electronic---Berlin-School": 1.5,
+            "Electronic---Chillwave": 1.6,
+            "Electronic---Dub Techno": 1.1,
+            "Folk, World, & Country---Folk": 1.0,
         },
-        "mood_kw": {"relaxing": 1.0, "film": 1.4, "emotional": 1.0},
-        "inst_kw": {"piano": 3.5, "acousticguitar": 1.8, "violin": 1.5, "cello": 1.5},
+        "mood_kw": {
+            "meditative": 3.2,
+            "relaxing": 2.6,
+            "calm": 2.2,
+            "space": 1.5,
+            "dream": 1.5,
+            "slow": 1.5,
+            "deep": 1.0,
+        },
+        "inst_kw": {"synthesizer": 0.8, "piano": 1.1, "acousticguitar": 0.8},
     },
     {
         "idx": 9,
@@ -518,7 +542,9 @@ def extract_instrument_tags(probs, classes):
   return out
 
 
-def build_seeded_prototypes(X_hybrid, discogs_mean, mood_mean, inst_mean, dg_cls, md_cls, in_cls, track_ids=None):
+def build_seeded_prototypes(
+    X_hybrid, discogs_mean, mood_mean, inst_mean, dg_cls, md_cls, in_cls, track_ids=None, perc_shares=None
+):
   dg_idx = {str(c): i for i, c in enumerate(dg_cls)}
   md_idx = {str(c): i for i, c in enumerate(md_cls)}
   in_idx = {str(c): i for i, c in enumerate(in_cls)}
@@ -553,6 +579,27 @@ def build_seeded_prototypes(X_hybrid, discogs_mean, mood_mean, inst_mean, dg_cls
     for k, w in slot["inst_kw"].items():
       if k in in_idx:
         score += w * in_z[:, in_idx[k]]
+    if perc_shares is not None:
+      if slot["idx"] == 0:
+        score = np.where(perc_shares >= 0.13, score - 6.0, score)
+      elif slot["idx"] == 8:
+        score = np.where(perc_shares < 0.11, -999.0, score)
+        for neg_dg in (
+            "Electronic---Techno",
+            "Electronic---Electro",
+            "Electronic---Glitch",
+            "Electronic---Industrial",
+            "Electronic---Noise",
+            "Electronic---Drum n Bass",
+            "Electronic---Breakcore",
+            "Electronic---House",
+            "Electronic---Dubstep",
+        ):
+          if neg_dg in dg_idx:
+            score -= 1.6 * dg_z[:, dg_idx[neg_dg]]
+        for neg_md in ("energetic", "fast", "heavy"):
+          if neg_md in md_idx:
+            score -= 1.8 * md_z[:, md_idx[neg_md]]
     for sr in spoken_rows:
       score[sr] = -999.0
     top_idx = np.argsort(-score)[:20]
@@ -567,7 +614,15 @@ def _rel_catalog_path(local_path: str) -> str:
   return local_path
 
 
-def classify_folder_guidance(t: dict, cat_entry: dict | None) -> dict:
+def classify_folder_guidance(
+    t: dict,
+    cat_entry: dict | None,
+    med_vibe: float = 0.0,
+    edgy_vibe: float = 0.0,
+    glitch_idm_vibe: float = 0.0,
+    downtempo_prob: float = 0.0,
+    dnb_prob: float = 0.0,
+) -> dict:
   """Evaluate author folder priority, Generative AI / Spoken Word membership, and clean Sketch status."""
   tid = str(t.get("id") or "")
   rel_path = _rel_catalog_path(str((cat_entry or {}).get("local_path") or ""))
@@ -577,8 +632,8 @@ def classify_folder_guidance(t: dict, cat_entry: dict | None) -> dict:
   fname = os.path.basename(rel_path)
   released = bool(t.get("released"))
   full_dur = float(t.get("full_duration_sec") or (cat_entry or {}).get("full_duration_sec") or t.get("duration_sec") or 180.0)
-  perc_share = float((cat_entry or {}).get("perc_share") or t.get("perc_share") or 0.1)
-  four_on_floor = float((cat_entry or {}).get("four_on_floor") or t.get("four_on_floor") or 0.0)
+  perc_share = float(t.get("perc_share") if t.get("perc_share") is not None else ((cat_entry or {}).get("perc_share") or 0.1))
+  four_on_floor = float(t.get("four_on_floor") if t.get("four_on_floor") is not None else ((cat_entry or {}).get("four_on_floor") or 0.0))
   energy = float(t.get("energy") or 5)
 
   is_spoken_word = tid in SPOKEN_WORD_IDS
@@ -684,52 +739,74 @@ def classify_folder_guidance(t: dict, cat_entry: dict | None) -> dict:
         allowed = {4}
         rule = "folder:bands_and_jams_guitar"
     elif "03 - spirit guides" in low or "dark ambient ep" in low or "jungle and rain atmos" in low:
-      prior[0] += 0.28
-      prior[2] += 0.06
-      allowed = {0, 2}
-      rule = "folder:spirit_guides_dark_ambient"
-    elif "04 - lucid crystal" in low or "arising and passing" in low:
-      prior[0] += 0.22
-      prior[1] += 0.08
-      prior[2] += 0.06
-      allowed = {0, 1, 2}
-      rule = "folder:lucid_crystal_ambient"
-    elif "present trax/ambient" in low:
-      if perc_share >= 0.16 and energy >= 4:
-        prior[2] += 0.22
+      if perc_share >= 0.14 and med_vibe >= 0.40:
+        prior[8] += 0.28
         prior[0] += 0.10
-        allowed = {0, 2}
-        rule = "folder:present_ambient_downtempo"
+        allowed = {0, 8}
+        rule = "folder:spirit_guides_meditative_beats"
       else:
         prior[0] += 0.28
+        prior[2] += 0.06
         allowed = {0, 2}
+        rule = "folder:spirit_guides_dark_ambient"
+    elif "04 - lucid crystal" in low or "arising and passing" in low:
+      if perc_share >= 0.14 and med_vibe >= 0.40:
+        prior[8] += 0.30
+        prior[0] += 0.08
+        allowed = {0, 8}
+        rule = "folder:lucid_crystal_meditative_beats"
+      else:
+        prior[0] += 0.24
+        prior[1] += 0.08
+        prior[2] += 0.06
+        allowed = {0, 1, 2}
+        rule = "folder:lucid_crystal_ambient"
+    elif "present trax/ambient" in low:
+      if perc_share >= 0.105 and energy >= 4:
+        prior[8] += 0.32
+        allowed = {8}
+        rule = "folder:present_ambient_meditative_beats"
+      else:
+        prior[0] += 0.30
+        allowed = {0, 8}
         rule = "folder:present_ambient"
     elif "02 - le garage" in low or "le garage era tracks" in low or "gamelan" in low:
       prior[1] += 0.20
       prior[2] += 0.10
       prior[0] += 0.08
-      allowed = {0, 1, 2}
+      allowed = {0, 1, 2, 8}
       rule = "folder:le_garage_microtonal"
     elif "06 - ecstatic wave" in low or ("reflective disc" in low and "^ uptempo level match" in low):
       if "06 - ecstatic wave" in low and perc_share < 0.10 and four_on_floor < 10.0:
-        prior[0] += 0.24
+        prior[0] += 0.28
+        prior[8] += 0.08
+        allowed = {0, 8}
+        rule = "folder:ecstatic_ambient_interlude"
+      elif "06 - ecstatic wave" in low and med_vibe >= 0.40 and four_on_floor < 44.0 and edgy_vibe < 0.32:
+        prior[8] += 0.30
         prior[2] += 0.08
         allowed = {0, 2, 8}
-        rule = "folder:ecstatic_ambient_interlude"
+        rule = "folder:ecstatic_meditative_beats"
       else:
         prior[3] += 0.18
         prior[1] += 0.12
         prior[5] += 0.08
-        allowed = {1, 2, 3, 5}
+        allowed = {1, 2, 3, 5, 8}
         rule = "folder:ecstatic_uptempo_groove"
     elif any(k in low for k in ("dom piano ravel", "me and mya piano", "kalimba, piano")):
-      prior[8] += 0.26
-      allowed = {8, 0, 2}
-      rule = "folder:piano_acoustic"
+      if perc_share >= 0.12:
+        prior[8] += 0.28
+        prior[2] += 0.08
+        allowed = {8, 2}
+        rule = "folder:piano_kalimba_beats"
+      else:
+        prior[0] += 0.28
+        allowed = {0}
+        rule = "folder:piano_acoustic_ambient"
     elif "summon downtempo" in low:
       prior[2] += 0.20
       prior[0] += 0.08
-      prior[8] += 0.08
+      prior[8] += 0.12
       allowed = {0, 2, 8}
       rule = "folder:downtempo"
     elif any(k in low for k in ("d&b", "breakbeat loops", "classic breaks", "vivaldi drill")):
@@ -744,13 +821,35 @@ def classify_folder_guidance(t: dict, cat_entry: dict | None) -> dict:
       allowed = {1, 2, 5, 6, 7}
       rule = "folder:offal_beats"
     elif "01 - nihon forever" in low:
-      prior[5] += 0.10
-      prior[3] += 0.10
-      prior[1] += 0.08
-      rule = "folder:nihon_forever"
+      if med_vibe >= 0.45 and perc_share >= 0.10 and edgy_vibe < 0.32:
+        prior[8] += 0.24
+        prior[0] += 0.08
+        rule = "folder:nihon_forever_meditative"
+      else:
+        prior[5] += 0.10
+        prior[3] += 0.10
+        prior[1] += 0.08
+        rule = "folder:nihon_forever"
 
   if not is_ai and not is_band:
     allowed = (allowed - {4}) if allowed is not None else {0, 1, 2, 3, 5, 6, 7, 8, 9}
+    if perc_share < 0.105:
+      # Beatless / minimal-percussion soundscapes belong in Ambient & soundscapes (d0), not Meditative beats (d8)
+      prior[0] += 0.14
+      prior[8] -= 0.24
+    elif med_vibe >= 0.42 and edgy_vibe < 0.25 and 0.105 <= perc_share <= 0.44:
+      # Serene, contemplative pulse/rhythmic ambient pieces (incl. Great Spirit 01 & 7rez 01) route to Meditative beats (d8)
+      prior[8] += 0.30
+      if rule == "folder:le_garage_microtonal":
+        prior[1] -= 0.14
+    elif edgy_vibe >= 0.42 or perc_share >= 0.50:
+      # Edgy/dense leftfield, glitch, IDM & techno beats (like Collaboration perc=0.56, glitchClub=0.45) stay out of Meditative beats
+      if rule not in ("folder:present_ambient_meditative_beats", "folder:piano_kalimba_beats"):
+        prior[8] -= 0.18
+    if (glitch_idm_vibe >= 0.34 or (glitch_idm_vibe >= 0.24 and energy >= 8)) and downtempo_prob < 0.09 and dnb_prob < 0.10 and rule == "discogs_ml":
+      # Clean Glitch / IDM / Chiptune / Abstract pieces (e.g. Nameless, Ichi Ban) route to IDM, glitch & industrial without stealing DnB/Jungle
+      prior[6] += 0.22
+      prior[2] -= 0.16
 
   return {
       "is_ai": is_ai,
@@ -762,18 +861,25 @@ def classify_folder_guidance(t: dict, cat_entry: dict | None) -> dict:
   }
 
 
-def _deoverlap_points(pts, min_sep, x_bounds, y_bounds, anchor_pull=0.025, iters=65):
+def _deoverlap_points(
+    pts, min_sep, x_bounds, y_bounds, anchor_pull=0.025, iters=65, clusters=None, cross_mult=1.0
+):
   anchor = pts.copy()
   pos = pts.copy()
+  if clusters is not None and cross_mult > 1.0:
+    same_c = clusters[:, None] == clusters[None, :]
+    sep_mat = np.where(same_c, min_sep, min_sep * cross_mult)
+  else:
+    sep_mat = min_sep
   for _ in range(iters):
     diff = pos[:, None, :] - pos[None, :, :]
     dist_sq = np.sum(diff * diff, axis=2)
     np.fill_diagonal(dist_sq, 9.0)
     dist = np.sqrt(dist_sq)
-    overlap = (dist < min_sep) & (dist > 1e-9)
+    overlap = (dist < sep_mat) & (dist > 1e-9)
     if not np.any(overlap):
       break
-    force_mag = np.where(overlap, (min_sep - dist) / (dist + 1e-6) * 0.38, 0.0)
+    force_mag = np.where(overlap, (sep_mat - dist) / (dist + 1e-6) * 0.38, 0.0)
     disp = np.sum(diff * force_mag[:, :, None], axis=1)
     pos = pos + disp + anchor_pull * (anchor - pos)
     pos[:, 0] = np.clip(pos[:, 0], x_bounds[0], x_bounds[1])
@@ -784,7 +890,8 @@ def _deoverlap_points(pts, min_sep, x_bounds, y_bounds, anchor_pull=0.025, iters
 def compute_organic_continuum_and_ai_layout(
     X_hybrid, proto_centers, priors, cluster_idx, is_ai_mask, is_spoken_mask
 ):
-  """Project handcrafted tracks onto one organic t-SNE continuum (matching d939dcca organic spacing & blurring),
+  """Project handcrafted tracks onto a coherent Target-Guided Cosine UMAP archipelago (each genre forms a distinct,
+  non-interleaved territory touching along clean organic borders without radial cookie-cutter clamping),
   place Generative AI tracks into a rounded 2D genre-subdivided archipelago on the right,
   and isolate Spoken Word tracks onto their own quiet mini-island in the upper-right bay."""
   n = len(X_hybrid)
@@ -794,59 +901,63 @@ def compute_organic_continuum_and_ai_layout(
   ai_idx = np.where(is_ai_mask)[0]
   sp_idx = np.where(is_spoken_mask)[0]
 
-  # 1. Handcrafted Music: Continuous PCA-initialized t-SNE Manifold + Honeycombed Organic Spacing
-  # Soft Discogs-400 + folder affinity guides genre peninsulas while preserving natural shoreline blurring.
-  proto_aff = (X_hybrid[hc_idx] @ proto_centers.T) + priors[hc_idx]
-  proto_aff_z = (proto_aff - proto_aff.mean(axis=0)) / (proto_aff.std(axis=0) + 1e-5)
-  proto_soft = np.exp(1.20 * proto_aff_z)
-  proto_soft = proto_soft / (proto_soft.sum(axis=1, keepdims=True) + 1e-9)
-  hc_onehot = np.eye(10, dtype=np.float64)[cluster_idx[hc_idx]]
-  X_hc = np.hstack([
-      X_hybrid[hc_idx] * 1.25,
-      normalize(proto_soft, norm="l2") * 0.58,
-      hc_onehot * 0.12,
-  ])
-
-  perp_hc = min(34, max(16, len(hc_idx) // 14))
-  u_hc = TSNE(
-      n_components=2,
-      perplexity=perp_hc,
-      init="pca",
-      learning_rate="auto",
+  # 1. Handcrafted Music: Target-Guided Cosine UMAP on rhythm-enriched X_hybrid (coherent non-interleaved peninsulas!)
+  hc_clusters = cluster_idx[hc_idx]
+  reducer = umap.UMAP(
+      n_neighbors=20,
+      min_dist=0.22,
+      metric="cosine",
+      target_metric="categorical",
+      target_weight=0.38,
+      compatibility_layout=True,
       random_state=42,
-  ).fit_transform(X_hc).astype(np.float64)
+  )
+  u_hc = reducer.fit_transform(X_hybrid[hc_idx], y=hc_clusters).astype(np.float64)
 
-  # Orient principal axis horizontally (ambient/acoustic on left -> club/bass/breaks/guitar across core & right)
+  # Orient principal axis horizontally (ambient/meditative beats on left -> club/bass/breaks across core & right)
   u_centered = u_hc - u_hc.mean(axis=0)
   cov = np.cov(u_centered.T)
   eigvals, eigvecs = np.linalg.eigh(cov)
   order = np.argsort(-eigvals)
   rot = u_centered @ eigvecs[:, order]
 
-  amb_mask = np.isin(cluster_idx[hc_idx], [0, 8])
+  amb_mask = np.isin(hc_clusters, [0, 8])
   if np.any(amb_mask) and rot[amb_mask, 0].mean() > 0:
     rot[:, 0] = -rot[:, 0]
-  house_mask = np.isin(cluster_idx[hc_idx], [3, 9])
+  house_mask = np.isin(hc_clusters, [3, 9])
   if np.any(house_mask) and rot[house_mask, 1].mean() > 0:
     rot[:, 1] = -rot[:, 1]
 
-  # Gentle 10% pull toward cluster median + soft outer-outlier pull so genres touch & blur across shared borders!
-  hc_clusters = cluster_idx[hc_idx]
+  # Gentle gap pull (0.66x centroid spread + 1.05x local UMAP offsets) so genres nestle closely into one cozy archipelago without scrambling!
+  global_med = np.median(rot, axis=0)
+  rot_cozy = rot.copy()
   for c in range(10):
     m = hc_clusters == c
     if np.sum(m) >= 2:
-      med = np.median(rot[m], axis=0)
-      rot[m] = 0.90 * rot[m] + 0.10 * med
+      c_med = np.median(rot[m], axis=0)
+      local_delta = rot[m] - c_med
+      d_norm = np.linalg.norm(local_delta, axis=1)
+      if c == 4:
+        d_cap = max(0.32, float(np.percentile(d_norm, 85)) * 1.35)
+        scale_out = np.where(d_norm > d_cap, d_cap / np.maximum(d_norm, 1e-6), 1.0)
+      else:
+        d_cap = max(0.35, float(np.percentile(d_norm, 88)) * 1.35)
+        scale_out = np.where(d_norm > d_cap, (d_cap + 0.20 * (d_norm - d_cap)) / np.maximum(d_norm, 1e-6), 1.0)
+      local_delta = local_delta * scale_out[:, None]
+      c_pulled = global_med + 0.78 * (c_med - global_med)
+      rot_cozy[m] = c_pulled + 0.94 * local_delta
+  rot = rot_cozy
 
+  # Soft tail knee only on extreme >1.85-sigma outliers so no single stray dot stretches the bounding box
   center = np.median(rot, axis=0)
   rel = rot - center
   radii = np.hypot(rel[:, 0] / (np.std(rel[:, 0]) + 1e-6), rel[:, 1] / (np.std(rel[:, 1]) + 1e-6))
-  r_knee = 1.15
-  compress = np.where(radii > r_knee, (r_knee + 0.50 * (radii - r_knee)) / np.maximum(radii, 1e-6), 1.0)
+  r_knee = 1.85
+  compress = np.where(radii > r_knee, (r_knee + 0.45 * (radii - r_knee)) / np.maximum(radii, 1e-6), 1.0)
   rot = center + rel * compress[:, None]
 
-  x_lo, x_hi = 0.072, 0.634
-  y_lo, y_hi = 0.130, 0.870
+  x_lo, x_hi = 0.070, 0.636
+  y_lo, y_hi = 0.125, 0.875
   hc_pts = np.zeros_like(rot)
   for dim, (lo, hi) in enumerate(((x_lo, x_hi), (y_lo, y_hi))):
     v = rot[:, dim]
@@ -858,14 +969,16 @@ def compute_organic_continuum_and_ai_layout(
   hud_mask = (hc_pts[:, 0] < 0.24) & (hc_pts[:, 1] < 0.165)
   hc_pts[hud_mask, 1] = np.maximum(hc_pts[hud_mask, 1], 0.170)
 
-  # Honeycombed organic dot spacing (matching d939dcca...)
+  # Cross-cluster border channel (cross_mult=1.65) + anchor_pull=0.10 keeps every genre territory clean and non-interleaved!
   hc_pts = _deoverlap_points(
       hc_pts,
-      min_sep=0.0185,
+      min_sep=0.0172,
       x_bounds=(0.046, 0.656),
       y_bounds=(0.095, 0.905),
-      anchor_pull=0.025,
-      iters=75,
+      anchor_pull=0.10,
+      iters=80,
+      clusters=hc_clusters,
+      cross_mult=1.65,
   )
   coords[hc_idx] = hc_pts
 
@@ -1005,6 +1118,20 @@ def build_dataset(
       tracks.append(gt)
       new_ai_tracks.append(gt)
 
+  yon_new_track = None
+  if os.path.exists(DEFAULT_YON_BUNDLE):
+    yt = json.load(open(DEFAULT_YON_BUNDLE, "r", encoding="utf-8"))
+    yid = str(yt.get("id") or "")
+    if yid and yid not in excluded_ids:
+      yon_new_track = dict(yt)
+      if yid not in existing_ids:
+        tracks.append(dict(yt))
+        existing_ids.add(yid)
+      else:
+        for t in tracks:
+          if str(t.get("id") or "") == yid:
+            t.update(yon_new_track)
+
   data["tracks"] = tracks
   n_tracks = len(tracks)
 
@@ -1027,24 +1154,125 @@ def build_dataset(
   md_cls = feats["mood_classes"]
   in_cls = feats["inst_classes"]
 
-  # Hybrid feature space
+  # Explicit rhythm/tempo/groove DSP block standardized strictly on handcrafted music so 86 BPM pulse vs 130 BPM glitch never collapses
+  dsp_rows = []
+  hc_prelim = []
+  for t in tracks:
+    tid = str(t["id"])
+    ct = cat_by_id.get(tid) or {}
+    is_sp_p = tid in SPOKEN_WORD_IDS
+    is_ai_p = bool(t.get("is_ai")) or tid.startswith("ai_music_")
+    hc_prelim.append(not is_sp_p and not is_ai_p)
+    bpm_val = float(t.get("effective_bpm") or t.get("bpm") or ct.get("bpm") or 120.0)
+    bpm_oct = bpm_val
+    while bpm_oct >= 158.0:
+      bpm_oct *= 0.5
+    while bpm_oct < 79.0:
+      bpm_oct *= 2.0
+    raw_p = t.get("perc_share") if t.get("perc_share") is not None else ct.get("perc_share")
+    perc_val = float(raw_p) if raw_p is not None else 0.05
+    dc_val = float(t.get("drum_complexity") or ct.get("drum_complexity") or 30.0) / 100.0
+    f4_val = float(t.get("four_on_floor") or ct.get("four_on_floor") or 0.0) / 100.0
+    brk_val = float(t.get("breakbeat_score") or ct.get("breakbeat_score") or 0.0) / 100.0
+    en_val = float(t.get("energy") or ct.get("energy") or 5.0) / 10.0
+    dsp_rows.append([
+        math.log2(max(40.0, bpm_val)),
+        0.7 * math.sin(2.0 * math.pi * math.log2(bpm_oct)),
+        0.7 * math.cos(2.0 * math.pi * math.log2(bpm_oct)),
+        perc_val * 1.8,
+        dc_val * 1.3,
+        f4_val * 1.1,
+        brk_val * 1.1,
+        en_val * 1.1,
+    ])
+  dsp_arr = np.array(dsp_rows, dtype=np.float64)
+  hc_prelim_mask = np.array(hc_prelim, dtype=bool)
+  dsp_scaler = StandardScaler().fit(dsp_arr[hc_prelim_mask])
+  dsp_l2 = normalize(dsp_scaler.transform(dsp_arr), norm="l2")
+
+  # Rhythm-Enriched Hybrid Feature Space (1280-D Essentia + 400-D Discogs + Jamendo Mood/Inst + DSP Rhythm/Tempo)
   emb_l2 = normalize(emb_mean, norm="l2")
   dg_l2 = normalize(np.log1p(12.0 * discogs_mean), norm="l2")
   md_l2 = normalize(np.log1p(8.0 * mood_mean), norm="l2")
   in_l2 = normalize(np.log1p(8.0 * inst_mean), norm="l2")
   X_hybrid = normalize(
-      np.hstack([emb_l2, 0.65 * dg_l2, 0.20 * md_l2, 0.30 * in_l2]), norm="l2"
+      np.hstack([emb_l2, 0.68 * dg_l2, 0.25 * md_l2, 0.25 * in_l2, 0.40 * dsp_l2]), norm="l2"
   )
 
-  # Compute 8-D sonic similarity walk vector for any newly ingested tracks lacking feat_vec
+  # Refresh 8-D sonic similarity walk vector from rhythm-enriched X_hybrid across all tracks
   pca8 = PCA(n_components=8, random_state=42).fit_transform(X_hybrid)
   pca8 = (pca8 - pca8.mean(axis=0)) / (pca8.std(axis=0) + 1e-6)
   for i, t in enumerate(tracks):
-    if not isinstance(t.get("feat_vec"), list) or len(t.get("feat_vec", [])) != 8:
-      t["feat_vec"] = [round(float(x), 3) for x in pca8[i]]
+    t["feat_vec"] = [round(float(x), 3) for x in pca8[i]]
+
+  perc_shares = np.array([
+      float(
+          t.get("perc_share")
+          if t.get("perc_share") is not None
+          else ((cat_by_id.get(str(t["id"])) or {}).get("perc_share") or 0.05)
+      )
+      for t in tracks
+  ], dtype=np.float64)
+
+  dg_map = {str(c): idx for idx, c in enumerate(dg_cls)}
+  md_map = {str(c): idx for idx, c in enumerate(md_cls)}
+  med_vibes = np.zeros(n_tracks, dtype=np.float64)
+  edgy_vibes = np.zeros(n_tracks, dtype=np.float64)
+  glitch_idm_vibes = np.zeros(n_tracks, dtype=np.float64)
+  downtempo_probs = discogs_mean[:, dg_map["Electronic---Downtempo"]] if "Electronic---Downtempo" in dg_map else np.zeros(n_tracks)
+  dnb_probs = np.zeros(n_tracks, dtype=np.float64)
+  for k in ("Electronic---Drum n Bass", "Electronic---Jungle"):
+    if k in dg_map:
+      dnb_probs += discogs_mean[:, dg_map[k]]
+  for k, w in (
+      ("meditative", 1.0),
+      ("relaxing", 1.0),
+      ("calm", 1.0),
+      ("space", 1.0),
+      ("dream", 1.0),
+      ("slow", 1.0),
+      ("soundscape", 0.7),
+      ("deep", 0.6),
+  ):
+    if k in md_map:
+      med_vibes += w * mood_mean[:, md_map[k]]
+  for k in (
+      "Electronic---Techno",
+      "Electronic---Electro",
+      "Electronic---Glitch",
+      "Electronic---Industrial",
+      "Electronic---Noise",
+      "Electronic---Drum n Bass",
+      "Electronic---Breakcore",
+      "Electronic---House",
+      "Electronic---Dubstep",
+  ):
+    if k in dg_map:
+      edgy_vibes += discogs_mean[:, dg_map[k]]
+  for k in (
+      "Electronic---Glitch",
+      "Electronic---IDM",
+      "Electronic---Chiptune",
+      "Electronic---Abstract",
+      "Electronic---Industrial",
+      "Electronic---Noise",
+  ):
+    if k in dg_map:
+      glitch_idm_vibes += discogs_mean[:, dg_map[k]]
 
   # Fit prototypes & KMeans strictly on handcrafted musical tracks (~is_ai & ~is_spoken) so handcrafted clusters never drift!
-  prelim_guidance = [classify_folder_guidance(t, cat_by_id.get(str(t["id"]))) for t in tracks]
+  prelim_guidance = [
+      classify_folder_guidance(
+          t,
+          cat_by_id.get(str(t["id"])),
+          med_vibe=float(med_vibes[i]),
+          edgy_vibe=float(edgy_vibes[i]),
+          glitch_idm_vibe=float(glitch_idm_vibes[i]),
+          downtempo_prob=float(downtempo_probs[i]),
+          dnb_prob=float(dnb_probs[i]),
+      )
+      for i, t in enumerate(tracks)
+  ]
   hc_fit_mask = np.array(
       [not g["is_ai"] and not g["is_spoken_word"] for g in prelim_guidance],
       dtype=bool,
@@ -1059,6 +1287,7 @@ def build_dataset(
       md_cls,
       in_cls,
       track_ids=hc_track_ids,
+      perc_shares=perc_shares[hc_fit_mask],
   )
   km = KMeans(n_clusters=10, init=seeds, n_init=1, max_iter=300, random_state=42)
   km.fit(X_hybrid[hc_fit_mask])
@@ -1148,7 +1377,7 @@ def build_dataset(
             break
       upd = {
           "cluster_id": "ai_generative" if is_ai else slot["id"],
-          "cluster_label": f"Generative AI · {slot['short_label']}" if is_ai else slot["label"],
+          "cluster_label": f"Generative AI · {ai_sub_label or slot['short_label']}" if is_ai else slot["label"],
           "cluster_idx": cidx,
           "is_ai": is_ai,
           "is_spoken_word": False,
@@ -1173,10 +1402,11 @@ def build_dataset(
     track_updates[tid] = upd
 
     xy = [round(float(coords[i, 0]), 4), round(float(coords[i, 1]), 4)]
-    era_xy = old_track_map.get(tid, {}).get("era", xy)
+    default_era_xy = old_track_map.get("bands_archive_20", {}).get("era", xy) if tid == "bands_archive_21" else xy
+    era_xy = old_track_map.get(tid, {}).get("era", default_era_xy)
     new_track_map[tid] = {"vibe": xy, "similarity": xy, "era": era_xy}
 
-    # Nearest neighbors strictly within same territory (0 cross-edges into/out of Spoken Word or AI)
+    # Same-cluster-first acoustically-ranked nearest neighbors within same territory (top-16 so sketch filtering never starves real neighbors!)
     if is_sp:
       new_track_near[tid] = []
     else:
@@ -1184,34 +1414,37 @@ def build_dataset(
       sims[i] = -2.0
       sims[is_spoken_mask] = -2.0
       sims[is_ai_mask != is_ai] = -2.0
-      nn_idx = [int(j) for j in np.argsort(-sims) if sims[j] > -1.0][:6]
+      same_c_mask = (cluster_idx == cidx) & (sims > -1.0)
+      other_c_mask = (cluster_idx != cidx) & (sims >= 0.78)
+      same_nn = [int(j) for j in np.argsort(-np.where(same_c_mask, sims, -2.0)) if same_c_mask[j]][:12]
+      other_nn = [int(j) for j in np.argsort(-np.where(other_c_mask, sims, -2.0)) if other_c_mask[j]][:6]
+      nn_idx = (same_nn + other_nn)[:16]
       new_track_near[tid] = [
           [tracks[j]["id"], round(float(sims[j]), 3)] for j in nn_idx
       ]
 
   # Keep data["eras"] & data["phases"] strictly handcrafted non-AI tracks so Ableton analytical views stay pure
   ai_id_set = {str(t["id"]) for t in tracks if t.get("is_ai")}
-  for item in data.get("eras", []):
-    kept_sub = []
-    for sub_t in item.get("tracks", []):
-      if isinstance(sub_t, dict) and sub_t.get("id") in track_updates:
-        tid = str(sub_t["id"])
-        if tid in ai_id_set:
-          continue
-        sub_t.update(track_updates[tid])
-        kept_sub.append(sub_t)
-    item["tracks"] = kept_sub
-
-  for item in data.get("phases", []):
-    kept_sub = []
-    for sub_t in item.get("tracks", []):
-      if isinstance(sub_t, dict) and sub_t.get("id") in track_updates:
-        tid = str(sub_t["id"])
-        if tid in ai_id_set:
-          continue
-        sub_t.update(track_updates[tid])
-        kept_sub.append(sub_t)
-    item["tracks"] = kept_sub
+  for section, target_id in (("eras", "bands_archive"), ("phases", "phase0_archive")):
+    for item in data.get(section, []):
+      kept_sub = []
+      seen_ids = set()
+      for sub_t in item.get("tracks", []):
+        if isinstance(sub_t, dict) and sub_t.get("id") in track_updates:
+          stid = str(sub_t["id"])
+          if stid in ai_id_set:
+            continue
+          seen_ids.add(stid)
+          if yon_new_track is not None and stid == "bands_archive_21":
+            sub_t.update(yon_new_track)
+          sub_t.update(track_updates[stid])
+          kept_sub.append(sub_t)
+      if yon_new_track is not None and "bands_archive_21" in track_updates and "bands_archive_21" not in seen_ids:
+        if str(item.get("id") or "") == target_id:
+          yt_copy = dict(yon_new_track)
+          yt_copy.update(track_updates["bands_archive_21"])
+          kept_sub.append(yt_copy)
+      item["tracks"] = kept_sub
 
   style_groups = []
   for cidx in range(10):

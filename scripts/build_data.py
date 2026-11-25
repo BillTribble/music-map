@@ -846,6 +846,13 @@ DEFAULT_EXCLUDED_IDS = {
     "remixes_commissions_20",
     "present_electro_58",
     "psychedailies_12",
+    "ep_concepts_27",
+    "ep_concepts_29",
+    "ecstatic_wave_12",
+    "ep_concepts_19",
+    "archive_2013_18_26",
+    "bands_archive_11",
+    "archive_2018_23_43",
 }
 
 TITLE_OVERRIDES = {

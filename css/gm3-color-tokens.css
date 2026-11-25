@@ -93,15 +93,15 @@
   --md-sys-color-on-cyan-tonal: #155E75;
 
   /* 10-Cluster Vibe Map Palette (Light Mode — AA ink on white stage) */
-  --md-sys-color-cluster-0: #1D4ED8; /* Ambient & meditative (Blue) */
-  --md-sys-color-cluster-1: #4338CA; /* Dark ambient & drone (Indigo) */
-  --md-sys-color-cluster-2: #0F766E; /* Downtempo & lush chords (Teal) */
-  --md-sys-color-cluster-3: #15803D; /* Chill & steady electronic (Green) */
-  --md-sys-color-cluster-4: #B45309; /* Guitar demos (Amber) */
-  --md-sys-color-cluster-5: #7E22CE; /* Hypnotic electro & microtonal (Violet) */
-  --md-sys-color-cluster-6: #C2410C; /* House & ecstatic 4/4 groove (Orange) */
+  --md-sys-color-cluster-0: #1D4ED8; /* Ambient & soundscapes (Blue) */
+  --md-sys-color-cluster-1: #4338CA; /* Hypnotic, dub & microtonal (Indigo) */
+  --md-sys-color-cluster-2: #0F766E; /* Downtempo & leftfield (Teal) */
+  --md-sys-color-cluster-3: #15803D; /* House & deep groove (Green) */
+  --md-sys-color-cluster-4: #B45309; /* Indie, post-punk & guitar (Amber) */
+  --md-sys-color-cluster-5: #7E22CE; /* Electro, acid & techno (Violet) */
+  --md-sys-color-cluster-6: #C2410C; /* IDM, glitch & industrial (Orange) */
   --md-sys-color-cluster-7: #BE123C; /* Jungle, DnB & breakcore (Crimson) */
-  --md-sys-color-cluster-8: #0E7490; /* Piano, classical & folk (Cyan) */
+  --md-sys-color-cluster-8: #0E7490; /* Meditative beats (Cyan) */
   --md-sys-color-cluster-9: #4D7C0F; /* UK bass, dubstep & juke (Lime) */
   --md-sys-color-cluster-10: #A21CAF; /* Auxiliary cluster (Magenta) */
 
@@ -240,15 +240,15 @@
   --md-sys-color-on-cyan-tonal: #67E8F9;
 
   /* 10-Cluster Vibe Map Palette (Dark Mode — luminous on obsidian stage) */
-  --md-sys-color-cluster-0: #60A5FA; /* Ambient & meditative */
-  --md-sys-color-cluster-1: #818CF8; /* Dark ambient & drone */
-  --md-sys-color-cluster-2: #2DD4BF; /* Downtempo & lush chords */
-  --md-sys-color-cluster-3: #4ADE80; /* Chill & steady electronic */
-  --md-sys-color-cluster-4: #FBBF24; /* Guitar demos */
-  --md-sys-color-cluster-5: #C084FC; /* Hypnotic electro & microtonal */
-  --md-sys-color-cluster-6: #FB923C; /* House & ecstatic 4/4 groove */
+  --md-sys-color-cluster-0: #60A5FA; /* Ambient & soundscapes */
+  --md-sys-color-cluster-1: #818CF8; /* Hypnotic, dub & microtonal */
+  --md-sys-color-cluster-2: #2DD4BF; /* Downtempo & leftfield */
+  --md-sys-color-cluster-3: #4ADE80; /* House & deep groove */
+  --md-sys-color-cluster-4: #FBBF24; /* Indie, post-punk & guitar */
+  --md-sys-color-cluster-5: #C084FC; /* Electro, acid & techno */
+  --md-sys-color-cluster-6: #FB923C; /* IDM, glitch & industrial */
   --md-sys-color-cluster-7: #FB7185; /* Jungle, DnB & breakcore */
-  --md-sys-color-cluster-8: #22D3EE; /* Piano, classical & folk */
+  --md-sys-color-cluster-8: #22D3EE; /* Meditative beats */
   --md-sys-color-cluster-9: #A3E635; /* UK bass, dubstep & juke */
   --md-sys-color-cluster-10: #F472B6; /* Auxiliary cluster */
 }

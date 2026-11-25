@@ -688,10 +688,12 @@
       const mp3Url = t.mp3_320_url;
       const flacUrl = t.flac_url || "";
       const safeFilename = `Bill Tribble - ${(t.title || t.id).replace(/[\\/:*?"<>|]/g, "")}.mp3`;
+      const estKbps = Number(t.mp3_kbps) || (t.mp3_320_bytes && t.full_duration_sec ? Math.round((t.mp3_320_bytes * 8) / 1000 / t.full_duration_sec) : 320);
+      const mp3Label = estKbps < 280 ? "Download MP3" : "Download MP3 (320 kbps)";
       return `
         <div class="player-actions">
           <div class="player-cta-row">
-            <a class="btn" href="${esc(mp3Url)}" download="${esc(safeFilename)}" target="_blank" rel="noopener noreferrer" data-dl-kind="track-download-mp3"><span class="ms">download</span><span>Download MP3 (320 kbps)</span></a>
+            <a class="btn" href="${esc(mp3Url)}" download="${esc(safeFilename)}" target="_blank" rel="noopener noreferrer" data-dl-kind="track-download-mp3"><span class="ms">download</span><span>${mp3Label}</span></a>
             ${flacUrl ? `<a class="btn-secondary-pill" href="${esc(flacUrl)}" target="_blank" rel="noopener noreferrer" data-dl-kind="track-download-flac" title="Download lossless FLAC"><span class="ms">album</span><span>FLAC</span></a>` : ""}
           </div>
         </div>`;

@@ -184,6 +184,7 @@
       }
 
       let chosenBox = null;
+      let fallbackEmphBox = null;
       for (let ci = 0; ci < cands.length; ci++) {
         let b = cands[ci].box;
         if (b[0] < 4) {
@@ -196,7 +197,8 @@
         if (b[0] < 3 || b[2] > vw - 3 || b[1] < 6 || b[3] > vh - 6) continue;
 
         const padB = [b[0] - 1.4, b[1] - 0.9, b[2] + 1.4, b[3] + 0.9];
-        if (!item.emph && uiBoxes.some((ub) => boxOverlap(padB, ub))) continue;
+        const hitUi = uiBoxes.some((ub) => boxOverlap(padB, ub));
+        if (hitUi && !item.emph) continue;
 
         let hitPlaced = false;
         for (let pi = 0; pi < placed.length; pi++) {
@@ -215,11 +217,15 @@
             break;
           }
         }
-        if (hitDot && !item.emph) continue;
+        if (hitDot || hitUi) {
+          if (item.emph && !fallbackEmphBox && !cands[ci].leader) fallbackEmphBox = b;
+          continue;
+        }
 
         chosenBox = b;
         break;
       }
+      if (!chosenBox && fallbackEmphBox) chosenBox = fallbackEmphBox;
 
       if (!chosenBox) continue;
       placed.push(chosenBox);
@@ -346,6 +352,8 @@
 
     const MOBILE_SHORT = {
       "Ambient & meditative": "Ambient",
+      "Ambient & soundscapes": "Ambient",
+      "Meditative beats": "Meditative beats",
       "Dark ambient & drone": "Dark ambient",
       "Downtempo & lush chords": "Downtempo",
       "House & ecstatic 4/4 groove": "House & 4/4",
@@ -394,6 +402,19 @@
           Math.max(4, rMinY - padTop) - 26,
           Math.min(vw - 6, rMaxX + padX) + 4,
           Math.min(vh - 6, rMaxY + padBot) + 4,
+        ]);
+        const rShort = rg.short_label || MOBILE_SHORT[rg.label];
+        const rLbl = (!isWide && !zoomed && rShort) ? rShort : rg.label;
+        const rHw = Math.ceil(textWidth(fontSpec, rLbl) * 0.57 + 8);
+        const rHh = Math.ceil(fs * 0.65 + 3.5);
+        const rHeaderOffset = rg.is_spoken_group ? (isWide ? 22 : 16) : (isWide ? 34 : 18);
+        const rBoxCenterX = Math.max(rHw + 8, Math.min(vw - rHw - 8, (rMinX + rMaxX) * 0.5));
+        const rHeaderY = Math.max(rHh + 10, rMinY - rHh - rHeaderOffset);
+        reserveGuardBoxes.push([
+          rBoxCenterX - rHw - 6,
+          rHeaderY - rHh - 4,
+          rBoxCenterX + rHw + 6,
+          rHeaderY + rHh + 4,
         ]);
       }
     });
@@ -489,11 +510,19 @@
       const cands = [
         [topX, minY - hh - 10],
         [mx, minY - hh - 10],
+        [mx + 28, minY - hh - 10],
+        [mx - 28, minY - hh - 10],
+        [mx + 56, minY - hh - 12],
+        [mx - 56, minY - hh - 12],
         [mx, minY - hh - 20],
         [mx, minY - hh - 32],
         [cMaxX + hw * 0.45, minY - hh - 10],
         [cMinX - hw * 0.45, minY - hh - 10],
+        [maxX + hw * 0.55, minY - hh - 8],
+        [minX - hw * 0.55, minY - hh - 8],
         [mx, maxY + hh + 10],
+        [mx + 28, maxY + hh + 10],
+        [mx - 28, maxY + hh + 10],
         [mx, maxY + hh + 22],
         [mx, maxY + hh + 34],
         [cMaxX + hw * 0.45, maxY + hh + 10],
@@ -553,9 +582,9 @@
         }
 
         const seenCand = new Set();
-        const distWeight = isWide || zoomed ? 0.55 : 1.15;
-        const outerMaxCore = isWide ? 285 : 165;
-        const outerMaxBox = isWide ? 205 : 118;
+        const distWeight = zoomed ? 0.55 : (isWide ? 0.85 : 1.15);
+        const outerMaxCore = isWide ? 235 : 165;
+        const outerMaxBox = isWide ? 148 : 118;
 
         for (let ci = 0; ci < cands.length; ci++) {
           const cx = zoomed ? cands[ci][0] : clampX(cands[ci][0]);
@@ -572,7 +601,7 @@
           if (!zoomed && (distCore > outerMaxCore || distCoreBox > outerMaxBox)) continue;
 
           const inCoreInterior = (!zoomed && visCount >= 6 && dxCoreBox === 0 && dyCoreBox === 0) ? 420 : 0;
-          const baseLowerBound = distCore * distWeight + inCoreInterior + (cy < minY ? -14 : 0);
+          const baseLowerBound = distCore * distWeight + inCoreInterior + (cy < minY ? -26 : 0);
           if (baseLowerBound >= bestScore) continue;
 
           const box = [cx - hw, cy - hh, cx + hw, cy + hh];
@@ -588,9 +617,11 @@
           let ownD2 = Infinity;
           let otherD2 = Infinity;
           let pruned = false;
+          const b0 = box[0], b1 = box[1], b2 = box[2], b3 = box[3];
           for (let di = 0; di < dotLen; di++) {
-            const ddx = cx - dotX[di];
-            const ddy = cy - dotY[di];
+            const px = dotX[di], py = dotY[di];
+            const ddx = px < b0 ? b0 - px : (px > b2 ? px - b2 : 0);
+            const ddy = py < b1 ? b1 - py : (py > b3 ? py - b3 : 0);
             const d2 = ddx * ddx + ddy * ddy;
             const isOwn = isOwnDot[di] === 1;
             if (isOwn) { if (d2 < ownD2) ownD2 = d2; }
@@ -605,16 +636,16 @@
           if (pruned) continue;
           const ownD = ownD2 < Infinity ? Math.sqrt(ownD2) : Infinity;
           const otherD = otherD2 < Infinity ? Math.sqrt(otherD2) : Infinity;
-          if (!isWide && !zoomed && !isDedicatedIsland && otherD + 16 < ownD) continue;
+          if (!zoomed && !isDedicatedIsland && otherD + (isWide ? 12 : 16) < ownD) continue;
 
           const maxDistCore = dotHits === 0 ? outerMaxCore : (isWide ? 215 : 135);
           const maxDistBox = dotHits === 0 ? outerMaxBox : (isWide ? 148 : 92);
           if (!zoomed && (distCore > maxDistCore || distCoreBox > maxDistBox)) continue;
           let score =
-            ownD * 1.05 +
+            ownD * 1.65 +
             baseLowerBound +
             dotCost +
-            (otherD < ownD ? (ownD - otherD) * 14 + 320 : 0);
+            (otherD < ownD ? (ownD - otherD) * 18 + 380 : 0);
           if (score < bestScore) {
             bestScore = score;
             best = [cx, cy];

@@ -272,12 +272,28 @@
     const visSet = new Set(visNodes.map((n) => n.id));
 
     if (layout === "vibe") {
-      const maxChordPx = Math.min(vw, vh) * 0.135;
+      const maxChordPx = Math.min(vw, vh) * 0.145;
+      const maxBridgePx = Math.min(vw, vh) * 0.22;
+      const MIN_CHORD_SIM = 0.68;
+      const MIN_BRIDGE_SIM = 0.70;
+
+      const nearSim = new Map();
+      visNodes.forEach((n) => {
+        const tid = n.id;
+        (trackNear[tid] || []).forEach(([nid, sim]) => {
+          if (!visSet.has(nid)) return;
+          const k = keyFor(tid, nid);
+          const prev = nearSim.get(k) || 0;
+          if (sim > prev) nearSim.set(k, sim);
+        });
+      });
+
       visNodes.forEach((n) => {
         const t = n.t;
         if (t.is_spoken_word) return;
         const tTerr = territoryOf(t);
-        const candidates = (trackNear[t.id] || []).filter(([nid]) => {
+        const candidates = (trackNear[t.id] || []).filter(([nid, sim]) => {
+          if (sim < MIN_CHORD_SIM) return false;
           if (!visSet.has(nid)) return false;
           const nb = nodeById.get(nid);
           if (!nb || territoryOf(nb.t) !== tTerr) return false;
@@ -289,7 +305,8 @@
         });
       });
 
-      // Kruskal bridge for detached vibe islands within each territory (never bridging Handcrafted <-> AI or Spoken Word)
+      // Acoustically-gated Kruskal bridge for detached vibe sub-constellations within each territory
+      // (strictly requires real audio/hybrid similarity in trackNear >= MIN_BRIDGE_SIM; never bridges acoustically unrelated border tracks!)
       if (visNodes.length <= 800) {
         const parent = new Map(visNodes.map((n) => [n.id, n.id]));
         const find = (x) => {
@@ -307,18 +324,21 @@
         pairs.forEach((e) => unite(e.a, e.b));
 
         const cands = [];
-        for (let i = 0; i < visNodes.length; i++) {
-          for (let j = i + 1; j < visNodes.length; j++) {
-            const a = visNodes[i], b = visNodes[j];
-            if (a.t.is_spoken_word || b.t.is_spoken_word) continue;
-            if (territoryOf(a.t) !== territoryOf(b.t)) continue;
-            if (find(a.id) === find(b.id)) continue;
-            cands.push({ a: a.id, b: b.id, d: Math.hypot(a.tx - b.tx, a.ty - b.ty) });
-          }
-        }
-        cands.sort((p, q) => p.d - q.d);
+        nearSim.forEach((sim, k) => {
+          if (sim < MIN_BRIDGE_SIM || pairs.has(k)) return;
+          const sep = k.indexOf("|");
+          const aId = k.slice(0, sep), bId = k.slice(sep + 1);
+          const a = nodeById.get(aId), b = nodeById.get(bId);
+          if (!a || !b || a.t.is_spoken_word || b.t.is_spoken_word) return;
+          if (territoryOf(a.t) !== territoryOf(b.t)) return;
+          if (find(aId) === find(bId)) return;
+          const d = Math.hypot(a.tx - b.tx, a.ty - b.ty);
+          if (d > maxBridgePx) return;
+          cands.push({ a: aId, b: bId, d, sim, cost: d / Math.max(0.5, sim) });
+        });
+        cands.sort((p, q) => p.cost - q.cost);
         for (const c of cands) {
-          if (unite(c.a, c.b)) pairs.set(keyFor(c.a, c.b), { a: c.a, b: c.b, w: 0.25, weak: true });
+          if (unite(c.a, c.b)) pairs.set(keyFor(c.a, c.b), { a: c.a, b: c.b, w: c.sim * 0.55, weak: true });
         }
       }
     } else {
@@ -996,6 +1016,7 @@
     getShowSketches: () => showSketches,
     setShowEraGenAi,
     getShowEraGenAi: () => showEraGenAi,
+    getEdges: () => edges.slice(),
     getEdgesCountFor: (tid) => edges.filter((e) => e.a === tid || e.b === tid).length,
     getNodeScreenPos: (tid) => { const n = nodeById.get(tid); return n && Number.isFinite(n.px) ? [n.px, n.py] : null; },
     setColorMode(mode) { colorMode = mode; paint(); },
