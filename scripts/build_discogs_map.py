@@ -27,8 +27,15 @@ DEFAULT_DATA_JS = os.path.join(_ROOT, "js", "data.js")
 DEFAULT_FEATURES = "/tmp/music_map_discogs_features.npz"
 DEFAULT_GENAI_BUNDLE = os.path.join(_ROOT, "scripts", "genai_catalog_198.json")
 DEFAULT_YON_BUNDLE = os.path.join(_ROOT, "scripts", "yon_recovered_track.json")
+DEFAULT_MASTERS_2026_BUNDLE = os.path.join(_ROOT, "scripts", "latest_masters_2026.json")
+DEFAULT_RENDERED_DATES = os.path.join(_ROOT, "scripts", "rendered_dates.json")
 DEFAULT_CATALOG = os.path.expanduser("~/tmp/music_map_staging/catalog_587_enriched.json")
-DEFAULT_EXCLUSIONS = os.path.expanduser("~/tmp/music_map_staging/exclusions.json")
+_STAGING_EXCLUSIONS = os.path.expanduser("~/tmp/music_map_staging/exclusions.json")
+DEFAULT_EXCLUSIONS = (
+    _STAGING_EXCLUSIONS
+    if os.path.exists(_STAGING_EXCLUSIONS)
+    else os.path.join(_ROOT, "scripts", "exclusions.json")
+)
 DEFAULT_OUT_JS = os.path.join(_ROOT, "js", "data.js")
 
 DEFAULT_EXCLUDED_IDS = {
@@ -193,6 +200,46 @@ DEFAULT_EXCLUDED_IDS = {
     "ai_music_066_84ef36",
     "ai_music_067_30817a",
     "ai_music_068_69176c",
+    # Bill in China 1983 + latest-master-only dedup (post-023039, post-023042)
+    "bands_archive_17",
+    "sketches_2026_8", "sketches_2026_20", "sketches_2026_14", "sketches_2026_15",
+    "ecstatic_wave_17", "sketches_2024_25_1",
+    "ep_concepts_9", "ep_concepts_11", "ep_concepts_12", "ep_concepts_13",
+    "ep_concepts_18", "ep_concepts_21", "ep_concepts_23", "ep_concepts_25", "ep_concepts_30",
+    "archive_2013_18_105",
+    "present_electro_31", "present_electro_1", "present_electro_47", "present_electro_35",
+    "hd_2005_23", "hd_2005_48", "present_electro_61", "hd_2005_6", "psychedailies_6",
+    "archive_2013_18_5", "archive_2013_18_60", "archive_2013_18_84", "archive_2018_23_53",
+    "archive_2013_18_93", "archive_2013_18_94", "archive_2018_23_63",
+}
+
+# Tracks genuinely rendered in 2026 move to the '2026' Era column (post-023035),
+# while older timelines being remastered (EP Concepts, Lucid Crystal, Nusrat 2023) stay in their own timelines (post-023037, post-023038).
+RENDERED_2026_ERA_IDS = {
+    "ecstatic_wave_1",      # Flowing Wave (v33 arrange, 2026-11-21)
+    "ecstatic_wave_2",      # Mega Dark Bass (v07 flowing, 2026-11-16)
+    "ecstatic_wave_3",      # Afro 06 (2026-09-08)
+    "ecstatic_wave_4",      # Great Spirit 01 (2026-01-15)
+    "ecstatic_wave_5",      # Ambient Intro - Outro (2026-09-07)
+    "ecstatic_wave_9",      # Dark Bit (2026-03-07)
+    "ecstatic_wave_11",     # Fast arp 02 (2026-09-10)
+    "ecstatic_wave_13",     # Flowing B 02 becca (2026-03-07)
+    "ecstatic_wave_14",     # Lyrical 01 (2026-03-07)
+    "remixes_commissions_12",  # Mamady Djole vs Charlie Sparks VIP 02 (2026-03-19)
+    "sketches_2026_1",      # Arcadian Sunrise 05 (2026-03-22)
+}
+
+WIP_ELIGIBLE_ERAS = {
+    "sketches_2026",
+    "ecstatic_wave",
+    "sketches_2024_25",
+    "archive_2018_23",
+    "archive_2013_18",
+    "remixes_commissions",
+}
+
+NON_WIP_REMASTER_IDS = {
+    "remixes_commissions_15",  # 2023 Nusrat remix remastered in 2026 -> not a recent WIP
 }
 
 TITLE_OVERRIDES = {
@@ -214,9 +261,7 @@ INDIE_GUITAR_KEEPER_IDS = {
     "bands_archive_21",   # Yon - Robots Will Replace You (Yon)
 }
 
-SPOKEN_WORD_IDS = {
-    "bands_archive_17",   # me - Bill in China 1983
-}
+SPOKEN_WORD_IDS: set[str] = set()
 
 FORCE_NON_SKETCH_IDS = INDIE_GUITAR_KEEPER_IDS | SPOKEN_WORD_IDS | {
     "hd_2005_10",         # pr3s3nt - As we Enter (mix2)
@@ -688,13 +733,11 @@ def classify_folder_guidance(
       )
   )
 
-  in_sketch_dir = "sketches" in low
-  has_sketch_word = bool(SKETCH_WORD_RE.search(title) or SKETCH_WORD_RE.search(fname))
-  # User rule (post-022787): 100% of Generative AI tracks are treated as finished (is_sketch = False)
+  # User rules (post-022787, post-023035): 100% of GenAI tracks and all full-length (>= 75s) tracks have is_sketch = False
   is_sketch = False if (is_ai or is_spoken_word) else bool(
       tid not in FORCE_NON_SKETCH_IDS
       and not released
-      and (in_sketch_dir or has_sketch_word or full_dur < 75.0)
+      and full_dur < 75.0
   )
 
   prior = np.zeros(10, dtype=np.float64)
@@ -1083,13 +1126,13 @@ def compute_organic_continuum_and_ai_layout(
         random_state=42,
     ).fit_transform(X_ai).astype(np.float64)
 
-    # Tighter 5-region sub-archipelago inside Generative AI reserve so sub-constellations weave closely together
+    # Tighter 5-region sub-archipelago inside Generative AI reserve (expanded upward now that Spoken word reserve is retired)
     sub_pockets = {
-        "ai_sub_orch":      (np.array([0.758, 0.334]), (0.706, 0.812), (0.280, 0.392)),
-        "ai_sub_world_exp": (np.array([0.876, 0.352]), (0.822, 0.942), (0.286, 0.422)),
-        "ai_sub_downtempo": (np.array([0.754, 0.506]), (0.702, 0.810), (0.432, 0.584)),
-        "ai_sub_house":     (np.array([0.876, 0.574]), (0.816, 0.946), (0.464, 0.688)),
-        "ai_sub_bass":      (np.array([0.778, 0.728]), (0.708, 0.850), (0.644, 0.816)),
+        "ai_sub_orch":      (np.array([0.758, 0.275]), (0.706, 0.812), (0.210, 0.340)),
+        "ai_sub_world_exp": (np.array([0.876, 0.295]), (0.822, 0.942), (0.220, 0.370)),
+        "ai_sub_downtempo": (np.array([0.754, 0.465]), (0.702, 0.810), (0.385, 0.545)),
+        "ai_sub_house":     (np.array([0.876, 0.545]), (0.816, 0.946), (0.425, 0.665)),
+        "ai_sub_bass":      (np.array([0.778, 0.705]), (0.708, 0.850), (0.610, 0.800)),
     }
     sub_members_local = {k: [] for k in sub_pockets}
     for local_i, global_i in enumerate(ai_idx):
@@ -1225,6 +1268,24 @@ def build_dataset(
         for t in tracks:
           if str(t.get("id") or "") == yid:
             t.update(yon_new_track)
+
+  if os.path.exists(DEFAULT_MASTERS_2026_BUNDLE):
+    mb = json.load(open(DEFAULT_MASTERS_2026_BUNDLE, "r", encoding="utf-8"))
+    masters_by_id = {str(m["id"]): m for m in mb.get("tracks", []) if m.get("id") and str(m["id"]) not in excluded_ids}
+    for t in tracks:
+      tid = str(t.get("id") or "")
+      if tid in masters_by_id:
+        t.update(masters_by_id[tid])
+    for mid, mt in masters_by_id.items():
+      if mid not in existing_ids:
+        tracks.append(dict(mt))
+        existing_ids.add(mid)
+
+  rendered_dates_map = (
+      json.load(open(DEFAULT_RENDERED_DATES, "r", encoding="utf-8"))
+      if os.path.exists(DEFAULT_RENDERED_DATES)
+      else {}
+  )
 
   data["tracks"] = tracks
   n_tracks = len(tracks)
@@ -1495,6 +1556,27 @@ def build_dataset(
         upd["era"] = res_era
         upd["year"] = res_yr
         upd["slot"] = res_slot
+      if tid in RENDERED_2026_ERA_IDS or str(upd.get("era") or t.get("era") or "") == "sketches_2026":
+        upd["era"] = "sketches_2026"
+        upd["year"] = 2026
+      elif str(upd.get("era") or t.get("era") or "") == "lucid_crystal":
+        upd["year"] = 2022
+
+    eff_era = str(upd.get("era") or t.get("era") or "")
+    eff_yr = int(upd.get("year") or t.get("year") or 2020)
+    if is_ai:
+      upd["wip_eligible"] = False
+      upd["rendered_at"] = str(t.get("rendered_at") or f"{eff_yr:04d}-06-15")
+    else:
+      iso_date = str(rendered_dates_map.get(tid) or t.get("rendered_at") or f"{eff_yr:04d}-06-15")
+      is_rel = bool(t.get("released"))
+      upd["rendered_at"] = iso_date
+      upd["wip_eligible"] = bool(
+          not is_sk
+          and not is_rel
+          and eff_era in WIP_ELIGIBLE_ERAS
+          and tid not in NON_WIP_REMASTER_IDS
+      )
 
     t.update(upd)
     t.pop("track_near", None)
@@ -1550,29 +1632,27 @@ def build_dataset(
     ]
 
   # Keep data["eras"] & data["phases"] strictly handcrafted non-AI tracks so Ableton analytical views stay pure
+  tracks_by_id = {str(t["id"]): t for t in tracks}
   ai_id_set = {str(t["id"]) for t in tracks if t.get("is_ai")}
   for section, target_id in (("eras", "bands_archive"), ("phases", "phase0_archive")):
     for item in data.get(section, []):
       kept_sub = []
       seen_ids = set()
       for sub_t in item.get("tracks", []):
-        if isinstance(sub_t, dict) and sub_t.get("id") in track_updates:
+        if isinstance(sub_t, dict) and sub_t.get("id") in tracks_by_id:
           stid = str(sub_t["id"])
           if stid in ai_id_set:
             continue
           seen_ids.add(stid)
-          if yon_new_track is not None and stid == "bands_archive_21":
-            sub_t.update(yon_new_track)
-          sub_t.update(track_updates[stid])
-          kept_sub.append(sub_t)
-      if yon_new_track is not None and "bands_archive_21" in track_updates and "bands_archive_21" not in seen_ids:
+          sub_copy = dict(sub_t)
+          sub_copy.update(tracks_by_id[stid])
+          kept_sub.append(sub_copy)
+      if yon_new_track is not None and "bands_archive_21" in tracks_by_id and "bands_archive_21" not in seen_ids:
         if str(item.get("id") or "") == target_id:
-          yt_copy = dict(yon_new_track)
-          yt_copy.update(track_updates["bands_archive_21"])
-          kept_sub.append(yt_copy)
+          kept_sub.append(dict(tracks_by_id["bands_archive_21"]))
       item["tracks"] = kept_sub
 
-  # Rebuild the 4 chronological 1997–2004 sub-eras + Phase 0: Archive ("1997–2014") + era_anchors cleanly
+  # Rebuild the 4 chronological 1997–2004 sub-eras + sync all Era headers/counts/tracks + Phase 0: Archive + era_anchors cleanly
   hc_tracks_by_era = {}
   for t in tracks:
     if t.get("is_ai"):
@@ -1589,8 +1669,8 @@ def build_dataset(
   present_4_ids = {"present_early_97", "present_breaks_99", "present_med_house_01", "present_arcadian_03"}
   rebuilt_eras = []
   for ekey, elabel, eshort, eyears, ephase, ptag, enote in bd.ERA_META:
+    e_trks = [dict(x) for x in hc_tracks_by_era.get(ekey, [])]
     if ekey in present_4_ids or ekey not in existing_eras_by_id:
-      e_trks = [dict(x) for x in hc_tracks_by_era.get(ekey, [])]
       rebuilt_eras.append(
           bd.extract_archive_item(
               ekey,
@@ -1602,7 +1682,13 @@ def build_dataset(
           )
       )
     else:
-      rebuilt_eras.append(existing_eras_by_id[ekey])
+      er_copy = dict(existing_eras_by_id[ekey])
+      er_copy["label"] = elabel
+      er_copy["shortLabel"] = eshort
+      er_copy["sublabel"] = eyears
+      er_copy["audio_files"] = len(e_trks)
+      er_copy["tracks"] = e_trks
+      rebuilt_eras.append(er_copy)
   data["eras"] = rebuilt_eras
 
   p0_all_tracks = [t for ek in bd.ARCHIVE_ERAS for t in hc_tracks_by_era.get(ek, [])]

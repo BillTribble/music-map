@@ -529,7 +529,8 @@
           (t.key_label || "").toLowerCase().includes(ql) ||
           (Array.isArray(t.discogs_styles) && t.discogs_styles.some((s) => s.toLowerCase().includes(ql))) ||
           (Array.isArray(t.mood_tags) && t.mood_tags.some((s) => s.toLowerCase().includes(ql))) ||
-          (Array.isArray(t.instrument_tags) && t.instrument_tags.some((s) => s.toLowerCase().includes(ql)))
+          (Array.isArray(t.instrument_tags) && t.instrument_tags.some((s) => s.toLowerCase().includes(ql))) ||
+          (window.isTrackWorkInProgress && window.isTrackWorkInProgress(t) && "work in progress wip".includes(ql))
         ) {
           hits.add(t.id);
         }

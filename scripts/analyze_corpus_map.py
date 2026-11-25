@@ -50,7 +50,7 @@ ERA_ORDER = [
 ERA_DEFAULT_YEAR = {
     "present_ambient": 2002, "present_electro": 2004, "hd_2005": 2005, "bands_archive": 2010,
     "archive_2013_18": 2015, "nihon_forever": 2018, "ep_concepts": 2019, "le_garage": 2023,
-    "psychedailies": 2021, "archive_2018_23": 2021, "spirit_guides": 2025, "lucid_crystal": 2026,
+    "psychedailies": 2021, "archive_2018_23": 2021, "spirit_guides": 2025, "lucid_crystal": 2022,
     "remixes_commissions": 2023, "sketches_2024_25": 2025, "ecstatic_wave": 2025, "sketches_2026": 2026,
 }
 PRE_2015_OVERRIDES = {
@@ -688,6 +688,17 @@ DEFAULT_EXCLUDED_IDS = {
     "ai_music_066_84ef36",
     "ai_music_067_30817a",
     "ai_music_068_69176c",
+    # Bill in China 1983 + latest-master-only dedup (post-023039, post-023042)
+    "bands_archive_17",
+    "sketches_2026_8", "sketches_2026_20", "sketches_2026_14", "sketches_2026_15",
+    "ecstatic_wave_17", "sketches_2024_25_1",
+    "ep_concepts_9", "ep_concepts_11", "ep_concepts_12", "ep_concepts_13",
+    "ep_concepts_18", "ep_concepts_21", "ep_concepts_23", "ep_concepts_25", "ep_concepts_30",
+    "archive_2013_18_105",
+    "present_electro_31", "present_electro_1", "present_electro_47", "present_electro_35",
+    "hd_2005_23", "hd_2005_48", "present_electro_61", "hd_2005_6", "psychedailies_6",
+    "archive_2013_18_5", "archive_2013_18_60", "archive_2013_18_84", "archive_2018_23_53",
+    "archive_2013_18_93", "archive_2013_18_94", "archive_2018_23_63",
 }
 
 CANONICAL_ARCHETYPES: list[tuple[str, str, int]] = [
@@ -1411,10 +1422,8 @@ def enrich_track_tiers(t: dict, rel_repo: str = "BillTribble/music-map") -> None
     if rel_match:
         year = int(rel_match["year"])
     full_dur = t.get("full_duration_sec")
-    is_sketch = bool(
-        t.get("is_sketch")
-        or (full_dur is not None and float(full_dur) < 120.0)
-        or (not released and (era in ("sketches_2024_25", "sketches_2026") or SKETCH_RE.search(t["title"])))
+    is_sketch = False if t.get("is_ai") else bool(
+        not released and full_dur is not None and float(full_dur) < 75.0
     )
     tier = "released" if released else ("free_download" if t.get("is_ai") else ("archive_dl" if year < 2015 else "request"))
     t.update({"year": year, "released": released, "is_sketch": is_sketch, "tier": tier})
@@ -1465,7 +1474,7 @@ def is_excluded_by_folder_rule(path_str: str) -> bool:
     if not path_str:
         return False
     low_p = path_str.lower()
-    if "ai music sandbox" in low_p:
+    if "ai music sandbox" in low_p or "bill in china" in low_p:
         return True
     parts = [p.strip() for p in low_p.split("/") if p.strip()]
     for idx, p in enumerate(parts[:-1]):

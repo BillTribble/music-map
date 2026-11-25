@@ -104,13 +104,32 @@
   }
 
   function isSketch(t) {
-    if (!t) return false;
+    if (!t || t.is_ai) return false;
     if (typeof t.is_sketch === "boolean") return t.is_sketch;
     const dur = Number(t.full_duration_sec || 0);
-    if (dur > 0 && dur < 120) return true;
-    if (/sketch/i.test(t.era || "")) return true;
-    return /\b(sketch|ruff|idea|test|demo|loop)\b/i.test(t.title || "");
+    return !isReleased(t) && dur > 0 && dur < 75;
   }
+
+  const ROLLING_WIP_WINDOW_MS = 2 * 365.25 * 86400 * 1000; // rolling 2-year (730.5-day) window
+
+  function isWorkInProgress(t, nowMs) {
+    if (!t || t.is_ai || isReleased(t) || isSketch(t)) return false;
+    if (!t.wip_eligible) return false;
+    const refMs = Number.isFinite(nowMs) ? nowMs : Date.now();
+    if (typeof t.rendered_at === "string" && t.rendered_at) {
+      const ts = Date.parse(t.rendered_at);
+      if (Number.isFinite(ts)) {
+        const ageMs = refMs - ts;
+        return ageMs >= -30 * 86400 * 1000 && ageMs <= ROLLING_WIP_WINDOW_MS;
+      }
+    }
+    if (typeof t.year === "number") {
+      const curYear = new Date(refMs).getUTCFullYear();
+      return curYear - t.year <= 2 && curYear - t.year >= 0;
+    }
+    return false;
+  }
+  window.isTrackWorkInProgress = isWorkInProgress;
 
   function resolveTier(t) {
     if (isReleased(t)) return "A";
@@ -932,11 +951,12 @@
 
     const released = isReleased(t);
     const sketch = isSketch(t);
+    const wip = isWorkInProgress(t);
     const clusterName = t.cluster_label || "Unclassified";
     const eraShort = t.is_ai ? String(t.year || "2025") : (er ? er.label : t.era);
     const eraLong = t.is_ai ? `Gen AI (${t.year || "2025"})` : eraLabel;
     const metaShort = `${eraShort} · ${clusterName}`;
-    const metaFull = `${eraLong} · ${clusterName}`;
+    const metaFull = `${eraLong} · ${clusterName}${wip ? " · Work in progress" : ""}`;
     const timeReadout = formatWaveTimeText(snap);
 
     cardEl.innerHTML = `
@@ -946,7 +966,7 @@
         </button>
         <div class="mp-titles">
           <div class="mp-name" title="${esc(t.title)}">${esc(t.title)}</div>
-          <div class="mp-meta" title="${esc(metaFull)}">${esc(metaShort)}</div>
+          <div class="mp-meta" title="${esc(metaFull)}"><span class="mp-meta-text">${esc(metaShort)}</span>${wip ? '<span class="mp-wip-pill" title="Unreleased work in progress from the last 2 years">Work in progress</span>' : ""}</div>
         </div>
         <div class="mp-head-actions">
           <button type="button" class="icon-btn mp-info-btn ${infoOpen ? "is-active" : ""}" id="mp-info-toggle" aria-expanded="${infoOpen}" aria-controls="mp-info-panel" aria-label="Musical analysis details" title="${infoOpen ? "Hide musical analysis" : "Show key, BPM, energy & harmonic analysis"}">
@@ -986,9 +1006,8 @@
           <span class="badge badge-indigo">${esc(t.key_label || "—")}</span>
           <span class="badge badge-blue mono-num">${Math.round(t.bpm || 0)} BPM</span>
           ${t.is_ai ? '<span class="badge badge-indigo">Generative AI</span>' : ""}
-          ${t.is_spoken_word ? '<span class="badge badge-amber">Spoken word</span>' : ""}
           ${sketch ? '<span class="badge badge-amber">Sketch</span>' : ""}
-          ${!released ? '<span class="badge badge-purple">Unreleased</span>' : ""}
+          ${wip ? '<span class="badge badge-teal mp-wip-badge">Work in progress</span>' : (!released ? '<span class="badge badge-purple">Unreleased</span>' : "")}
         </div>
         ${Array.isArray(t.discogs_styles) && t.discogs_styles.length ? `
         <div class="mp-discogs-line">
@@ -1492,6 +1511,7 @@
     setWeb3FormsKey(k) { web3FormsKey = String(k || ""); render(); },
     refreshWaveform: syncWaveVisuals,
     getShareUrl: (tid) => buildTrackShareUrl(tid || selectedId),
+    isWorkInProgress,
     logPrivateTrackEvent,
   };
 })();

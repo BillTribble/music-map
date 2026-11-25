@@ -174,6 +174,7 @@ EXCLUDED_EXACT_REL_PATHS = {
     "random bill bands/2002-2005/know you.ogg",
     "random bill bands/koala tube jam - awaiting here.wav",
     "spudboy/spudboy - live at holy mountain 01 mini-mix.mp3",
+    "me archive/2014/me - bill in china 1983.mp3",
 }
 TITLE_OVERRIDES_BY_REL_PATH = {
     "me music - 2005 hard drive/as we enter mix2.m4a": "pr3s3nt - As we Enter",
@@ -247,7 +248,7 @@ def classify_era_and_year(src_kind: str, rel_path: str, mtime_year: int | None) 
         if "spirit guides" in low:
             return "spirit_guides", 2025, False
         if "lucid crystal" in low:
-            return "lucid_crystal", 2026, False
+            return "lucid_crystal", 2022, False
     if low.startswith("archive me music 2013-18"):
         # Parse explicit year from path/filename, fallback to file mtime
         ym = re.findall(r"\b(201[3-8])\b", low)
@@ -263,6 +264,8 @@ def classify_era_and_year(src_kind: str, rel_path: str, mtime_year: int | None) 
         yr = 2018 if "2018 and before" in low else 2021
         return "ep_concepts", yr, any(m in low for m in SKETCH_FOLDER_MARKERS)
     if low.startswith("06 - ecstatic wave album"):
+        if mtime_year and mtime_year >= 2026:
+            return "sketches_2026", 2026, False
         return "ecstatic_wave", 2025, False
     if low.startswith("ai music 2025"):
         return "sketches_2024_25", 2025, True
@@ -299,6 +302,8 @@ def is_excluded(rel_path: str, size_bytes: int, dirs_with_top_render: set[str]) 
         return "split_stem"
     if low in EXCLUDED_EXACT_REL_PATHS:
         return "excluded_curated_rel_path"
+    if "bill in china" in low:
+        return "excluded_bill_1983"
     if EXCLUDED_BAND_RE.search(low):
         return "excluded_band"
     if EXCLUDED_ZOMBIES_RE.search(low):
@@ -506,11 +511,8 @@ def build_manifest(raw_items: list[dict], ffprobe_bin: str | None = None, check_
             or "/ai afrohouse" in w_low
             or "ai_test_kitchen" in w_low
         )
-        # User rule (post-022787): 100% of Generative AI tracks are treated as finished (is_sketch = False)
-        is_sketch = False if is_ai_track else bool(
-            (dur_sec is not None and dur_sec < 120.0)
-            or (not released and (folder_sketch or SKETCH_WORD_RE.search(title) or SKETCH_WORD_RE.search(winner["rel_path"])))
-        )
+        # User rules (post-022787, post-023035): 100% of GenAI tracks and all full-length (>= 75s) tracks have is_sketch = False
+        is_sketch = False if is_ai_track else bool(not released and dur_sec is not None and dur_sec < 75.0)
         tier = "released" if released else ("free_download" if is_ai_track else ("archive_dl" if year < 2015 else "request"))
 
         selected.append({

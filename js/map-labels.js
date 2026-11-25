@@ -380,6 +380,7 @@
     const reserveGuardBoxes = [];
     styleGroups.forEach((rg) => {
       if (!rg.is_ai_group && !rg.is_spoken_group) return;
+      if (!rg.members || rg.members.length === 0) return;
       let rMinX = Infinity, rMaxX = -Infinity, rMinY = Infinity, rMaxY = -Infinity, rCnt = 0;
       (rg.members || []).forEach((id) => {
         const m = nodeById.get(id);

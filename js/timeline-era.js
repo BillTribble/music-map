@@ -358,8 +358,16 @@
         const cx = sx + sw * 0.5;
         const headerY = Math.max(66, Math.min(104, sy + 72));
 
-        // Year marker ticks along the top wave header
-        if (b.yearMark) {
+        let displayLbl = sw < 130 ? b.shortLabel : b.label;
+        if (sw < 88 && b.yearMark) {
+          displayLbl = displayLbl.replace(/\s*'\d{2}$/, "");
+        }
+        if (sw < 78) {
+          displayLbl = displayLbl.replace(/\s*&\s*/g, "/");
+        }
+
+        // Year marker ticks along the top wave header (skip when identical to column label, e.g. '2026')
+        if (b.yearMark && b.yearMark !== displayLbl) {
           const yr = document.createElementNS(NS, "text");
           yr.setAttribute("class", "era-tick-year");
           yr.setAttribute("x", cx.toFixed(1));
@@ -367,14 +375,6 @@
           yr.setAttribute("text-anchor", "middle");
           yr.textContent = b.yearMark;
           g.appendChild(yr);
-        }
-
-        let displayLbl = sw < 130 ? b.shortLabel : b.label;
-        if (sw < 88 && b.yearMark) {
-          displayLbl = displayLbl.replace(/\s*'\d{2}$/, "");
-        }
-        if (sw < 78) {
-          displayLbl = displayLbl.replace(/\s*&\s*/g, "/");
         }
         const pillW = Math.max(36, Math.min(sw - 4, displayLbl.length * (sw < 66 ? 5.6 : 6.4) + 12));
         const rect = document.createElementNS(NS, "rect");

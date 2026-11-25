@@ -53,9 +53,9 @@ ERA_META = [
     ("spirit_guides", "Spirit Guides", "Spirit", "~2020–22", "phase3_ambient", "P3", ""),
     ("lucid_crystal", "Lucid Crystal", "Lucid", "~2021–23", "phase3_ambient", "P3", ""),
     ("remixes_commissions", "Remixes/Comm.", "Remix", "2020–24", "phase3_ambient", "P3", ""),
-    ("sketches_2024_25", "Sketches 24–25", "Sk 24", "2024–25", "phase4_recent", "P4", "Audio/AI-stem sketches"),
-    ("ecstatic_wave", "Ecstatic Wave", "Ecstatic", "2024–25", "phase4_recent", "P4", ""),
-    ("sketches_2026", "Sketches 2026", "Sk 26", "2026", "phase4_recent", "P4", ""),
+    ("sketches_2024_25", "2024–25", "24–25", "2024–25", "phase4_recent", "P4", "2024–25 studio working renders & sketches"),
+    ("ecstatic_wave", "Ecstatic Wave", "Ecstatic", "2025", "phase4_recent", "P4", ""),
+    ("sketches_2026", "2026", "2026", "2026", "phase4_recent", "P4", "2026 studio works & latest renders"),
 ]
 
 # Ordered 1997–2004 stylistic & archival partition (anchor tracks placed at slot 1 for Timeline Animator)
@@ -987,6 +987,17 @@ DEFAULT_EXCLUDED_IDS = {
     "ai_music_066_84ef36",
     "ai_music_067_30817a",
     "ai_music_068_69176c",
+    # Bill in China 1983 + latest-master-only dedup (post-023039, post-023042)
+    "bands_archive_17",
+    "sketches_2026_8", "sketches_2026_20", "sketches_2026_14", "sketches_2026_15",
+    "ecstatic_wave_17", "sketches_2024_25_1",
+    "ep_concepts_9", "ep_concepts_11", "ep_concepts_12", "ep_concepts_13",
+    "ep_concepts_18", "ep_concepts_21", "ep_concepts_23", "ep_concepts_25", "ep_concepts_30",
+    "archive_2013_18_105",
+    "present_electro_31", "present_electro_1", "present_electro_47", "present_electro_35",
+    "hd_2005_23", "hd_2005_48", "present_electro_61", "hd_2005_6", "psychedailies_6",
+    "archive_2013_18_5", "archive_2013_18_60", "archive_2013_18_84", "archive_2018_23_53",
+    "archive_2013_18_93", "archive_2013_18_94", "archive_2018_23_63",
 }
 
 TITLE_OVERRIDES = {
@@ -1009,7 +1020,7 @@ def is_excluded_by_folder_rule(path_str: str) -> bool:
     if not path_str:
         return False
     low_p = path_str.lower()
-    if "ai music sandbox" in low_p:
+    if "ai music sandbox" in low_p or "bill in china" in low_p:
         return True
     parts = [p.strip() for p in low_p.split("/") if p.strip()]
     for idx, p in enumerate(parts[:-1]):

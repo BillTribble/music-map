@@ -137,7 +137,7 @@
 
   function renderMelody(items, d, selIdx, state) {
     const C = window.ME_CHARTS;
-    const insight = "Stepwise lyricism and post-leap gap-fill rose dramatically in Ecstatic Wave & Sketches 2026 while preserving melodic breathing space.";
+    const insight = "Stepwise lyricism and post-leap gap-fill rose dramatically in Ecstatic Wave & 2026 while preserving melodic breathing space.";
     const W = Math.max(460, C.measureStageWidth("mel-stage-wrap", 960));
     const H = items.length > 8 ? 316 : 300, padL = 46, padR = 52, padT = state.granularity === "eras" ? 26 : 16, padB = items.length > 8 ? 54 : 28;
     const plotW = W - padL - padR, plotH = H - padT - padB, colW = plotW / items.length, xC = (i) => padL + colW * (i + 0.5);

@@ -147,6 +147,9 @@
   left: 0;
   top: 0;
   z-index: var(--z-sticky);
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
   pointer-events: none;
   padding: 5px 11px;
   border-radius: 999px;
@@ -344,11 +347,34 @@
   white-space: nowrap;
 }
 .mp-meta {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  column-gap: 6px;
+  row-gap: 3px;
   font-size: 12px;
   color: var(--md-sys-color-on-surface-variant);
   margin-top: 2px;
+  min-width: 0;
+}
+.mp-meta-text {
   overflow: hidden;
   text-overflow: ellipsis;
+  white-space: nowrap;
+  max-width: 100%;
+}
+.mp-wip-pill {
+  flex: 0 0 auto;
+  display: inline-flex;
+  align-items: center;
+  padding: 1px 7px;
+  border-radius: 999px;
+  font-size: 10.5px;
+  font-weight: 600;
+  letter-spacing: 0.01em;
+  line-height: 1.45;
+  background: var(--md-sys-color-secondary-container);
+  color: var(--md-sys-color-on-secondary-container);
   white-space: nowrap;
 }
 .mp-head-actions {

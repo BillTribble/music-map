@@ -568,7 +568,18 @@
     const sx = Number.isFinite(hn.px) ? hn.px : hn.x * zoom.k + zoom.x;
     const sy = Number.isFinite(hn.py) ? hn.py : hn.y * zoom.k + zoom.y;
     const r = nodeScreenRadius(hn.t);
-    hoverPill.textContent = hn.t.discogs_top ? `${hn.t.title} · ${hn.t.discogs_top}` : hn.t.title;
+    const wip = Boolean(window.isTrackWorkInProgress && window.isTrackWorkInProgress(hn.t));
+    const baseText = hn.t.discogs_top ? `${hn.t.title} · ${hn.t.discogs_top}` : hn.t.title;
+    hoverPill.innerHTML = "";
+    const txtSpan = document.createElement("span");
+    txtSpan.textContent = baseText;
+    hoverPill.appendChild(txtSpan);
+    if (wip) {
+      const wipSpan = document.createElement("span");
+      wipSpan.className = "mp-wip-pill";
+      wipSpan.textContent = "Work in progress";
+      hoverPill.appendChild(wipSpan);
+    }
     hoverPill.style.left = `${sx.toFixed(1)}px`;
     hoverPill.style.top = `${Math.max(44, sy - r - 12).toFixed(1)}px`;
     hoverPill.hidden = false;
