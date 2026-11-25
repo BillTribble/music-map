@@ -370,9 +370,9 @@
         rCnt++;
       });
       if (rCnt > 0) {
-        const padX = rg.is_spoken_group ? (isWide ? 24 : 14) : (isWide ? 36 : 16);
-        const padTop = rg.is_spoken_group ? (isWide ? 18 : 12) : (isWide ? 30 : 16);
-        const padBot = rg.is_spoken_group ? (isWide ? 18 : 12) : (isWide ? 28 : 16);
+        const padX = rg.is_spoken_group ? (isWide ? 24 : 14) : (isWide ? 24 : 12);
+        const padTop = rg.is_spoken_group ? (isWide ? 18 : 12) : (isWide ? 26 : 14);
+        const padBot = rg.is_spoken_group ? (isWide ? 18 : 12) : (isWide ? 24 : 14);
         reserveGuardBoxes.push([
           Math.max(4, rMinX - padX) - 8,
           Math.max(4, rMinY - padTop) - 28,
@@ -555,7 +555,7 @@
       }
 
       if (g.is_ai_group || g.is_spoken_group) {
-        const headerOffset = g.is_spoken_group ? (isWide ? 22 : 16) : (isWide ? 34 : 20);
+        const headerOffset = g.is_spoken_group ? (isWide ? 22 : 16) : (isWide ? 30 : 18);
         const boxCenterX = Math.max(hw + 8, Math.min(vw - hw - 8, (minX + maxX) * 0.5));
         const headerY = Math.max(hh + 10, minY - hh - headerOffset);
         const hBox = [boxCenterX - hw, headerY - hh, boxCenterX + hw, headerY + hh];
@@ -621,9 +621,9 @@
 
       // Dedicated Generative AI territory boundary + internal Discogs genre sub-labels
       if (g.is_ai_group) {
-        const padX = isWide ? 36 : 16;
-        const padTop = isWide ? 30 : 16;
-        const padBot = isWide ? 28 : 16;
+        const padX = isWide ? 24 : 12;
+        const padTop = isWide ? 32 : 14;
+        const padBot = isWide ? 22 : 14;
         const bx0 = Math.max(4, minX - padX);
         const by0 = Math.max(4, minY - padTop);
         const bx1 = Math.min(vw - 6, maxX + padX);
@@ -680,7 +680,7 @@
               [smx, by0 + shh + 5],
               [smx, by1 - shh - 5],
             ];
-            [16, 26, 38, 50].forEach((rad) => {
+            [14, 24, 36, 50, 68].forEach((rad) => {
               ANGLES.forEach((ang) => {
                 sCands.push([smx + Math.cos(ang) * rad * 1.15, smy + Math.sin(ang) * rad]);
               });
@@ -703,11 +703,11 @@
               let dc = 0;
               for (let di = 0; di < allDots.length; di++) {
                 if (boxOverlap(sbox, dotBoxes[di])) {
-                  dc += sOwn.has(allDots[di][2]) ? 260 : 480;
+                  dc += sOwn.has(allDots[di][2]) ? 220 : 480;
                 }
               }
               const dCore = Math.hypot(scx - smx, scy - smy);
-              if (dCore > 80) continue;
+              if (dCore > 115) continue;
               const sc = dCore + dc;
               if (sc < sBestScore) {
                 sBestScore = sc;

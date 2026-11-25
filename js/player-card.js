@@ -804,9 +804,10 @@
     const released = isReleased(t);
     const sketch = isSketch(t);
     const clusterName = t.cluster_label || "Unclassified";
-    const eraShort = er ? er.label : t.era;
+    const eraShort = t.is_ai ? String(t.year || "2025") : (er ? er.label : t.era);
+    const eraLong = t.is_ai ? `Gen AI (${t.year || "2025"})` : eraLabel;
     const metaShort = `${eraShort} · ${clusterName}`;
-    const metaFull = `${eraLabel} · ${clusterName}`;
+    const metaFull = `${eraLong} · ${clusterName}`;
     const timeReadout = formatWaveTimeText(snap);
 
     cardEl.innerHTML = `

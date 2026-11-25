@@ -202,6 +202,7 @@
   color: var(--md-sys-color-on-surface-variant);
   transition: background 140ms var(--ease-std), color 140ms var(--ease-std), padding 180ms var(--ease-std);
 }
+.star-filter-btn[hidden] { display: none; }
 .star-filter-btn:hover {
   background: var(--md-sys-color-surface-container-highest);
   color: var(--md-sys-color-on-surface);

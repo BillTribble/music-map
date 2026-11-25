@@ -9,6 +9,7 @@ import re
 
 import numpy as np
 from sklearn.cluster import KMeans
+from sklearn.decomposition import PCA
 from sklearn.manifold import TSNE
 from sklearn.metrics import silhouette_score
 from sklearn.preprocessing import normalize
@@ -16,6 +17,7 @@ from sklearn.preprocessing import normalize
 _ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 DEFAULT_DATA_JS = os.path.join(_ROOT, "js", "data.js")
 DEFAULT_FEATURES = "/tmp/music_map_discogs_features.npz"
+DEFAULT_GENAI_BUNDLE = os.path.join(_ROOT, "scripts", "genai_catalog_227.json")
 DEFAULT_CATALOG = os.path.expanduser("~/tmp/music_map_staging/catalog_587_enriched.json")
 DEFAULT_EXCLUSIONS = os.path.expanduser("~/tmp/music_map_staging/exclusions.json")
 DEFAULT_OUT_JS = os.path.join(_ROOT, "js", "data.js")
@@ -379,10 +381,11 @@ STYLE_SLOTS = [
 
 # AI genre sub-family groupings (for subtle sub-labels inside the Generative AI Music territory)
 AI_SUBFAMILIES = [
-    ("ai_sub_orch", "Orchestral & choir", "Orchestral & choir", {0, 8}, 190),
-    ("ai_sub_downtempo", "Downtempo & leftfield", "Downtempo", {2}, 170),
-    ("ai_sub_house", "House & afro", "House & afro", {3, 5}, 140),
-    ("ai_sub_bass", "Bass, drill & DnB", "Bass & DnB", {7, 9, 6, 4, 1}, 84),
+    ("ai_sub_orch", "Orchestral & choir", "Orchestral & choir", {8}, 190),
+    ("ai_sub_world_exp", "Gamelan & experimental", "Gamelan & exp.", {0, 1, 6}, 210),
+    ("ai_sub_downtempo", "Downtempo & melodic", "Downtempo", {2}, 170),
+    ("ai_sub_house", "Afro, house & cumbia", "Afro & house", {3, 5}, 140),
+    ("ai_sub_bass", "Bass, drill & DnB", "Bass & DnB", {7, 9, 4}, 84),
 ]
 
 EXCLUDED_STYLES = {
@@ -582,7 +585,9 @@ def classify_folder_guidance(t: dict, cat_entry: dict | None) -> dict:
   is_ai = bool(
       not is_spoken_word
       and (
-          low.startswith("ai music 2025")
+          bool(t.get("is_ai"))
+          or tid.startswith("ai_music_")
+          or low.startswith("ai music 2025")
           or "musicfx ai test" in low
           or "/ai gamelan/" in low
           or "/ai afrohouse" in low
@@ -591,15 +596,55 @@ def classify_folder_guidance(t: dict, cat_entry: dict | None) -> dict:
 
   in_sketch_dir = "sketches" in low
   has_sketch_word = bool(SKETCH_WORD_RE.search(title) or SKETCH_WORD_RE.search(fname))
-  is_sketch = bool(
+  # User rule (post-022787): 100% of Generative AI tracks are treated as finished (is_sketch = False)
+  is_sketch = False if (is_ai or is_spoken_word) else bool(
       tid not in FORCE_NON_SKETCH_IDS
       and not released
-      and (in_sketch_dir or has_sketch_word or (full_dur < 75.0 and not is_ai and not is_spoken_word))
+      and (in_sketch_dir or has_sketch_word or full_dur < 75.0)
   )
 
   prior = np.zeros(10, dtype=np.float64)
   allowed: set[int] | None = None
   rule = "discogs_ml"
+
+  if is_ai:
+    ai_cat = str(t.get("ai_cat") or "")
+    if ai_cat == "orchestral_choir":
+      prior[8] += 0.28
+      allowed = {8, 0, 2}
+      rule = "ai_folder:orchestral_choir"
+    elif ai_cat == "gamelan_experimental":
+      prior[1] += 0.16
+      prior[6] += 0.16
+      prior[0] += 0.12
+      allowed = {0, 1, 6, 2}
+      rule = "ai_folder:gamelan_experimental"
+    elif ai_cat == "downtempo_melodic":
+      prior[2] += 0.22
+      prior[3] += 0.06
+      allowed = {2, 0, 3, 5}
+      rule = "ai_folder:downtempo_melodic"
+    elif ai_cat == "afro_house_cumbia":
+      prior[3] += 0.22
+      prior[5] += 0.10
+      allowed = {3, 5, 2, 7, 9}
+      rule = "ai_folder:afro_house_cumbia"
+    elif ai_cat == "bass_drill_dnb":
+      prior[7] += 0.18
+      prior[9] += 0.18
+      allowed = {7, 9, 6, 5, 3}
+      rule = "ai_folder:bass_drill_dnb"
+    else:
+      allowed = {0, 1, 2, 3, 5, 6, 7, 8, 9}
+      rule = "ai_folder:general"
+    return {
+        "is_ai": True,
+        "is_spoken_word": False,
+        "is_sketch": False,
+        "prior": prior,
+        "allowed": allowed,
+        "rule": rule,
+    }
 
   if is_spoken_word:
     return {
@@ -800,7 +845,7 @@ def compute_organic_continuum_and_ai_layout(
   compress = np.where(radii > r_knee, (r_knee + 0.50 * (radii - r_knee)) / np.maximum(radii, 1e-6), 1.0)
   rot = center + rel * compress[:, None]
 
-  x_lo, x_hi = 0.082, 0.705
+  x_lo, x_hi = 0.072, 0.634
   y_lo, y_hi = 0.130, 0.870
   hc_pts = np.zeros_like(rot)
   for dim, (lo, hi) in enumerate(((x_lo, x_hi), (y_lo, y_hi))):
@@ -816,19 +861,19 @@ def compute_organic_continuum_and_ai_layout(
   # Honeycombed organic dot spacing (matching d939dcca...)
   hc_pts = _deoverlap_points(
       hc_pts,
-      min_sep=0.0195,
-      x_bounds=(0.052, 0.732),
+      min_sep=0.0185,
+      x_bounds=(0.046, 0.656),
       y_bounds=(0.095, 0.905),
       anchor_pull=0.025,
-      iters=70,
+      iters=75,
   )
   coords[hc_idx] = hc_pts
 
-  # 2. Generative AI Music: Isolated Rounded 2D Archipelago in right reserve [0.798..0.958, 0.285..0.655]
+  # 2. Generative AI Music: Spacious Rounded 2D Archipelago in right reserve [0.716..0.966, 0.214..0.876]
   if len(ai_idx) > 0:
-    proto_ai = X_hybrid[ai_idx] @ proto_centers.T
-    X_ai = np.hstack([X_hybrid[ai_idx], 0.55 * normalize(proto_ai, norm="l2")])
-    perp_ai = max(3, min(6, (len(ai_idx) - 1) // 3))
+    proto_ai = (X_hybrid[ai_idx] @ proto_centers.T) + priors[ai_idx]
+    X_ai = np.hstack([X_hybrid[ai_idx], 0.60 * normalize(proto_ai, norm="l2")])
+    perp_ai = max(5, min(24, (len(ai_idx) - 1) // 6))
     u_ai = TSNE(
         n_components=2,
         perplexity=perp_ai,
@@ -837,22 +882,15 @@ def compute_organic_continuum_and_ai_layout(
         random_state=42,
     ).fit_transform(X_ai).astype(np.float64)
 
-    ai_x_lo, ai_x_hi = 0.812, 0.946
-    ai_y_lo, ai_y_hi = 0.305, 0.640
-    ai_pts = np.zeros_like(u_ai)
-    for dim, (lo, hi) in enumerate(((ai_x_lo, ai_x_hi), (ai_y_lo, ai_y_hi))):
-      v = u_ai[:, dim]
-      vmin, vmax = float(v.min()), float(v.max())
-      lin = (v - vmin) / max(1e-6, vmax - vmin)
-      ai_pts[:, dim] = lo + lin * (hi - lo)
-
-    # 2x2 organic rounded sub-archipelago so AI music is balanced horizontally & vertically (never a skinny line!)
-    sub_anchors = {
-        "ai_sub_orch": np.array([0.840, 0.340]),
-        "ai_sub_downtempo": np.array([0.922, 0.375]),
-        "ai_sub_house": np.array([0.836, 0.545]),
-        "ai_sub_bass": np.array([0.920, 0.585]),
+    # 5-region sub-archipelago inside Generative AI reserve (distinct mini-islands with breathing channels for sub-labels)
+    sub_pockets = {
+        "ai_sub_orch":      (np.array([0.768, 0.305]), (0.720, 0.822), (0.252, 0.372)),
+        "ai_sub_world_exp": (np.array([0.904, 0.335]), (0.842, 0.964), (0.252, 0.440)),
+        "ai_sub_downtempo": (np.array([0.770, 0.528]), (0.720, 0.824), (0.445, 0.625)),
+        "ai_sub_house":     (np.array([0.903, 0.640]), (0.838, 0.966), (0.510, 0.775)),
+        "ai_sub_bass":      (np.array([0.785, 0.798]), (0.722, 0.858), (0.700, 0.892)),
     }
+    sub_members_local = {k: [] for k in sub_pockets}
     for local_i, global_i in enumerate(ai_idx):
       cidx = int(cluster_idx[global_i])
       sub_id = "ai_sub_bass"
@@ -860,29 +898,46 @@ def compute_organic_continuum_and_ai_layout(
         if cidx in cset:
           sub_id = sid
           break
-      ai_pts[local_i] = 0.42 * ai_pts[local_i] + 0.58 * sub_anchors[sub_id]
+      sub_members_local[sub_id].append(local_i)
 
-    ai_pts = _deoverlap_points(
-        ai_pts,
-        min_sep=0.025,
-        x_bounds=(0.798, 0.958),
-        y_bounds=(0.285, 0.655),
-        anchor_pull=0.05,
-        iters=80,
-    )
+    ai_pts = np.zeros((len(ai_idx), 2), dtype=np.float64)
+    for sub_id, loc_indices in sub_members_local.items():
+      anch, xb, yb = sub_pockets[sub_id]
+      u_sub = u_ai[loc_indices]
+      for d, (blo, bhi) in enumerate((xb, yb)):
+        v = u_sub[:, d]
+        span = max(1e-6, float(np.percentile(v, 95) - np.percentile(v, 5)))
+        norm_v = np.clip((v - np.median(v)) / span, -0.65, 0.65)
+        half_w = (bhi - blo) * 0.40
+        ai_pts[loc_indices, d] = np.clip(anch[d] + norm_v * half_w, blo + 0.004, bhi - 0.004)
+      ai_pts[loc_indices] = _deoverlap_points(
+          ai_pts[loc_indices],
+          min_sep=0.0155,
+          x_bounds=xb,
+          y_bounds=yb,
+          anchor_pull=0.035,
+          iters=85,
+      )
     coords[ai_idx] = ai_pts
 
-  # 3. Spoken Word Mini-Island: Quiet upper-right bay [0.880, 0.115], clear of HUD, music continent, AI box & player card
+  # 3. Spoken Word Mini-Island: Quiet upper-right bay [0.855, 0.068], clear of HUD, music continent, AI box & player card
   if len(sp_idx) > 0:
     sp_pts = np.zeros((len(sp_idx), 2), dtype=np.float64)
     for k in range(len(sp_idx)):
-      sp_pts[k] = np.array([0.880 + (k - (len(sp_idx) - 1) * 0.5) * 0.028, 0.115])
+      sp_pts[k] = np.array([0.855 + (k - (len(sp_idx) - 1) * 0.5) * 0.028, 0.068])
     coords[sp_idx] = sp_pts
 
   return coords
 
 
-def build_dataset(data_js_path, features_path, catalog_path, out_js_path, exclusions_path=DEFAULT_EXCLUSIONS):
+def build_dataset(
+    data_js_path,
+    features_path,
+    catalog_path,
+    out_js_path,
+    exclusions_path=DEFAULT_EXCLUSIONS,
+    genai_bundle_path=DEFAULT_GENAI_BUNDLE,
+):
   raw = open(data_js_path, "r", encoding="utf-8").read()
   prefix = "window.CORPUS_DATA = "
   s = raw[raw.index(prefix) + len(prefix) :].rstrip()
@@ -901,13 +956,40 @@ def build_dataset(data_js_path, features_path, catalog_path, out_js_path, exclus
         if is_excluded_by_folder_rule(str(ct.get("local_path") or "")):
           excluded_ids.add(tid)
 
+  # Merge full 227-track trimmed Generative AI catalog bundle (updating existing 24 + adding 203 new)
+  genai_by_id = {}
+  if genai_bundle_path and os.path.exists(genai_bundle_path):
+    g_obj = json.load(open(genai_bundle_path, "r", encoding="utf-8"))
+    for gt in g_obj.get("tracks", []):
+      if isinstance(gt, dict) and gt.get("id") and str(gt["id"]) not in excluded_ids:
+        genai_by_id[str(gt["id"])] = dict(gt)
+
   feats = np.load(features_path)
   tracks = [t for t in data["tracks"] if str(t.get("id")) not in excluded_ids]
+  existing_ids = set()
   for t in tracks:
     tid = str(t.get("id") or "")
+    existing_ids.add(tid)
+    if tid in genai_by_id:
+      # Refresh trimmed duration, peaks, cue_sec, URLs, and AI flags while keeping existing slot/era
+      gt = genai_by_id[tid]
+      for k in (
+          "title", "shortTitle", "full_duration_sec", "is_sketch", "is_ai", "ai_cat",
+          "peaks", "cue_sec", "preview_start_sec", "preview_dur_sec", "duration_sec",
+          "bytes", "rms_db", "gain_trim", "stream_url", "preview_url", "preview_release_url", "file",
+      ):
+        if k in gt:
+          t[k] = gt[k]
     if tid in TITLE_OVERRIDES:
       t["title"] = TITLE_OVERRIDES[tid]
       t["shortTitle"] = TITLE_OVERRIDES[tid][:26]
+
+  new_ai_tracks = []
+  for gid, gt in genai_by_id.items():
+    if gid not in existing_ids:
+      tracks.append(gt)
+      new_ai_tracks.append(gt)
+
   data["tracks"] = tracks
   n_tracks = len(tracks)
 
@@ -939,12 +1021,32 @@ def build_dataset(data_js_path, features_path, catalog_path, out_js_path, exclus
       np.hstack([emb_l2, 0.65 * dg_l2, 0.20 * md_l2, 0.30 * in_l2]), norm="l2"
   )
 
-  seeds = build_seeded_prototypes(
-      X_hybrid, discogs_mean, mood_mean, inst_mean, dg_cls, md_cls, in_cls, track_ids=track_ids
+  # Compute 8-D sonic similarity walk vector for any newly ingested tracks lacking feat_vec
+  pca8 = PCA(n_components=8, random_state=42).fit_transform(X_hybrid)
+  pca8 = (pca8 - pca8.mean(axis=0)) / (pca8.std(axis=0) + 1e-6)
+  for i, t in enumerate(tracks):
+    if not isinstance(t.get("feat_vec"), list) or len(t.get("feat_vec", [])) != 8:
+      t["feat_vec"] = [round(float(x), 3) for x in pca8[i]]
+
+  # Fit prototypes & KMeans strictly on handcrafted musical tracks (~is_ai & ~is_spoken) so handcrafted clusters never drift!
+  prelim_guidance = [classify_folder_guidance(t, cat_by_id.get(str(t["id"]))) for t in tracks]
+  hc_fit_mask = np.array(
+      [not g["is_ai"] and not g["is_spoken_word"] for g in prelim_guidance],
+      dtype=bool,
   )
-  non_spoken_fit = np.array([tid not in SPOKEN_WORD_IDS for tid in track_ids], dtype=bool)
+  hc_track_ids = [tid for tid, m in zip(track_ids, hc_fit_mask) if m]
+  seeds = build_seeded_prototypes(
+      X_hybrid[hc_fit_mask],
+      discogs_mean[hc_fit_mask],
+      mood_mean[hc_fit_mask],
+      inst_mean[hc_fit_mask],
+      dg_cls,
+      md_cls,
+      in_cls,
+      track_ids=hc_track_ids,
+  )
   km = KMeans(n_clusters=10, init=seeds, n_init=1, max_iter=300, random_state=42)
-  km.fit(X_hybrid[non_spoken_fit])
+  km.fit(X_hybrid[hc_fit_mask])
   proto_centers = normalize(km.cluster_centers_, norm="l2")
 
   base_scores = X_hybrid @ proto_centers.T
@@ -956,8 +1058,7 @@ def build_dataset(data_js_path, features_path, catalog_path, out_js_path, exclus
   folder_rules = []
 
   for i, t in enumerate(tracks):
-    tid = str(t["id"])
-    guidance = classify_folder_guidance(t, cat_by_id.get(tid))
+    guidance = prelim_guidance[i]
     is_ai_mask[i] = guidance["is_ai"]
     is_spoken_mask[i] = guidance["is_spoken_word"]
     is_sketch_mask[i] = guidance["is_sketch"]
@@ -1051,6 +1152,9 @@ def build_dataset(data_js_path, features_path, catalog_path, out_js_path, exclus
 
     t.update(upd)
     t.pop("track_near", None)
+    t.pop("ai_cat", None)
+    for forbidden in ("local_path", "rel_path", "remote_path", "rel_dropbox_path"):
+      t.pop(forbidden, None)
     track_updates[tid] = upd
 
     xy = [round(float(coords[i, 0]), 4), round(float(coords[i, 1]), 4)]
@@ -1070,14 +1174,35 @@ def build_dataset(data_js_path, features_path, catalog_path, out_js_path, exclus
           [tracks[j]["id"], round(float(sims[j]), 3)] for j in nn_idx
       ]
 
-  for section in ("eras", "phases"):
-    for item in data.get(section, []):
-      kept_sub = []
-      for sub_t in item.get("tracks", []):
-        if isinstance(sub_t, dict) and sub_t.get("id") in track_updates:
-          sub_t.update(track_updates[sub_t["id"]])
-          kept_sub.append(sub_t)
-      item["tracks"] = kept_sub
+  new_by_era = {}
+  for nt in new_ai_tracks:
+    new_by_era.setdefault(str(nt.get("era") or "sketches_2024_25"), []).append(dict(nt))
+
+  for item in data.get("eras", []):
+    kept_sub = []
+    seen_e = set()
+    for sub_t in item.get("tracks", []):
+      if isinstance(sub_t, dict) and sub_t.get("id") in track_updates:
+        tid = str(sub_t["id"])
+        seen_e.add(tid)
+        sub_t.update(track_updates[tid])
+        if tid in genai_by_id:
+          for k in ("title", "shortTitle", "full_duration_sec", "peaks", "cue_sec", "preview_start_sec", "preview_dur_sec", "stream_url", "preview_url"):
+            if k in genai_by_id[tid]:
+              sub_t[k] = genai_by_id[tid][k]
+        kept_sub.append(sub_t)
+    for nt in new_by_era.get(str(item.get("id") or ""), []):
+      if str(nt["id"]) not in seen_e:
+        kept_sub.append(dict(nt))
+    item["tracks"] = kept_sub
+
+  for item in data.get("phases", []):
+    kept_sub = []
+    for sub_t in item.get("tracks", []):
+      if isinstance(sub_t, dict) and sub_t.get("id") in track_updates:
+        sub_t.update(track_updates[sub_t["id"]])
+        kept_sub.append(sub_t)
+    item["tracks"] = kept_sub
 
   style_groups = []
   for cidx in range(10):
@@ -1148,7 +1273,7 @@ def build_dataset(data_js_path, features_path, catalog_path, out_js_path, exclus
   data["meta"]["classifier_label"] = "Folder-Guided Essentia Discogs-400"
   data["meta"]["silhouette"] = round(sil_2d, 3)
   data["meta"]["silhouette_feature"] = round(sil_hybrid, 3)
-  data["meta"]["ai_territory_box"] = [0.818, 0.115, 0.975, 0.585]
+  data["meta"]["ai_territory_box"] = [0.716, 0.245, 0.966, 0.885]
   data["meta"]["style_groups"] = style_groups
   data["meta"]["track_map"] = new_track_map
   data["meta"]["track_near"] = new_track_near

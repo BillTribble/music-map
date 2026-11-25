@@ -182,13 +182,22 @@
     if (!cand) return false;
     if (cand.is_spoken_word) return false;
     if (Boolean(cand.is_ai) !== curIsAi) return false;
+    const nm = typeof window !== "undefined" ? window.ME_NODEMAP : null;
     const sketchesShown =
-      typeof window !== "undefined" &&
-      window.ME_NODEMAP &&
-      typeof window.ME_NODEMAP.getShowSketches === "function"
-        ? Boolean(window.ME_NODEMAP.getShowSketches())
+      nm && typeof nm.getShowSketches === "function"
+        ? Boolean(nm.getShowSketches())
         : false;
     if (!sketchesShown && cand.is_sketch) return false;
+    if (
+      nm &&
+      typeof nm.getLayout === "function" &&
+      nm.getLayout() === "era" &&
+      typeof nm.getShowEraGenAi === "function" &&
+      !nm.getShowEraGenAi() &&
+      cand.is_ai
+    ) {
+      return false;
+    }
     return true;
   }
 

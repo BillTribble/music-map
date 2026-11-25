@@ -52,8 +52,9 @@
   let hoverPill = null;
   let starBtn = null;
   let sketchBtn = null;
+  let eraGenAiBtn = null;
   let hudHintEl = null;
-  let hudHoverTarget = null; // "star" | "sketch" | null
+  let hudHoverTarget = null; // "star" | "sketch" | "genai" | null
   let starEmptyEl = null;
 
   let nodes = [];
@@ -67,6 +68,7 @@
   let filterSet = null;
   let starFilter = false;
   let showSketches = false;
+  let showEraGenAi = false;
   let activeClusterId = null;
   let activeEraId = null;
   let selectedId = null;
@@ -150,7 +152,10 @@
   }
 
   function isSketchHidden(t) {
-    if (showSketches || !t || !t.is_sketch) return false;
+    if (!t) return false;
+    const hideSketch = !showSketches && Boolean(t.is_sketch);
+    const hideEraAi = layout === "era" && !showEraGenAi && Boolean(t.is_ai);
+    if (!hideSketch && !hideEraAi) return false;
     const playId = hooks && hooks.playing ? hooks.playing() : null;
     const pendId = hooks && hooks.pending ? hooks.pending() : null;
     if (t.id === selectedId || t.id === playId || t.id === pendId) return false;
@@ -374,10 +379,13 @@
   function updateHudHint() {
     const starLbl = document.getElementById("star-btn-label");
     const sketchLbl = document.getElementById("sketch-btn-label");
+    const genaiLbl = document.getElementById("era-genai-btn-label");
     if (starLbl) starLbl.textContent = starFilter ? "Starred only · On" : "Starred only";
     if (sketchLbl) sketchLbl.textContent = showSketches ? "Hide sketches" : "Show sketches";
+    if (genaiLbl) genaiLbl.textContent = showEraGenAi ? "Hide Gen AI" : "Show Gen AI";
     if (starBtn) starBtn.classList.toggle("is-hint-open", hudHoverTarget === "star");
     if (sketchBtn) sketchBtn.classList.toggle("is-hint-open", hudHoverTarget === "sketch");
+    if (eraGenAiBtn) eraGenAiBtn.classList.toggle("is-hint-open", layout === "era" && hudHoverTarget === "genai");
   }
 
   function syncStarHud() {
@@ -390,6 +398,14 @@
       sketchBtn.classList.toggle("is-active", showSketches);
       sketchBtn.setAttribute("aria-pressed", String(showSketches));
       sketchBtn.setAttribute("aria-label", showSketches ? "Hide sketches" : "Show sketches");
+    }
+    if (eraGenAiBtn) {
+      const inEra = layout === "era";
+      eraGenAiBtn.hidden = !inEra;
+      if (!inEra && hudHoverTarget === "genai") hudHoverTarget = null;
+      eraGenAiBtn.classList.toggle("is-active", showEraGenAi);
+      eraGenAiBtn.setAttribute("aria-pressed", String(showEraGenAi));
+      eraGenAiBtn.setAttribute("aria-label", showEraGenAi ? "Hide Gen AI" : "Show Gen AI");
     }
     updateHudHint();
     if (starEmptyEl) {
@@ -781,6 +797,26 @@
       sketchBtn.addEventListener("blur", () => { if (hudHoverTarget === "sketch") { hudHoverTarget = null; updateHudHint(); } });
     }
 
+    if (eraGenAiBtn) {
+      eraGenAiBtn.addEventListener("click", (ev) => {
+        ev.stopPropagation();
+        if (isTouchEvent(ev)) hudHoverTarget = null;
+        setShowEraGenAi(!showEraGenAi);
+      });
+      eraGenAiBtn.addEventListener("pointerenter", (ev) => {
+        if (ev.pointerType === "touch") return;
+        hudHoverTarget = "genai";
+        updateHudHint();
+      });
+      eraGenAiBtn.addEventListener("pointerleave", () => { if (hudHoverTarget === "genai") { hudHoverTarget = null; updateHudHint(); } });
+      eraGenAiBtn.addEventListener("focus", () => {
+        if (!eraGenAiBtn.matches || !eraGenAiBtn.matches(":focus-visible")) return;
+        hudHoverTarget = "genai";
+        updateHudHint();
+      });
+      eraGenAiBtn.addEventListener("blur", () => { if (hudHoverTarget === "genai") { hudHoverTarget = null; updateHudHint(); } });
+    }
+
     if (typeof ResizeObserver !== "undefined") {
       const ro = new ResizeObserver((entries) => {
         const cr = entries[0] && entries[0].contentRect;
@@ -858,6 +894,19 @@
     return showSketches;
   }
 
+  function setShowEraGenAi(val) {
+    const next = Boolean(val);
+    if (next === showEraGenAi) return showEraGenAi;
+    showEraGenAi = next;
+    if (layout === "era") {
+      computeTargetPositions();
+      nodes.forEach((n) => { n.x = n.tx; n.y = n.ty; });
+    }
+    buildEdges();
+    paint();
+    return showEraGenAi;
+  }
+
   function setClusterFilter(cid) {
     activeClusterId = cid;
     paint();
@@ -887,6 +936,7 @@
     hoverPill = document.getElementById("map-hover-pill");
     starBtn = document.getElementById("star-filter-btn");
     sketchBtn = document.getElementById("sketch-filter-btn");
+    eraGenAiBtn = document.getElementById("era-genai-filter-btn");
     hudHintEl = document.getElementById("map-hud-hint");
     starEmptyEl = document.getElementById("star-empty-msg");
     if (!mapWrap || !canvas || !svg) return;
@@ -931,6 +981,8 @@
     setClusterFilter,
     setShowSketches,
     getShowSketches: () => showSketches,
+    setShowEraGenAi,
+    getShowEraGenAi: () => showEraGenAi,
     getEdgesCountFor: (tid) => edges.filter((e) => e.a === tid || e.b === tid).length,
     setColorMode(mode) { colorMode = mode; paint(); },
     getColorMode: () => colorMode,

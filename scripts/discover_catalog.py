@@ -312,7 +312,17 @@ def is_excluded(rel_path: str, size_bytes: int, dirs_with_top_render: set[str]) 
 
 def normalize_song_key(rel_path: str) -> str:
     """Normalize a track filename/stem into a canonical deduplication key."""
+    low_rel = norm_nfc(rel_path).lower()
     stem = Path(norm_nfc(rel_path)).stem
+    is_ai_path = low_rel.startswith("ai music 2025") or "ai music sandbox" in low_rel or "musicfx ai" in low_rel or "ai_test_kitchen" in low_rel
+    if is_ai_path:
+        # Preserve take/batch numbers & distinct prompt names on GenAI tracks (post-022787)
+        s_ai = unicodedata.normalize("NFKD", stem).encode("ascii", "ignore").decode("ascii").lower()
+        s_ai = re.sub(r"_\(matched\).*$", "", s_ai)
+        s_ai = re.sub(r"\s+-?\s*bw\s+ext$", "", s_ai)
+        s_ai = re.sub(r"[^a-z0-9]+", " ", s_ai).strip()
+        sub = "/".join(low_rel.split("/")[:-1])
+        return f"{sub}::{s_ai or stem.lower()}"
     alt_tags = [m.group(0).lower().strip("() ") for m in ALT_ARRANGEMENT_RE.finditer(stem)]
     s = unicodedata.normalize("NFKD", stem).encode("ascii", "ignore").decode("ascii").lower()
     s = re.sub(r"^(?:bill\s+tribble\s*[-_–]+\s*|pr3s3nt\s*[-_–]+\s*)", "", s)
@@ -467,7 +477,17 @@ def build_manifest(raw_items: list[dict], ffprobe_bin: str | None = None, check_
         if check_duration and winner.get("local_path"):
             dur_sec = probe_duration(ffprobe_bin, Path(winner["local_path"]))
 
-        is_sketch = bool(
+        w_low = norm_nfc(winner["rel_path"]).lower()
+        is_ai_track = (
+            w_low.startswith("ai music 2025")
+            or "ai music sandbox" in w_low
+            or "musicfx ai test" in w_low
+            or "/ai gamelan/" in w_low
+            or "/ai afrohouse" in w_low
+            or "ai_test_kitchen" in w_low
+        )
+        # User rule (post-022787): 100% of Generative AI tracks are treated as finished (is_sketch = False)
+        is_sketch = False if is_ai_track else bool(
             (dur_sec is not None and dur_sec < 120.0)
             or (not released and (folder_sketch or SKETCH_WORD_RE.search(title) or SKETCH_WORD_RE.search(winner["rel_path"])))
         )

@@ -143,7 +143,7 @@
     // Mobile (<= 800px): Top -> Bottom proportional chronological Y-axis fitted 100% inside viewport (vw x vh)
     const leftGutter = 90;
     const padR = 14;
-    const padT = 58;
+    const padT = 68;
     const padB = 14;
     const virtualW = vw;
     const virtualH = vh;
@@ -412,7 +412,7 @@
       hint.textContent = "↑ High energy · ↓ Ambient";
     } else {
       hint.setAttribute("x", String(vw - 12));
-      hint.setAttribute("y", "33");
+      hint.setAttribute("y", "60");
       hint.setAttribute("text-anchor", "end");
       hint.textContent = "Ambient ← → High energy";
     }
