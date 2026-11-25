@@ -1,4 +1,4 @@
-// Viewport Bounds Locking, 60fps Inertial Scroll Momentum, Pinch-Zoom & Pointer Gesture Controller
+// Viewport Bounds Locking, 60fps Inertial Pan Momentum, Pinch-Zoom & Pointer Gesture Controller
 (function () {
   "use strict";
 
@@ -7,9 +7,26 @@
   const MIN_ZOOM = 1.0;
   const MAX_ZOOM = 40.0;
 
+  // Browser-feel kinetic pan physics constants (dt-normalized, refresh-rate agnostic)
+  const VEL_EWMA_TAU_MS = 45;     // ~50-80ms effective velocity smoothing window
+  const HOLD_CUTOFF_MS = 80;      // stationary > 80ms before pointerup => 0 post-release drift
+  const MIN_LAUNCH_SPEED = 0.12;  // px/ms minimum flick speed to start coasting
+  const MAX_SPEED = 3.5;          // px/ms radial velocity cap against single-frame spikes
+  const TAU_INERTIA_MS = 200;     // exponential friction time constant (crisp tactile glide)
+  const STOP_SPEED = 0.05;        // px/ms clean termination threshold (< 0.8px @ 60Hz)
+
   function createController(opts) {
     const mapWrap = opts.mapWrap;
     let momentumRaf = 0;
+    let coastVx = 0;
+    let coastVy = 0;
+
+    function clampVelocity(vx, vy) {
+      const sp = Math.hypot(vx, vy);
+      if (sp <= MAX_SPEED || sp === 0) return [vx, vy];
+      const scale = MAX_SPEED / sp;
+      return [vx * scale, vy * scale];
+    }
 
     function clampZoom() {
       const zoom = opts.getZoom();
@@ -29,10 +46,16 @@
     }
 
     function stopMomentum() {
+      coastVx = 0;
+      coastVy = 0;
       if (momentumRaf && typeof cancelAnimationFrame !== "undefined") {
         cancelAnimationFrame(momentumRaf);
         momentumRaf = 0;
       }
+    }
+
+    function isCoasting() {
+      return momentumRaf !== 0;
     }
 
     function startMomentum(vx0, vy0) {
@@ -41,27 +64,37 @@
       const [vw, vh] = opts.getViewport();
       const [worldW, worldH] = opts.getWorldSize();
       if (worldW * zoom.k <= vw + 1 && worldH * zoom.k <= vh + 1) return;
-      let vx = Math.max(-3.6, Math.min(3.6, vx0));
-      let vy = Math.max(-3.6, Math.min(3.6, vy0));
-      if (Math.hypot(vx, vy) < 0.03 || typeof requestAnimationFrame === "undefined") return;
+      if (!Number.isFinite(vx0) || !Number.isFinite(vy0)) return;
+      const [clampedVx, clampedVy] = clampVelocity(vx0, vy0);
+      if (Math.hypot(clampedVx, clampedVy) < MIN_LAUNCH_SPEED || typeof requestAnimationFrame === "undefined") {
+        return;
+      }
+      coastVx = clampedVx;
+      coastVy = clampedVy;
       let lastTs = performance.now();
+
       function step(now) {
-        const dt = Math.min(34, Math.max(1, now - lastTs));
+        const rawDt = now - lastTs;
         lastTs = now;
+        const dt = Math.min(64, Math.max(1, rawDt > 0 ? rawDt : 16.67));
+        const decay = Math.exp(-dt / TAU_INERTIA_MS);
+        // Exact analytical integral of v0 * exp(-t / tau) over [0, dt] for true frame-rate independence
+        const effDt = TAU_INERTIA_MS * (1 - decay);
         const prevX = zoom.x;
         const prevY = zoom.y;
-        zoom.x += vx * dt;
-        zoom.y += vy * dt;
+        zoom.x += coastVx * effDt;
+        zoom.y += coastVy * effDt;
         clampZoom();
-        if (Math.abs(zoom.x - prevX) < 0.01) vx = 0;
-        if (Math.abs(zoom.y - prevY) < 0.01) vy = 0;
-        const decay = Math.exp(-dt / 275);
-        vx *= decay;
-        vy *= decay;
+        if (Math.abs(zoom.x - prevX) < 0.005) coastVx = 0;
+        if (Math.abs(zoom.y - prevY) < 0.005) coastVy = 0;
+        coastVx *= decay;
+        coastVy *= decay;
         opts.onTransform();
-        if (Math.hypot(vx, vy) >= 0.012) {
+        if (Math.hypot(coastVx, coastVy) >= STOP_SPEED) {
           momentumRaf = requestAnimationFrame(step);
         } else {
+          coastVx = 0;
+          coastVy = 0;
           momentumRaf = 0;
         }
       }
@@ -78,25 +111,69 @@
       let moved = false;
       let activePointerType = "mouse";
       let sx = 0, sy = 0, zx = 0, zy = 0;
-      let velSamples = [];
+      let lastPtrX = 0, lastPtrY = 0, lastPtrTs = 0;
+      let lastMoveTs = 0;
+      let ewmaVx = 0, ewmaVy = 0;
+      let hasVelSample = false;
       const activePointers = new Map();
       let pinchPrevDist = 0;
       let pinchPrevMid = null;
       let lastTapTs = 0;
       let lastTapXY = [0, 0];
 
-      function pushVelSample(x, y) {
+      function resetVelocityTracker(x, y, now) {
+        lastPtrX = x;
+        lastPtrY = y;
+        lastPtrTs = now;
+        lastMoveTs = 0;
+        ewmaVx = 0;
+        ewmaVy = 0;
+        hasVelSample = false;
+      }
+
+      function recordDragStep(x, y) {
         const now = performance.now();
-        velSamples.push({ x, y, t: now });
-        while (velSamples.length > 2 && now - velSamples[0].t > 95) velSamples.shift();
+        const dt = now - lastPtrTs;
+        const stepDx = x - lastPtrX;
+        const stepDy = y - lastPtrY;
+        const stepDist = Math.hypot(stepDx, stepDy);
+
+        if (dt > HOLD_CUTOFF_MS) {
+          ewmaVx = 0;
+          ewmaVy = 0;
+          hasVelSample = false;
+        }
+
+        if (dt >= 0.5) {
+          const effDt = Math.max(4, dt);
+          const [instVx, instVy] = clampVelocity(stepDx / effDt, stepDy / effDt);
+          if (!hasVelSample) {
+            ewmaVx = instVx;
+            ewmaVy = instVy;
+            hasVelSample = stepDist >= 0.4;
+          } else {
+            const alpha = 1 - Math.exp(-dt / VEL_EWMA_TAU_MS);
+            ewmaVx += alpha * (instVx - ewmaVx);
+            ewmaVy += alpha * (instVy - ewmaVy);
+            [ewmaVx, ewmaVy] = clampVelocity(ewmaVx, ewmaVy);
+          }
+        }
+
+        lastPtrX = x;
+        lastPtrY = y;
+        lastPtrTs = now;
+        if (stepDist >= 0.4) {
+          lastMoveTs = now;
+        }
       }
 
       mapWrap.addEventListener("pointerdown", (ev) => {
-        if (ev.target.closest("#map-floating-hud")) return;
-        if (ev.target.closest(".map-group-label, .map-family-group") || ev.target.closest(".era-spine-hit")) return;
         if (ev.button !== 0 && ev.pointerType === "mouse") return;
         stopMomentum();
+        if (ev.target.closest("#map-floating-hud")) return;
+        if (ev.target.closest(".map-group-label, .map-family-group, .map-ai-sub-group") || ev.target.closest(".era-spine-hit")) return;
         const zoom = opts.getZoom();
+        const now = performance.now();
         activePointers.set(ev.pointerId, { x: ev.clientX, y: ev.clientY });
         if (activePointers.size === 2) {
           const pts = [...activePointers.values()];
@@ -105,7 +182,7 @@
           pinchPrevMid = [(pts[0].x + pts[1].x) * 0.5 - rect.left, (pts[0].y + pts[1].y) * 0.5 - rect.top];
           dragging = false;
           moved = true;
-          velSamples = [];
+          resetVelocityTracker(ev.clientX, ev.clientY, now);
           return;
         }
         dragging = true;
@@ -115,8 +192,7 @@
         sy = ev.clientY;
         zx = zoom.x;
         zy = zoom.y;
-        velSamples = [];
-        pushVelSample(ev.clientX, ev.clientY);
+        resetVelocityTracker(ev.clientX, ev.clientY, now);
       });
 
       window.addEventListener("pointermove", (ev) => {
@@ -155,11 +231,16 @@
             }
           }
           if (moved) {
-            pushVelSample(ev.clientX, ev.clientY);
+            recordDragStep(ev.clientX, ev.clientY);
             zoom.x = zx + dx;
             zoom.y = zy + dy;
             clampZoom();
             opts.onTransform();
+          } else {
+            // Keep pre-threshold pointer baseline fresh so a pause before flicking never dilutes flick velocity
+            lastPtrX = ev.clientX;
+            lastPtrY = ev.clientY;
+            lastPtrTs = performance.now();
           }
           return;
         }
@@ -168,6 +249,7 @@
 
       function finishPointer(ev) {
         const zoom = opts.getZoom();
+        const now = performance.now();
         activePointers.delete(ev.pointerId);
         if (activePointers.size === 1) {
           const rem = [...activePointers.values()][0];
@@ -176,19 +258,24 @@
           sy = rem.y;
           zx = zoom.x;
           zy = zoom.y;
-          velSamples = [];
+          resetVelocityTracker(rem.x, rem.y, now);
           return;
         }
-        if (dragging && moved && velSamples.length >= 2) {
-          const first = velSamples[0];
-          const last = velSamples[velSamples.length - 1];
-          const dt = last.t - first.t;
-          if (dt >= 8 && performance.now() - last.t < 85) {
-            startMomentum((last.x - first.x) / dt, (last.y - first.y) / dt);
+        if (ev.type !== "pointercancel" && dragging && moved && hasVelSample && lastMoveTs > 0) {
+          const idleMs = now - lastMoveTs;
+          if (idleMs <= HOLD_CUTOFF_MS) {
+            const releaseAtten = idleMs > 18 ? Math.exp(-(idleMs - 18) / TAU_INERTIA_MS) : 1;
+            const launchVx = ewmaVx * releaseAtten;
+            const launchVy = ewmaVy * releaseAtten;
+            if (Math.hypot(launchVx, launchVy) >= MIN_LAUNCH_SPEED) {
+              startMomentum(launchVx, launchVy);
+            }
           }
         }
         dragging = false;
-        velSamples = [];
+        ewmaVx = 0;
+        ewmaVy = 0;
+        hasVelSample = false;
         mapWrap.classList.remove("is-dragging");
       }
 
@@ -199,7 +286,7 @@
       mapWrap.addEventListener("click", (ev) => {
         if (moved) return;
         if (ev.target.closest("#map-floating-hud")) return;
-        if (ev.target.closest(".map-group-label, .map-family-group") || ev.target.closest(".era-spine-hit")) return;
+        if (ev.target.closest(".map-group-label, .map-family-group, .map-ai-sub-group") || ev.target.closest(".era-spine-hit")) return;
         const [px, py] = pointerLocalXY(ev);
         const handledNode = opts.onTapPoint(ev, px, py);
         if (handledNode) {
@@ -210,6 +297,7 @@
         const zoom = opts.getZoom();
         if (now - lastTapTs < 320 && Math.hypot(px - lastTapXY[0], py - lastTapXY[1]) < 36) {
           lastTapTs = 0;
+          stopMomentum();
           const nextK = zoom.k < 2.2 ? 3.8 : (zoom.k < 6.0 ? 8.0 : 1.0);
           const ratio = nextK / zoom.k;
           zoom.x = px - (px - zoom.x) * ratio;
@@ -247,7 +335,14 @@
       }, { passive: false });
     }
 
-    return { clampZoom, stopMomentum, startMomentum, bind };
+    return {
+      clampZoom,
+      stopMomentum,
+      startMomentum,
+      isCoasting,
+      getVelocity: () => ({ vx: coastVx, vy: coastVy, speed: Math.hypot(coastVx, coastVy) }),
+      bind,
+    };
   }
 
   window.BTMM_MAP_PHYSICS = { createController };

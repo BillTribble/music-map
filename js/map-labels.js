@@ -326,7 +326,22 @@
       allDots.push([sx, sy, n.id]);
     }
     const dotPad = zoomed ? 6.0 : (isWide ? 8.5 : 7.0);
-    const dotBoxes = allDots.map(([dx, dy]) => [dx - dotPad, dy - dotPad, dx + dotPad, dy + dotPad]);
+    const dotLen = allDots.length;
+    const dotX = new Float64Array(dotLen);
+    const dotY = new Float64Array(dotLen);
+    const dotBoxX0 = new Float64Array(dotLen);
+    const dotBoxY0 = new Float64Array(dotLen);
+    const dotBoxX1 = new Float64Array(dotLen);
+    const dotBoxY1 = new Float64Array(dotLen);
+    for (let di = 0; di < dotLen; di++) {
+      const dx = allDots[di][0], dy = allDots[di][1];
+      dotX[di] = dx;
+      dotY[di] = dy;
+      dotBoxX0[di] = dx - dotPad;
+      dotBoxY0[di] = dy - dotPad;
+      dotBoxX1[di] = dx + dotPad;
+      dotBoxY1[di] = dy + dotPad;
+    }
     const placedFam = [];
 
     const MOBILE_SHORT = {
@@ -519,57 +534,6 @@
       let best = null;
       let bestScore = Infinity;
       let bestDotHits = Infinity;
-      for (let ci = 0; ci < cands.length; ci++) {
-        const cx = zoomed ? cands[ci][0] : clampX(cands[ci][0]);
-        const cy = zoomed ? cands[ci][1] : clampY(cands[ci][1]);
-        if (cx - hw < 5 || cx + hw > vw - 5 || cy - hh < 8 || cy + hh > vh - 8) continue;
-        const box = [cx - hw, cy - hh, cx + hw, cy + hh];
-        const padBox = [cx - hw - 3, cy - hh - 3, cx + hw + 3, cy + hh + 3];
-
-        if (uiBoxes.some((ub) => boxOverlap(box, ub))) continue;
-        if (!isDedicatedIsland && reserveGuardBoxes.some((rb) => boxOverlap(box, rb))) continue;
-        if (placedFam.some((pb) => boxOverlap(box, pb))) continue;
-        if (lastTrackBoxes.some((tb) => boxOverlap(box, tb))) continue;
-
-        let dotCost = 0;
-        let dotHits = 0;
-        let ownD = Infinity;
-        let otherD = Infinity;
-        for (let di = 0; di < allDots.length; di++) {
-          const dx = allDots[di][0], dy = allDots[di][1];
-          const isOwn = ownSet.has(allDots[di][2]);
-          const d = Math.hypot(cx - dx, cy - dy);
-          if (isOwn) { if (d < ownD) ownD = d; }
-          else { if (d < otherD) otherD = d; }
-          if (boxOverlap(padBox, dotBoxes[di])) {
-            dotHits++;
-            dotCost += isOwn ? 2600 : 5200;
-          }
-        }
-        if (zoomed && dotHits > 0) continue;
-        if (!isWide && !zoomed && !isDedicatedIsland && otherD + 16 < ownD) continue;
-
-        const distCore = Math.hypot(cx - mx, cy - my);
-        const dxCoreBox = cx < cMinX ? cMinX - cx : (cx > cMaxX ? cx - cMaxX : 0);
-        const dyCoreBox = cy < cMinY ? cMinY - cy : (cy > cMaxY ? cy - cMaxY : 0);
-        const distCoreBox = Math.hypot(dxCoreBox, dyCoreBox);
-        const maxDistCore = dotHits === 0 ? (isWide ? 285 : 165) : (isWide ? 215 : 135);
-        const maxDistBox = dotHits === 0 ? (isWide ? 205 : 118) : (isWide ? 148 : 92);
-        if (!zoomed && (distCore > maxDistCore || distCoreBox > maxDistBox)) continue;
-        const inCoreInterior = (!zoomed && visCount >= 6 && dxCoreBox === 0 && dyCoreBox === 0) ? 420 : 0;
-        let score =
-          ownD * 1.05 +
-          distCore * (isWide || zoomed ? 0.55 : 1.15) +
-          dotCost +
-          inCoreInterior +
-          (cy < minY ? -14 : 0) +
-          (otherD < ownD ? (ownD - otherD) * 14 + 320 : 0);
-        if (score < bestScore) {
-          bestScore = score;
-          best = [cx, cy];
-          bestDotHits = dotHits;
-        }
-      }
 
       if (g.is_ai_group || g.is_spoken_group) {
         const headerOffset = g.is_spoken_group ? (isWide ? 22 : 16) : (isWide ? 34 : 18);
@@ -579,6 +543,83 @@
         if (!uiBoxes.some((ub) => boxOverlap(hBox, ub)) && !placedFam.some((pb) => boxOverlap(hBox, pb))) {
           best = [boxCenterX, headerY];
           bestDotHits = 0;
+        }
+      }
+
+      if (!best) {
+        const isOwnDot = new Uint8Array(dotLen);
+        for (let di = 0; di < dotLen; di++) {
+          if (ownSet.has(allDots[di][2])) isOwnDot[di] = 1;
+        }
+
+        const seenCand = new Set();
+        const distWeight = isWide || zoomed ? 0.55 : 1.15;
+        const outerMaxCore = isWide ? 285 : 165;
+        const outerMaxBox = isWide ? 205 : 118;
+
+        for (let ci = 0; ci < cands.length; ci++) {
+          const cx = zoomed ? cands[ci][0] : clampX(cands[ci][0]);
+          const cy = zoomed ? cands[ci][1] : clampY(cands[ci][1]);
+          if (cx - hw < 5 || cx + hw > vw - 5 || cy - hh < 8 || cy + hh > vh - 8) continue;
+          const cKey = ((cx * 4) | 0) * 16384 + ((cy * 4) | 0);
+          if (seenCand.has(cKey)) continue;
+          seenCand.add(cKey);
+
+          const distCore = Math.hypot(cx - mx, cy - my);
+          const dxCoreBox = cx < cMinX ? cMinX - cx : (cx > cMaxX ? cx - cMaxX : 0);
+          const dyCoreBox = cy < cMinY ? cMinY - cy : (cy > cMaxY ? cy - cMaxY : 0);
+          const distCoreBox = Math.hypot(dxCoreBox, dyCoreBox);
+          if (!zoomed && (distCore > outerMaxCore || distCoreBox > outerMaxBox)) continue;
+
+          const inCoreInterior = (!zoomed && visCount >= 6 && dxCoreBox === 0 && dyCoreBox === 0) ? 420 : 0;
+          const baseLowerBound = distCore * distWeight + inCoreInterior + (cy < minY ? -14 : 0);
+          if (baseLowerBound >= bestScore) continue;
+
+          const box = [cx - hw, cy - hh, cx + hw, cy + hh];
+          const p0 = cx - hw - 3, p1 = cy - hh - 3, p2 = cx + hw + 3, p3 = cy + hh + 3;
+
+          if (uiBoxes.some((ub) => boxOverlap(box, ub))) continue;
+          if (!isDedicatedIsland && reserveGuardBoxes.some((rb) => boxOverlap(box, rb))) continue;
+          if (placedFam.some((pb) => boxOverlap(box, pb))) continue;
+          if (lastTrackBoxes.some((tb) => boxOverlap(box, tb))) continue;
+
+          let dotCost = 0;
+          let dotHits = 0;
+          let ownD2 = Infinity;
+          let otherD2 = Infinity;
+          let pruned = false;
+          for (let di = 0; di < dotLen; di++) {
+            const ddx = cx - dotX[di];
+            const ddy = cy - dotY[di];
+            const d2 = ddx * ddx + ddy * ddy;
+            const isOwn = isOwnDot[di] === 1;
+            if (isOwn) { if (d2 < ownD2) ownD2 = d2; }
+            else { if (d2 < otherD2) otherD2 = d2; }
+            if (p0 < dotBoxX1[di] && p2 > dotBoxX0[di] && p1 < dotBoxY1[di] && p3 > dotBoxY0[di]) {
+              if (zoomed) { pruned = true; break; }
+              dotHits++;
+              dotCost += isOwn ? 2600 : 5200;
+              if (baseLowerBound + dotCost >= bestScore) { pruned = true; break; }
+            }
+          }
+          if (pruned) continue;
+          const ownD = ownD2 < Infinity ? Math.sqrt(ownD2) : Infinity;
+          const otherD = otherD2 < Infinity ? Math.sqrt(otherD2) : Infinity;
+          if (!isWide && !zoomed && !isDedicatedIsland && otherD + 16 < ownD) continue;
+
+          const maxDistCore = dotHits === 0 ? outerMaxCore : (isWide ? 215 : 135);
+          const maxDistBox = dotHits === 0 ? outerMaxBox : (isWide ? 148 : 92);
+          if (!zoomed && (distCore > maxDistCore || distCoreBox > maxDistBox)) continue;
+          let score =
+            ownD * 1.05 +
+            baseLowerBound +
+            dotCost +
+            (otherD < ownD ? (ownD - otherD) * 14 + 320 : 0);
+          if (score < bestScore) {
+            bestScore = score;
+            best = [cx, cy];
+            bestDotHits = dotHits;
+          }
         }
       }
 
@@ -710,6 +751,10 @@
 
             let sBest = null;
             let sBestScore = Infinity;
+            const sIsOwn = new Uint8Array(dotLen);
+            for (let di = 0; di < dotLen; di++) {
+              if (sOwn.has(allDots[di][2])) sIsOwn[di] = 1;
+            }
             const clampLoX = Math.max(shw + 6, bx0 + shw + 5);
             const clampHiX = Math.min(vw - shw - 6, bx1 - shw - 5);
             const clampLoY = Math.max(shh + 8, by0 + shh + 4);
@@ -717,19 +762,21 @@
             for (let sci = 0; sci < sCands.length; sci++) {
               const scx = clampLoX <= clampHiX ? Math.max(clampLoX, Math.min(clampHiX, sCands[sci][0])) : Math.max(shw + 6, Math.min(vw - shw - 6, sCands[sci][0]));
               const scy = clampLoY <= clampHiY ? Math.max(clampLoY, Math.min(clampHiY, sCands[sci][1])) : Math.max(shh + 8, Math.min(vh - shh - 8, sCands[sci][1]));
-              const sbox = [scx - shw - 3, scy - shh - 3, scx + shw + 3, scy + shh + 3];
+              const sp0 = scx - shw - 3, sp1 = scy - shh - 3, sp2 = scx + shw + 3, sp3 = scy + shh + 3;
+              const sbox = [sp0, sp1, sp2, sp3];
               if (uiBoxes.some((ub) => boxOverlap(sbox, ub))) continue;
               if (placedFam.some((pb) => boxOverlap(sbox, pb))) continue;
               if (lastTrackBoxes.some((tb) => boxOverlap(sbox, tb))) continue;
 
-              let dc = 0;
-              for (let di = 0; di < allDots.length; di++) {
-                if (boxOverlap(sbox, dotBoxes[di])) {
-                  dc += sOwn.has(allDots[di][2]) ? 2600 : 5200;
-                }
-              }
               const dCore = Math.hypot(scx - smx, scy - smy);
               if (dCore > 135) continue;
+
+              let dc = 0;
+              for (let di = 0; di < dotLen; di++) {
+                if (sp0 < dotBoxX1[di] && sp2 > dotBoxX0[di] && sp1 < dotBoxY1[di] && sp3 > dotBoxY0[di]) {
+                  dc += sIsOwn[di] ? 2600 : 5200;
+                }
+              }
               const sc = dCore + dc + (scy < sMinY ? -10 : 0);
               if (sc < sBestScore) {
                 sBestScore = sc;

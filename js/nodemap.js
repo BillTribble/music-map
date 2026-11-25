@@ -627,6 +627,7 @@
   }
 
   function tweenToTargets(animate) {
+    stopMomentum();
     if (tweenRaf && typeof cancelAnimationFrame !== "undefined") cancelAnimationFrame(tweenRaf);
     nodes.forEach((n) => { n.sx = n.x; n.sy = n.y; });
     const allowMorph = animate && nodes.length <= 400 && typeof requestAnimationFrame !== "undefined";
@@ -861,6 +862,7 @@
 
   function focus(tid) {
     if (!byId.has(tid)) return;
+    stopMomentum();
     selectedId = tid;
     if (window.BTMM_PLAYER) window.BTMM_PLAYER.select(tid, { silent: true });
     paint();
@@ -890,6 +892,7 @@
   function setShowSketches(val) {
     const next = Boolean(val);
     if (next === showSketches) return showSketches;
+    stopMomentum();
     showSketches = next;
     if (layout === "era") {
       computeTargetPositions();
@@ -903,6 +906,7 @@
   function setShowEraGenAi(val) {
     const next = Boolean(val);
     if (next === showEraGenAi) return showEraGenAi;
+    stopMomentum();
     showEraGenAi = next;
     if (!showEraGenAi && activeEraId === "genai_2025") activeEraId = null;
     if (layout === "era") {
@@ -915,6 +919,7 @@
   }
 
   function setClusterFilter(cid) {
+    stopMomentum();
     activeClusterId = cid;
     paint();
   }
@@ -981,10 +986,11 @@
     setLayout,
     getLayout: () => layout,
     getZoom: () => ({ ...zoom }),
+    isCoasting: () => Boolean(physics && physics.isCoasting && physics.isCoasting()),
     selected: () => selectedId,
     setSelectedSilent(tid) { selectedId = tid; paint(); },
     firstVisibleTrackId,
-    setFilter(setOrNull) { filterSet = setOrNull; paint(); },
+    setFilter(setOrNull) { stopMomentum(); filterSet = setOrNull; paint(); },
     setClusterFilter,
     setShowSketches,
     getShowSketches: () => showSketches,
