@@ -6,6 +6,7 @@ compatibility_flags = ["nodejs_compat"]
 [vars]
 MUSIC_MAP_BASE_URL = "https://billtribble.github.io/music-map/"
 ALLOWED_ORIGINS = "https://billtribble.github.io,https://billtribble.com,https://www.billtribble.com"
+GITHUB_DISPATCH_REPO = "BillTribble/music-map-notifications"
 
 # Provisioned via: wrangler d1 create music-map-db
 # Note: database_id is populated automatically during live provisioning (local dev uses local SQLite persistence).
@@ -16,10 +17,11 @@ database_id = "67a04f02-fb3a-46d8-8382-369d223f0797"
 migrations_dir = "migrations"
 
 # Secrets configured via `wrangler secret put` (never committed in plaintext):
-#   - NOTIFY_TO_EMAIL      (recipient address for instant Star & Download alerts)
-#   - RESEND_API_KEY       (optional: Resend API key for zero-DNS instant emails)
-#   - NOTIFY_FROM_EMAIL    (optional: sender address, defaults to onboarding@resend.dev)
-#   - IP_HASH_SALT         (random salt for privacy-preserving rate-limit & dedup hashing)
+#   - GITHUB_DISPATCH_TOKEN (GitHub token dispatching alerts to private BillTribble/music-map-notifications where github-actions[bot] opens @BillTribble Issues)
+#   - NOTIFY_TO_EMAIL       (recipient address when direct SMTP/Resend transport is enabled)
+#   - RESEND_API_KEY        (optional: Resend API key for zero-DNS instant emails)
+#   - NOTIFY_FROM_EMAIL     (optional: sender address, defaults to onboarding@resend.dev)
+#   - IP_HASH_SALT          (random salt for privacy-preserving rate-limit & dedup hashing)
 # Optional Cloudflare Email Routing native binding (zero third-party API key needed when Email Routing is enabled):
 # [[send_email]]
 # name = "EMAIL"

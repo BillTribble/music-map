@@ -425,7 +425,31 @@ function buildNotificationEmail(ev, totals, env) {
 </body>
 </html>`;
 
-  return { subject, text, html, deepLink, replyTo };
+  return {
+    subject,
+    headline,
+    text,
+    html,
+    deepLink,
+    statsUrl,
+    replyTo,
+    replyMailtoHref,
+    meta: {
+      event_type: ev.event_type,
+      track_id: ev.track_id,
+      track_title: ev.track_title,
+      era: eraDisplay,
+      format_label: ev.event_type === "download" ? fmtLabel : "",
+      source: ev.source || "",
+      requester_email: replyTo,
+      note: noteDisplay,
+      country: countryDisplay,
+      created_at: ev.created_at,
+      active_stars: Number(totals.active_stars || 0),
+      total_downloads: Number(totals.total_downloads || 0),
+      total_requests: Math.max(reqCount, ev.event_type === "request" ? 1 : 0),
+    },
+  };
 }
 
 function utf8ToBase64(str) {
@@ -676,6 +700,57 @@ async function deliverEmailPayload(mail, env) {
     }
   }
 
+  if (!deliveredAll && env.GITHUB_DISPATCH_TOKEN) {
+    const ghRepo = stripCrLf(
+      env.GITHUB_DISPATCH_REPO || "BillTribble/music-map-notifications",
+      140
+    );
+    if (/^[A-Za-z0-9_.-]+\/[A-Za-z0-9_.-]+$/.test(ghRepo)) {
+      const apiBase = stripCrLf(
+        env.GITHUB_API_BASE_URL || "https://api.github.com",
+        200
+      ).replace(/\/+$/, "");
+      try {
+        const ghResp = await fetch(`${apiBase}/repos/${ghRepo}/dispatches`, {
+          method: "POST",
+          headers: {
+            Authorization: `Bearer ${String(env.GITHUB_DISPATCH_TOKEN).trim()}`,
+            Accept: "application/vnd.github+json",
+            "Content-Type": "application/json",
+            "User-Agent": "music-map-events-worker/1.0",
+            "X-GitHub-Api-Version": "2022-11-28",
+          },
+          body: JSON.stringify({
+            event_type: "music_map_alert",
+            client_payload: {
+              alert: {
+                subject: mail.subject,
+                headline: mail.headline || mail.subject,
+                deep_link: mail.deepLink,
+                stats_url: mail.statsUrl || "https://billtribble.github.io/stats/",
+                reply_to: mail.replyTo || "",
+                reply_mailto: mail.replyMailtoHref || "",
+                ...(mail.meta || {}),
+              },
+            },
+          }),
+        });
+        if (ghResp.status === 204 || ghResp.ok) {
+          statuses.push("github_dispatch:sent:1");
+          deliveredAll = true;
+        } else {
+          statuses.push(`github_dispatch:err:${ghResp.status}`);
+        }
+      } catch (err) {
+        statuses.push(
+          `github_dispatch:err:${String(err && err.message ? err.message : err).slice(0, 50)}`
+        );
+      }
+    } else {
+      statuses.push("github_dispatch:err:bad_repo");
+    }
+  }
+
   if (env.DEV_OUTBOX_ENABLED === "1" && env.SIMULATE_NO_TRANSPORT !== "1") {
     statuses.push(`dev_outbox:captured:${recipients.length}`);
   }
@@ -684,7 +759,7 @@ async function deliverEmailPayload(mail, env) {
 }
 
 function isSuccessfulDelivery(deliveryStatus) {
-  return /(^|,)(resend:sent:|resend:partial:|smtps:sent:|cf_email:sent:|web3forms:sent:|dev_outbox:captured:)/.test(
+  return /(^|,)(resend:sent:|resend:partial:|smtps:sent:|cf_email:sent:|web3forms:sent:|github_dispatch:sent:|dev_outbox:captured:)/.test(
     String(deliveryStatus || "")
   );
 }
@@ -1165,8 +1240,13 @@ async function handlePostEvent(request, env, ctx, corsHeaders) {
     total_listen_sec: 0,
   };
 
-  // Strictly NEVER trigger email notifications on play / unstar events OR on owner-session activity (is_owner = 1)
-  if (isOwnerRow === 0 && (eventType === "star" || eventType === "download" || eventType === "request")) {
+  // Strictly NEVER trigger email notifications on play / unstar events.
+  // Passive owner-session browsing (star / download with is_owner = 1) suppresses self-alerts,
+  // while explicit Track Requests (eventType === "request") ALWAYS notify so owner tests & all requests deliver.
+  const shouldNotify =
+    eventType === "request" ||
+    (isOwnerRow === 0 && (eventType === "star" || eventType === "download"));
+  if (shouldNotify) {
     const eventRecord = {
       track_id: trackId,
       track_title: trackTitle,
