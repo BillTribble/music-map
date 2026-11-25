@@ -163,19 +163,20 @@
       };
     }
 
-    // Mobile (<= 800px): Top -> Bottom proportional chronological Y-axis fitted 100% inside viewport (vw x vh)
-    const leftGutter = 90;
-    const padR = 14;
-    const padT = 68;
-    const padB = 14;
+    // Mobile (<= 800px): 3-screens-tall smooth vertical scroll (3 * vh) so every era and track is easy to browse without zooming
+    const MOBILE_ERA_SCREENS = 3;
+    const leftGutter = 94;
+    const padR = 18;
+    const padT = 72;
+    const padB = 26;
     const virtualW = vw;
-    const virtualH = vh;
+    const virtualH = Math.max(960, Math.round(vh * MOBILE_ERA_SCREENS));
     const bankW = Math.max(150, virtualW - leftGutter - padR);
-    const usableH = Math.max(320, virtualH - padT - padB);
+    const usableH = Math.max(840, virtualH - padT - padB);
 
     const rawHeights = eraList.map((er) => {
       const cnt = (byEra.get(er.id) || []).length;
-      return dense ? (18 + Math.sqrt(cnt) * 4.2) : 40;
+      return dense ? (32 + Math.pow(cnt, 0.65) * 16) : 90;
     });
     const rawSumH = rawHeights.reduce((a, b) => a + b, 0) || 1;
     const heights = rawHeights.map((h) => (h / rawSumH) * usableH);
@@ -187,21 +188,24 @@
       const y0 = cursorY;
       cursorY += rowH;
       const cy = y0 + rowH * 0.5;
-      const padInY = Math.min(7, rowH * 0.18);
+      const padInY = Math.min(12, rowH * 0.16);
+      const innerH = Math.max(10, rowH - padInY * 2);
 
       list.forEach((t, ti) => {
         const en = energyNorm(t);
-        const jitterX = (hashFrac(t.id + "_mx") - 0.5) * 28;
-        const jitterY = (hashFrac(t.id + "_my") - 0.5) * Math.max(8, rowH - padInY * 2.2);
-        const px = Math.max(leftGutter + 8, Math.min(virtualW - padR, leftGutter + en * bankW + jitterX));
-        const py = Math.max(y0 + padInY, Math.min(y0 + rowH - padInY, cy + jitterY));
+        const jitterX = (hashFrac(t.id + "_mx") - 0.5) * 34;
+        const slotFrac = list.length > 1 ? (ti + 0.5) / list.length : 0.5;
+        const hashY = hashFrac(t.id + "_my");
+        const yFrac = slotFrac * 0.68 + hashY * 0.32;
+        const px = Math.max(leftGutter + 10, Math.min(virtualW - padR, leftGutter + en * bankW + jitterX));
+        const py = Math.max(y0 + padInY, Math.min(y0 + rowH - padInY, y0 + padInY + yFrac * innerH));
         coords.set(t.id, { x: px, y: py, era: er.id, idx: ti });
       });
 
       const minDist = dense
-        ? Math.max(6.8, Math.min(16, Math.sqrt((bankW * rowH) / Math.max(1, list.length)) * 0.48))
-        : 16;
-      for (let iter = 0; iter < 20; iter++) {
+        ? Math.max(14, Math.min(26, Math.sqrt((bankW * rowH) / Math.max(1, list.length)) * 0.56))
+        : 22;
+      for (let iter = 0; iter < 28; iter++) {
         for (let i = 0; i < list.length; i++) {
           const a = coords.get(list[i].id);
           for (let j = i + 1; j < list.length; j++) {
@@ -211,11 +215,11 @@
             let dist = Math.hypot(dx, dy);
             if (dist < 0.01) { dx = 0.5; dy = 1; dist = 1.12; }
             if (dist < minDist) {
-              const push = (minDist - dist) * 0.48;
-              const ux = (dx / dist) * push * 0.85;
-              const uy = (dy / dist) * push * 0.78;
-              a.x = Math.max(leftGutter + 8, Math.min(virtualW - padR, a.x - ux));
-              b.x = Math.max(leftGutter + 8, Math.min(virtualW - padR, b.x + ux));
+              const push = (minDist - dist) * 0.5;
+              const ux = (dx / dist) * push * 0.86;
+              const uy = (dy / dist) * push * 0.82;
+              a.x = Math.max(leftGutter + 10, Math.min(virtualW - padR, a.x - ux));
+              b.x = Math.max(leftGutter + 10, Math.min(virtualW - padR, b.x + ux));
               a.y = Math.max(y0 + padInY, Math.min(y0 + rowH - padInY, a.y - uy));
               b.y = Math.max(y0 + padInY, Math.min(y0 + rowH - padInY, b.y + uy));
             }
@@ -247,6 +251,7 @@
     const spine = bands.filter((b) => b.count > 0).map((b) => ({ x: b.cx, y: b.cy, id: b.id }));
     return {
       isMobile: true,
+      leftGutter,
       virtualW,
       virtualH,
       bands,
@@ -307,12 +312,19 @@
         ctx.stroke();
       });
     } else {
-      const leftGutter = 90;
+      const leftGutter = data.leftGutter || 94;
       [0.25, 0.55, 0.85].forEach((f) => {
-        const x = leftGutter + (data.virtualW - leftGutter - 14) * f;
+        const x = leftGutter + (data.virtualW - leftGutter - 18) * f;
         ctx.beginPath();
         ctx.moveTo(x, 54);
-        ctx.lineTo(x, data.virtualH - 14);
+        ctx.lineTo(x, data.virtualH - 16);
+        ctx.stroke();
+      });
+      ctx.globalAlpha = 0.14;
+      data.bands.forEach((b) => {
+        ctx.beginPath();
+        ctx.moveTo(8, b.y);
+        ctx.lineTo(data.virtualW - 12, b.y);
         ctx.stroke();
       });
     }
@@ -337,6 +349,38 @@
     }
 
     ctx.restore();
+
+    // Subtle screen-space right-edge vertical scroll thumb on 3-screen mobile Era view
+    if (data.isMobile && colors.viewportH && data.virtualH * zoom.k > colors.viewportH + 24) {
+      const vhScreen = colors.viewportH;
+      const vwScreen = data.virtualW;
+      const slackY = Number(colors.panSlackY) || 0;
+      const cardTopY = Number.isFinite(colors.visiblePlayerTopY) ? colors.visiblePlayerTopY : vhScreen;
+      const maxScroll = Math.max(1, data.virtualH * zoom.k + slackY - vhScreen);
+      const prog = Math.max(0, Math.min(1, -zoom.y / maxScroll));
+      const trackTop = 58;
+      const trackBot = Math.max(trackTop + 56, Math.min(vhScreen - 16, cardTopY - 12));
+      const trackLen = trackBot - trackTop;
+      const visRatio = Math.max(0.08, Math.min(0.45, vhScreen / (data.virtualH * zoom.k + slackY)));
+      const thumbH = Math.max(22, Math.round(trackLen * visRatio));
+      const thumbY = trackTop + prog * (trackLen - thumbH);
+
+      ctx.save();
+      ctx.fillStyle = colors.gridLine;
+      ctx.globalAlpha = 0.22;
+      ctx.beginPath();
+      if (typeof ctx.roundRect === "function") ctx.roundRect(vwScreen - 5.5, trackTop, 2.5, trackLen, 2);
+      else ctx.rect(vwScreen - 5.5, trackTop, 2.5, trackLen);
+      ctx.fill();
+
+      ctx.fillStyle = colors.primary;
+      ctx.globalAlpha = 0.56;
+      ctx.beginPath();
+      if (typeof ctx.roundRect === "function") ctx.roundRect(vwScreen - 6, thumbY, 3.5, thumbH, 2);
+      else ctx.rect(vwScreen - 6, thumbY, 3.5, thumbH);
+      ctx.fill();
+      ctx.restore();
+    }
   }
 
   function renderOverlay(svgGroup, data, zoom, vw, vh, activeEraId, onEraSelect) {
@@ -396,14 +440,27 @@
 
         g.append(rect, txt);
       } else {
-        // Mobile pinned left-aligned Syne era + year label (compact 1-line at 1x, 2-line when zoomed)
-        const cy = sy + sh * 0.5;
-        if (cy < 48 || cy > vh + 24) return;
-        const compactRow = sh < 36;
+        // Mobile pinned left-aligned Syne era + Inter year label across the 3-screen vertical scroll
+        if (sy + sh < 62 || sy > vh - 8) return;
+        const rawCy = sy + sh * 0.5;
+        const minCy = Math.min(sy + sh - 16, Math.max(sy + 18, 68));
+        const maxCy = Math.max(minCy, sy + sh - 18);
+        const cy = Math.max(minCy, Math.min(maxCy, rawCy));
+        const compactRow = sh < 38;
         let mobLbl = b.shortLabel;
         if (compactRow && b.yearMark) {
           mobLbl = mobLbl.replace(/\s*'\d{2}$/, "").replace(/\s*&\s*/g, "/");
         }
+        const gutterW = (data.leftGutter || 94) - 8;
+        const hitRect = document.createElementNS(NS, "rect");
+        hitRect.setAttribute("class", "map-family-hit");
+        hitRect.setAttribute("x", "4");
+        hitRect.setAttribute("y", (cy - 16).toFixed(1));
+        hitRect.setAttribute("width", String(gutterW));
+        hitRect.setAttribute("height", compactRow ? "24" : "34");
+        hitRect.setAttribute("rx", "8");
+        g.appendChild(hitRect);
+
         const txt = document.createElementNS(NS, "text");
         txt.setAttribute("class", "era-wave-title");
         if (compactRow) txt.setAttribute("style", "font-size:10px");
@@ -412,18 +469,19 @@
         txt.textContent = mobLbl;
         g.appendChild(txt);
 
-        if (!compactRow) {
+        const subText = b.sublabel || b.yearMark || "";
+        if (!compactRow && subText && subText !== mobLbl) {
           const sub = document.createElementNS(NS, "text");
           sub.setAttribute("class", "era-tick-year");
           sub.setAttribute("x", "10");
           sub.setAttribute("y", (cy + 12).toFixed(1));
-          sub.textContent = b.sublabel || b.yearMark || "";
+          sub.textContent = subText;
           g.appendChild(sub);
-        } else if (b.yearMark) {
+        } else if (compactRow && b.yearMark && b.yearMark !== mobLbl) {
           const yr = document.createElementNS(NS, "text");
           yr.setAttribute("class", "era-tick-year");
           yr.setAttribute("style", "font-size:9px");
-          yr.setAttribute("x", "84");
+          yr.setAttribute("x", String((data.leftGutter || 94) - 8));
           yr.setAttribute("y", (cy + 3.2).toFixed(1));
           yr.setAttribute("text-anchor", "end");
           yr.textContent = "'" + b.yearMark.slice(2);
@@ -445,9 +503,9 @@
       hint.setAttribute("y", "35");
       hint.setAttribute("text-anchor", "end");
       hint.textContent = "↑ High energy · ↓ Ambient";
-    } else {
+    } else if (vw >= 355) {
       hint.setAttribute("x", String(vw - 12));
-      hint.setAttribute("y", "60");
+      hint.setAttribute("y", "33");
       hint.setAttribute("text-anchor", "end");
       hint.textContent = "Ambient ← → High energy";
     }

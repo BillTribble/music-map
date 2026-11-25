@@ -78,7 +78,9 @@
         const arr = JSON.parse(rawStars);
         if (Array.isArray(arr)) starred = new Set(arr.filter((x) => typeof x === "string"));
       }
-      collapsed = localStorage.getItem(COLLAPSE_KEY) === "true";
+      // Always start the player maximized across all views on both mobile and desktop
+      collapsed = false;
+      localStorage.removeItem(COLLAPSE_KEY);
       const savedAuto = localStorage.getItem(AUTOPLAY_KEY);
       if (savedAuto === "false") localAutoPlay = false;
       else if (savedAuto === "true") localAutoPlay = true;
@@ -109,7 +111,7 @@
   }
 
   function saveCollapsed() {
-    try { localStorage.setItem(COLLAPSE_KEY, collapsed ? "true" : "false"); } catch (_) {}
+    // Intentionally session-local only so opening the app or player always starts maximized
   }
 
   function saveLocalAutoPlay() {
@@ -1127,6 +1129,11 @@
           try { targetBtn.focus({ preventScroll: true }); } catch (_) { targetBtn.focus(); }
         }
       }
+      if (hooks && typeof hooks.onCollapseChange === "function") {
+        setTimeout(() => {
+          if (hooks && typeof hooks.onCollapseChange === "function") hooks.onCollapseChange(collapsed);
+        }, COLLAPSE_ANIM_MS + 16);
+      }
     }
   }
 
@@ -1886,6 +1893,7 @@
         window.BTMM_EVENTS.notifyTrackIntent(null, { source: "manual" });
       }
       selectedId = null;
+      collapsed = false;
       formOpenForId = null;
       waveHoverFrac = null;
       isWaveScrubbing = false;
@@ -1893,6 +1901,10 @@
       render();
       if (!opts.silent && hooks && hooks.onSelectionChange) hooks.onSelectionChange(null);
       return;
+    }
+    const wasClosed = !selectedId || !byId.has(selectedId);
+    if (wasClosed) {
+      collapsed = false;
     }
     if (selectedId !== tid) {
       formOpenForId = null;

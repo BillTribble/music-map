@@ -840,6 +840,11 @@
         onStarChange: () => {
           if (window.ME_NODEMAP) window.ME_NODEMAP.paint();
         },
+        onCollapseChange: () => {
+          if (window.ME_NODEMAP && typeof window.ME_NODEMAP.refreshLabels === "function") {
+            window.ME_NODEMAP.refreshLabels();
+          }
+        },
       });
 
       window.ME_NODEMAP.init({

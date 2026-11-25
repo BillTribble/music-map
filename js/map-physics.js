@@ -32,16 +32,18 @@
       const zoom = opts.getZoom();
       const [vw, vh] = opts.getViewport();
       const [worldW, worldH] = opts.getWorldSize();
+      const [slackX, slackY] = typeof opts.getPanSlack === "function" ? opts.getPanSlack() : [0, 0];
       const minK = Math.max(vw / Math.max(1, worldW), vh / Math.max(1, worldH), MIN_ZOOM);
       zoom.k = Math.max(minK, Math.min(MAX_ZOOM, Number.isFinite(zoom.k) ? zoom.k : MIN_ZOOM));
       const scaledW = worldW * zoom.k;
       const scaledH = worldH * zoom.k;
-      const minX = Math.min(0, vw - scaledW);
-      const minY = Math.min(0, vh - scaledH);
-      zoom.x = scaledW <= vw + 0.5 ? (vw - scaledW) * 0.5 : Math.max(minX, Math.min(0, zoom.x));
-      zoom.y = scaledH <= vh + 0.5 ? (vh - scaledH) * 0.5 : Math.max(minY, Math.min(0, zoom.y));
+      const minX = Math.min(0, vw - slackX - scaledW);
+      const minY = Math.min(0, vh - slackY - scaledH);
+      zoom.x = minX >= -0.5 ? (vw - scaledW) * 0.5 : Math.max(minX, Math.min(0, zoom.x));
+      zoom.y = minY >= -0.5 ? (vh - scaledH) * 0.5 : Math.max(minY, Math.min(0, zoom.y));
       if (mapWrap) {
-        mapWrap.classList.toggle("is-zoomed", scaledW > vw + 1 || scaledH > vh + 1);
+        mapWrap.classList.toggle("is-zoomed", zoom.k > 1.02);
+        mapWrap.classList.toggle("is-pannable", minX < -1 || minY < -1);
       }
     }
 
@@ -63,7 +65,8 @@
       const zoom = opts.getZoom();
       const [vw, vh] = opts.getViewport();
       const [worldW, worldH] = opts.getWorldSize();
-      if (worldW * zoom.k <= vw + 1 && worldH * zoom.k <= vh + 1) return;
+      const [slackX, slackY] = typeof opts.getPanSlack === "function" ? opts.getPanSlack() : [0, 0];
+      if (worldW * zoom.k + slackX <= vw + 1 && worldH * zoom.k + slackY <= vh + 1) return;
       if (!Number.isFinite(vx0) || !Number.isFinite(vy0)) return;
       const [clampedVx, clampedVy] = clampVelocity(vx0, vy0);
       if (Math.hypot(clampedVx, clampedVy) < MIN_LAUNCH_SPEED || typeof requestAnimationFrame === "undefined") {
@@ -120,6 +123,7 @@
       let pinchPrevMid = null;
       let lastTapTs = 0;
       let lastTapXY = [0, 0];
+      let suppressClickUntil = 0;
 
       function resetVelocityTracker(x, y, now) {
         lastPtrX = x;
@@ -171,7 +175,6 @@
         if (ev.button !== 0 && ev.pointerType === "mouse") return;
         stopMomentum();
         if (ev.target.closest("#map-floating-hud")) return;
-        if (ev.target.closest(".map-group-label, .map-family-group, .map-ai-sub-group") || ev.target.closest(".era-spine-hit")) return;
         const zoom = opts.getZoom();
         const now = performance.now();
         activePointers.set(ev.pointerId, { x: ev.clientX, y: ev.clientY });
@@ -226,7 +229,8 @@
             moved = true;
             const [vw, vh] = opts.getViewport();
             const [wW, wH] = opts.getWorldSize();
-            if (wW * zoom.k > vw + 1 || wH * zoom.k > vh + 1) {
+            const [slackX, slackY] = typeof opts.getPanSlack === "function" ? opts.getPanSlack() : [0, 0];
+            if (wW * zoom.k + slackX > vw + 1 || wH * zoom.k + slackY > vh + 1) {
               mapWrap.classList.add("is-dragging");
             }
           }
@@ -261,6 +265,9 @@
           resetVelocityTracker(rem.x, rem.y, now);
           return;
         }
+        if (dragging && moved) {
+          suppressClickUntil = now + 260;
+        }
         if (ev.type !== "pointercancel" && dragging && moved && hasVelSample && lastMoveTs > 0) {
           const idleMs = now - lastMoveTs;
           if (idleMs <= HOLD_CUTOFF_MS) {
@@ -282,6 +289,14 @@
       window.addEventListener("pointerup", finishPointer);
       window.addEventListener("pointercancel", finishPointer);
       mapWrap.addEventListener("pointerleave", () => opts.onHoverLeave());
+
+      mapWrap.addEventListener("click", (ev) => {
+        if (performance.now() < suppressClickUntil) {
+          suppressClickUntil = 0;
+          ev.stopPropagation();
+          ev.preventDefault();
+        }
+      }, true);
 
       mapWrap.addEventListener("click", (ev) => {
         if (moved) return;
@@ -325,11 +340,14 @@
         const zoom = opts.getZoom();
         const [vw, vh] = opts.getViewport();
         const [worldW, worldH] = opts.getWorldSize();
-        const canPanWorld = zoom.k > 1.005 || worldW * zoom.k > vw + 1 || worldH * zoom.k > vh + 1;
+        const [slackX, slackY] = typeof opts.getPanSlack === "function" ? opts.getPanSlack() : [0, 0];
+        const canPanWorld = zoom.k > 1.005 || worldW * zoom.k + slackX > vw + 1 || worldH * zoom.k + slackY > vh + 1;
+        const preferWheelScroll = typeof opts.preferWheelScroll === "function" ? opts.preferWheelScroll() : (vw <= 800);
         const [px, py] = pointerLocalXY(ev);
-        if (!ev.ctrlKey && canPanWorld && Math.abs(ev.deltaX) > Math.abs(ev.deltaY)) {
-          zoom.x -= ev.deltaX;
-          zoom.y -= ev.deltaY;
+        if (!ev.ctrlKey && canPanWorld && (preferWheelScroll || Math.abs(ev.deltaX) > Math.abs(ev.deltaY))) {
+          const mult = ev.deltaMode === 1 ? 18 : ev.deltaMode === 2 ? vh * 0.85 : 1;
+          zoom.x -= ev.deltaX * mult;
+          zoom.y -= ev.deltaY * mult;
           clampZoom();
           opts.onTransform();
           return;

@@ -11,7 +11,8 @@
   touch-action: none;
   cursor: default;
 }
-.map.is-zoomed { cursor: grab; }
+.map.is-zoomed,
+.map.is-pannable { cursor: grab; }
 .map.is-dragging { cursor: grabbing; }
 .map.has-hover { cursor: pointer; }
 .map[hidden] { display: none; }
@@ -403,11 +404,11 @@
   display: block;
   max-width: 100%;
   padding-block: 1px;
-  font-family: var(--font-display);
+  font-family: var(--font-sans);
   font-size: 13.5px;
-  font-weight: 700;
+  font-weight: 600;
   line-height: 1.35;
-  letter-spacing: -0.015em;
+  letter-spacing: -0.008em;
   color: var(--md-sys-color-on-surface);
   overflow: hidden;
   text-overflow: ellipsis;

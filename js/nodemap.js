@@ -146,7 +146,8 @@
 
   function nodeScreenRadius(t) {
     const e = Math.max(1, Math.min(10, Number(t.energy || 4)));
-    const base = vw <= 600
+    const isMobileEra = layout === "era" && vw <= 800;
+    const base = vw <= 600 && !isMobileEra
       ? 2.5 + ((e - 1) / 9) * 1.1
       : 3.4 + ((e - 1) / 9) * 1.5;
     // Shrink circle size in screen pixels as you zoom in so dense clusters open up for all track labels
@@ -705,12 +706,24 @@
     ctx.clearRect(0, 0, vw, vh);
 
     if (layout === "era" && window.BTMM_TIMELINE_ERA && eraLayout) {
+      let visiblePlayerTopY = vh;
+      if (typeof document !== "undefined" && mapWrap) {
+        const card = document.getElementById("track-player-card");
+        if (card && !card.hidden) {
+          const mRect = mapWrap.getBoundingClientRect();
+          const cRect = card.getBoundingClientRect();
+          if (cRect.height > 20) visiblePlayerTopY = Math.max(80, cRect.top - mRect.top);
+        }
+      }
       window.BTMM_TIMELINE_ERA.drawCanvasBackground(ctx, eraLayout, zoom, {
         bandAlt: palette.bandAlt,
         bandActive: palette.bandActive,
         gridLine: palette.gridLine,
         primary: palette.primary,
         spineGlow: palette.spineGlow,
+        viewportH: vh,
+        panSlackY: getPanSlack()[1],
+        visiblePlayerTopY,
       }, activeEraId, selTrack);
     }
 
@@ -841,6 +854,8 @@
         hoverId,
         isStarred: (id) => Boolean(window.BTMM_PLAYER && window.BTMM_PLAYER.isStarred(id)),
         mapWrap,
+        layout,
+        eraLeftGutter: eraLayout && eraLayout.leftGutter ? eraLayout.leftGutter : 94,
       });
     }
 
@@ -922,6 +937,59 @@
   }
 
   let physics = null;
+  let cachedExpandedBottomSpanY = 0;
+
+  // Always reserve blank scrollable space behind the maximized player (even when minimized or closed)
+  // so bottom-most tracks in both Vibe and Era views sit right above the maximized player's top edge.
+  function getPanSlack() {
+    const isMob = vw <= 840;
+    let spanY = cachedExpandedBottomSpanY > 0 ? cachedExpandedBottomSpanY : 336;
+    if (typeof document !== "undefined" && mapWrap) {
+      const card = document.getElementById("track-player-card");
+      if (card && !card.hidden) {
+        const mRect = mapWrap.getBoundingClientRect();
+        const isCol = card.classList.contains("is-collapsed") || card.classList.contains("mp-collapsed");
+        if (!isCol) {
+          const cRect = card.getBoundingClientRect();
+          if (cRect.height > 40) {
+            const liveSpan = Math.max(0, mRect.bottom - cRect.top);
+            const infoOpen = Boolean(window.BTMM_PLAYER && window.BTMM_PLAYER.isInfoOpen && window.BTMM_PLAYER.isInfoOpen());
+            if (!card.classList.contains("is-requesting") && !infoOpen) {
+              cachedExpandedBottomSpanY = Math.max(300, liveSpan);
+              spanY = cachedExpandedBottomSpanY;
+            } else {
+              spanY = Math.max(spanY, liveSpan);
+            }
+          }
+        } else {
+          const expandInner = card.querySelector("#mp-expand-inner");
+          if (expandInner && expandInner.scrollHeight > 80) {
+            const estCardH = Math.min(isMob ? vh * 0.58 : vh - 36, expandInner.scrollHeight + 30);
+            const estSpan = estCardH + (isMob ? 10 : 18);
+            cachedExpandedBottomSpanY = Math.max(300, estSpan);
+            spanY = Math.max(spanY, estSpan);
+          }
+        }
+      }
+    }
+
+    const [, worldH] = worldSize();
+    let maxNodeY = 0;
+    for (let i = 0; i < nodes.length; i++) {
+      const n = nodes[i];
+      if (isSketchHidden(n.t) || !isMatch(n.t)) continue;
+      const ny = Number.isFinite(n.ty) ? n.ty : n.y;
+      if (ny > maxNodeY) maxNodeY = ny;
+    }
+    const bottomMarginWorld = maxNodeY > 0 ? Math.max(0, worldH - maxNodeY) : 0;
+    const curK = Math.max(1, Number.isFinite(zoom.k) ? zoom.k : 1);
+    // Place the lowest visible track ~42px above the maximized player's top edge when scrolled all the way up
+    const neededSlackY = (spanY + 42) - bottomMarginWorld * curK;
+    const minDesktopSlackY = !isMob && curK <= 1.02 ? Math.round(spanY + 48) : 0;
+    const slackY = Math.max(minDesktopSlackY, Math.min(Math.round(vh * 0.75), Math.round(Math.max(0, neededSlackY))));
+    const slackX = isMob ? 0 : 416;
+    return [slackX, slackY];
+  }
 
   function worldSize() {
     if (layout === "era" && eraLayout && eraLayout.virtualW && eraLayout.virtualH) {
@@ -965,6 +1033,8 @@
       getDefaultZoom: defaultMapZoom,
       getViewport: () => [vw, vh],
       getWorldSize: worldSize,
+      getPanSlack,
+      preferWheelScroll: () => vw <= 800,
       onTransform: () => {
         paintCanvas();
         drawFloatingLabels();
@@ -1110,7 +1180,11 @@
     resizeCanvas();
     computeTargetPositions();
     if (layout === "era" && eraLayout) {
-      zoom = { ...eraLayout.defaultZoom };
+      if ((prevVw <= 800) !== (vw <= 800)) {
+        zoom = { ...eraLayout.defaultZoom };
+      } else if (prevVh > 0 && Math.abs(vh - prevVh) > 0.5) {
+        zoom.y = zoom.y * (vh / prevVh);
+      }
     } else if ((prevVw <= 768) !== (vw <= 768)) {
       zoom = defaultMapZoom();
     }
@@ -1137,7 +1211,8 @@
     if (opts && opts.centerNode) {
       const n = nodeById.get(tid);
       if (n) {
-        const targetK = Math.max(1, Math.min(4, Number(opts.zoomK) || 1.85));
+        const defFocusK = layout === "era" && vw <= 800 ? 1 : 1.85;
+        const targetK = Math.max(1, Math.min(4, Number(opts.zoomK) || defFocusK));
         const anchorX = vw <= 840 ? vw * 0.5 : vw * 0.42;
         const anchorY = vw <= 840 ? vh * 0.34 : vh * 0.45;
         zoom = {
@@ -1179,6 +1254,7 @@
     if (layout === "era") {
       computeTargetPositions();
       nodes.forEach((n) => { n.x = n.tx; n.y = n.ty; });
+      clampZoom();
     }
     buildEdges();
     paint();
@@ -1231,6 +1307,7 @@
     if (layout === "era") {
       computeTargetPositions();
       nodes.forEach((n) => { n.x = n.tx; n.y = n.ty; });
+      clampZoom();
     }
     buildEdges();
     paint();
@@ -1313,6 +1390,8 @@
     getLayout: () => layout,
     getZoom: () => ({ ...zoom }),
     getWorldSize: worldSize,
+    getPanSlack,
+    refreshLabels() { clampZoom(); paintCanvas(); drawFloatingLabels(); },
     isCoasting: () => Boolean(physics && physics.isCoasting && physics.isCoasting()),
     selected: () => selectedId,
     setSelectedSilent(tid) { selectedId = tid; paint(); },

@@ -93,12 +93,22 @@
       hoverId,
       isStarred,
       mapWrap,
+      layout,
+      eraLeftGutter,
     } = opts;
 
     const zoomed = zoom.k >= 1.55;
+    const mobileEraScroll = layout === "era" && vw <= 800;
+    const showBrowseLabels = zoomed || mobileEraScroll;
     const uiBoxes = getUiObstacleBoxes(mapWrap);
+    if (mobileEraScroll) {
+      uiBoxes.push([0, 0, (eraLeftGutter || 94) + 2, vh]);
+      uiBoxes.push([vw - 170, 0, vw, 48]); // "Ambient <- -> High energy" top-right header legend
+    }
+    const minLabelX = mobileEraScroll ? (eraLeftGutter || 94) + 3 : 4;
+    const maxLabelX = mobileEraScroll ? vw - 10 : vw - 4;
     const isCompact = vw <= 600;
-    const baseFs = isCompact ? 11 : 11.5;
+    const baseFs = mobileEraScroll && !zoomed ? 10.5 : (isCompact ? 11 : 11.5);
 
     const visible = [];
     const dotBoxes = [];
@@ -113,7 +123,7 @@
       const isSel = n.id === selectedId;
       const isHov = n.id === hoverId;
       dotBoxes.push({ id: n.id, box: [sx - r - 1.2, sy - r - 1.2, sx + r + 1.2, sy + r + 1.2] });
-      if ((zoomed && sx >= 6 && sx <= vw - 6 && sy >= 8 && sy <= vh - 8) || isPlay || isSel) {
+      if ((showBrowseLabels && sx >= 6 && sx <= vw - 6 && sy >= 8 && sy <= vh - 8) || isPlay || isSel) {
         const prio =
           (isPlay ? 1000 : 0) +
           (isSel ? 800 : 0) +
@@ -128,7 +138,7 @@
     if (!visible.length) return lastTrackBoxes;
     visible.sort((a, b) => b.prio - a.prio);
 
-    const allowLeaderRings = zoom.k >= 2.2 || visible.length <= 160;
+    const allowLeaderRings = zoom.k >= 2.2 || (!mobileEraScroll && zoomed && visible.length <= 160);
     const placed = [];
     const toDraw = [];
 
@@ -187,14 +197,14 @@
       let fallbackEmphBox = null;
       for (let ci = 0; ci < cands.length; ci++) {
         let b = cands[ci].box;
-        if (b[0] < 4) {
-          const sh = 4 - b[0];
+        if (b[0] < minLabelX) {
+          const sh = minLabelX - b[0];
           b = [b[0] + sh, b[1], b[2] + sh, b[3]];
-        } else if (b[2] > vw - 4) {
-          const sh = b[2] - (vw - 4);
+        } else if (b[2] > maxLabelX) {
+          const sh = b[2] - maxLabelX;
           b = [b[0] - sh, b[1], b[2] - sh, b[3]];
         }
-        if (b[0] < 3 || b[2] > vw - 3 || b[1] < 6 || b[3] > vh - 6) continue;
+        if (b[0] < minLabelX - 1 || b[2] > maxLabelX + 1 || b[1] < 6 || b[3] > vh - 6) continue;
 
         const padB = [b[0] - 1.4, b[1] - 0.9, b[2] + 1.4, b[3] + 0.9];
         const hitUi = uiBoxes.some((ub) => boxOverlap(padB, ub));
