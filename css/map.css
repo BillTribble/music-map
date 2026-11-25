@@ -440,6 +440,21 @@
   letter-spacing: 0.01em;
 }
 
+.mp-meta-pills {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 6px;
+}
+.mp-meta-pills .mp-wip-pill {
+  padding: 2px 9px;
+  font-size: 11px;
+  line-height: inherit;
+  letter-spacing: normal;
+  background: var(--md-sys-color-teal-tonal);
+  color: var(--md-sys-color-on-teal-tonal);
+}
+
 .mp-transport-row {
   display: flex;
   align-items: center;
@@ -509,12 +524,19 @@
   gap: 6px;
 }
 
+.mp-info-header {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 6px 8px;
+}
+
 .mp-discogs-line {
   display: flex;
   flex-wrap: wrap;
   align-items: center;
   gap: 4px 10px;
-  margin: 8px 0 -2px;
+  margin: 0;
   font-family: var(--font-sans);
   font-size: 12px;
   line-height: 1.4;

@@ -131,6 +131,82 @@
   }
   window.isTrackWorkInProgress = isWorkInProgress;
 
+  const CAMELOT_TO_SIMPLE_KEY = {
+    "1A": "Abm", "2A": "Ebm", "3A": "Bbm", "4A": "Fm",
+    "5A": "Cm",  "6A": "Gm",  "7A": "Dm",  "8A": "Am",
+    "9A": "Em",  "10A": "Bm", "11A": "F#m", "12A": "C#m",
+    "1B": "B",   "2B": "F#",  "3B": "Db",  "4B": "Ab",
+    "5B": "Eb",  "6B": "Bb",  "7B": "F",   "8B": "C",
+    "9B": "G",   "10B": "D",  "11B": "A",  "12B": "E",
+  };
+
+  function formatSimpleKey(t) {
+    if (!t) return "";
+    if (typeof t === "string") t = { key_label: t };
+    const rawKey = String(t.key || t.musical_key || t.key_label || "").trim();
+    const rawScale = String(t.scale || t.mode || "").trim().toLowerCase();
+    const cleaned = rawKey.replace(/\s*\([^)]*\)\s*/g, " ").trim();
+    const cleanedUpper = cleaned.toUpperCase();
+
+    if (/^(?:1[0-2]|[1-9])[AB]$/.test(cleanedUpper)) {
+      return CAMELOT_TO_SIMPLE_KEY[cleanedUpper] || "";
+    }
+
+    if (cleaned) {
+      const m = cleaned.match(
+        /^([A-Ga-g])([#♯b♭]?)(?:(?:\s*[-/]?\s*)([Mm]inor|[Mm]in|MINOR|MIN|[Mm]ajor|[Mm]aj|MAJOR|MAJ|[Aa]eolian|[Dd]orian|[Pp]hrygian|[Ii]onian|[Mm]ixolydian|[Ll]ydian)|(\s*m))?$/
+      );
+      if (m) {
+        const root = m[1].toUpperCase() + m[2].replace("♯", "#").replace("♭", "b");
+        const wordQual = m[3] ? m[3].toLowerCase() : "";
+        const hasLowerM = Boolean(m[4]);
+        const effScale = wordQual || (hasLowerM ? "minor" : rawScale);
+        const isMinor =
+          effScale === "m" ||
+          effScale === "min" ||
+          effScale === "minor" ||
+          effScale === "aeolian" ||
+          effScale === "dorian" ||
+          effScale === "phrygian";
+        return isMinor ? `${root}m` : root;
+      }
+    }
+
+    const camFallback = String(t.key_camelot || "").trim().toUpperCase();
+    if (CAMELOT_TO_SIMPLE_KEY[camFallback]) {
+      return CAMELOT_TO_SIMPLE_KEY[camFallback];
+    }
+    return "";
+  }
+  window.formatSimpleKey = formatSimpleKey;
+
+  function buildPlayerMetaPillsHtml(t, { released, sketch, wip, er }) {
+    const pills = [];
+    const bpmRounded = Math.round(Number(t.bpm) || 0);
+    if (bpmRounded > 0) {
+      pills.push(`<span class="badge badge-blue mono-num">${bpmRounded} BPM</span>`);
+    }
+    const simpleKey = formatSimpleKey(t);
+    if (simpleKey) {
+      pills.push(`<span class="badge badge-indigo" title="Musical key: ${esc(simpleKey)}">${esc(simpleKey)}</span>`);
+    }
+    if (t.is_ai) {
+      pills.push('<span class="badge badge-cyan">Generative AI</span>');
+    } else if (sketch) {
+      pills.push('<span class="badge badge-amber">Sketch</span>');
+    } else if (wip) {
+      pills.push('<span class="badge badge-teal mp-wip-pill mp-wip-badge" title="Unreleased work in progress from the last 2 years">Work in progress</span>');
+    }
+    if (!released) {
+      pills.push('<span class="badge badge-purple">Unreleased</span>');
+    } else {
+      const relLabel = t.album || t.release_title || "Released";
+      const relTitle = er && er.label ? `Released — ${er.label}` : "Released";
+      pills.push(`<span class="badge badge-green" title="${esc(relTitle)}">${esc(relLabel)}</span>`);
+    }
+    return `<div class="mp-meta-pills" id="mp-meta-pills" aria-label="Track tempo, key, and release status">${pills.join("")}</div>`;
+  }
+
   function resolveTier(t) {
     if (isReleased(t)) return "A";
     const mp3Url = t && (t.mp3_320_url || t.mp3_url);
@@ -966,10 +1042,10 @@
         </button>
         <div class="mp-titles">
           <div class="mp-name" title="${esc(t.title)}">${esc(t.title)}</div>
-          <div class="mp-meta" title="${esc(metaFull)}"><span class="mp-meta-text">${esc(metaShort)}</span>${wip ? '<span class="mp-wip-pill" title="Unreleased work in progress from the last 2 years">Work in progress</span>' : ""}</div>
+          <div class="mp-meta" title="${esc(metaFull)}"><span class="mp-meta-text">${esc(metaShort)}</span></div>
         </div>
         <div class="mp-head-actions">
-          <button type="button" class="icon-btn mp-info-btn ${infoOpen ? "is-active" : ""}" id="mp-info-toggle" aria-expanded="${infoOpen}" aria-controls="mp-info-panel" aria-label="Musical analysis details" title="${infoOpen ? "Hide musical analysis" : "Show key, BPM, energy & harmonic analysis"}">
+          <button type="button" class="icon-btn mp-info-btn ${infoOpen ? "is-active" : ""}" id="mp-info-toggle" aria-expanded="${infoOpen}" aria-controls="mp-info-panel" aria-label="Musical analysis details" title="${infoOpen ? "Hide musical analysis" : "Show sonic profile & harmonic analysis"}">
             <span class="ms">info</span>
           </button>
           <button type="button" class="star-btn ${isStar ? "is-starred" : ""}" data-player-star="${esc(t.id)}" aria-pressed="${isStar}" aria-label="${isStar ? "Unstar track" : "Star track"}" title="${isStar ? "Remove star" : "Star track"}">
@@ -985,6 +1061,7 @@
           <canvas id="mp-waveform" class="mp-wave-canvas" aria-hidden="true"></canvas>
           <div id="mp-wave-time" class="mp-wave-time">${esc(timeReadout)}</div>
         </div>
+        ${buildPlayerMetaPillsHtml(t, { released, sketch, wip, er })}
         <div class="mp-transport-row">
           <button type="button" class="mp-ctrl-btn" id="mp-restart" data-player-restart="${esc(t.id)}" aria-label="Play from start (0:00)" title="Restart track from 0:00">
             <span class="ms">skip_previous</span>
@@ -1001,19 +1078,17 @@
         </div>
       </div>
       <div id="mp-info-panel" class="mp-info-panel" ${infoOpen ? "" : "hidden"}>
-        <div class="mp-badges">
-          <span class="badge ${energyBadgeCls(t.energy)}" title="Mixed In Key energy level (1–10)">E${t.energy}/10</span>
-          <span class="badge badge-indigo">${esc(t.key_label || "—")}</span>
-          <span class="badge badge-blue mono-num">${Math.round(t.bpm || 0)} BPM</span>
-          ${t.is_ai ? '<span class="badge badge-indigo">Generative AI</span>' : ""}
-          ${sketch ? '<span class="badge badge-amber">Sketch</span>' : ""}
-          ${!released ? '<span class="badge badge-purple">Unreleased</span>' : ""}
+        <div class="mp-info-header">
+          <span class="badge ${energyBadgeCls(t.energy)}" title="Energy level (1–10)">E${t.energy}/10</span>
+          ${Array.isArray(t.discogs_styles) && t.discogs_styles.length ? `
+          <div class="mp-discogs-line">
+            <span class="mp-discogs-styles">${esc(t.discogs_styles.join(" · "))}</span>
+            ${Array.isArray(t.mood_tags) && t.mood_tags.length ? `<span class="mp-discogs-moods">${esc(t.mood_tags.join(" · "))}</span>` : ""}
+          </div>` : (t.harmony_tag || t.rhythm_tag ? `
+          <div class="mp-discogs-line">
+            <span class="mp-discogs-styles">${esc([t.harmony_tag, t.rhythm_tag].filter(Boolean).join(" · "))}</span>
+          </div>` : "")}
         </div>
-        ${Array.isArray(t.discogs_styles) && t.discogs_styles.length ? `
-        <div class="mp-discogs-line">
-          <span class="mp-discogs-styles">${esc(t.discogs_styles.join(" · "))}</span>
-          ${Array.isArray(t.mood_tags) && t.mood_tags.length ? `<span class="mp-discogs-moods">${esc(t.mood_tags.join(" · "))}</span>` : ""}
-        </div>` : ""}
         <div class="mp-meters">
           ${meterHtml("Harmonic complexity", t.harmonic_complexity, "var(--c5)")}
           ${meterHtml("Chord richness", t.chord_richness, "var(--c1)")}
@@ -1245,7 +1320,7 @@
           track_title: t.title,
           track_id: t.id,
           era: eraLabel,
-          key_tempo: `${t.key_label || "—"} · ${Math.round(t.bpm || 0)} BPM`,
+          key_tempo: `${formatSimpleKey(t) || "—"} · ${Math.round(t.bpm || 0)} BPM`,
           message: note || `Requesting "${t.title}" (${eraLabel}).`,
           botcheck: "",
         }),
@@ -1512,6 +1587,7 @@
     refreshWaveform: syncWaveVisuals,
     getShareUrl: (tid) => buildTrackShareUrl(tid || selectedId),
     isWorkInProgress,
+    formatSimpleKey,
     logPrivateTrackEvent,
   };
 })();

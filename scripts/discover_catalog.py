@@ -175,6 +175,9 @@ EXCLUDED_EXACT_REL_PATHS = {
     "random bill bands/koala tube jam - awaiting here.wav",
     "spudboy/spudboy - live at holy mountain 01 mini-mix.mp3",
     "me archive/2014/me - bill in china 1983.mp3",
+    "^ music sketches 2026/dom piano ravel/dom piano 02.mp3",
+    "^ music sketches 2026/dom piano ravel/ravel - dom piano 02.flac",
+    "^ music sketches 2026/fount of life 01 project/fount of life 02b live.flac",
 }
 TITLE_OVERRIDES_BY_REL_PATH = {
     "me music - 2005 hard drive/as we enter mix2.m4a": "pr3s3nt - As we Enter",

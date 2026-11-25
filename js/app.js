@@ -283,9 +283,10 @@
     const tr = (active && active.track) || (pend && pend.track) || (cur && cur.tracks && cur.tracks[0]);
     if (tr) {
       const er = erasById.get(tr.era);
+      const simpleKey = window.formatSimpleKey ? window.formatSimpleKey(tr) : (tr.key_label || "");
       infoEl.innerHTML = `
         <div class="audio-now-title">${esc(tr.title)}</div>
-        <div class="audio-now-meta">${esc(er ? er.label : tr.era)} · E${tr.energy}/10 · ${esc(tr.key_label)} · ${Math.round(tr.bpm)} BPM${pend ? " · Queued on bar" : ""}</div>`;
+        <div class="audio-now-meta">${esc(er ? er.label : tr.era)} · E${tr.energy}/10${simpleKey ? ` · ${esc(simpleKey)}` : ""} · ${Math.round(tr.bpm)} BPM${pend ? " · Queued on bar" : ""}</div>`;
     }
     if (!ledsEl.children.length) {
       ledsEl.innerHTML = [0, 1, 2, 3].map((b) => `<span class="beat-led${b === 0 ? " down" : ""}"></span>`).join("");
@@ -527,6 +528,7 @@
           (er && (er.label || "").toLowerCase().includes(ql)) ||
           (t.cluster_label || "").toLowerCase().includes(ql) ||
           (t.key_label || "").toLowerCase().includes(ql) ||
+          (window.formatSimpleKey && window.formatSimpleKey(t).toLowerCase() === ql) ||
           (Array.isArray(t.discogs_styles) && t.discogs_styles.some((s) => s.toLowerCase().includes(ql))) ||
           (Array.isArray(t.mood_tags) && t.mood_tags.some((s) => s.toLowerCase().includes(ql))) ||
           (Array.isArray(t.instrument_tags) && t.instrument_tags.some((s) => s.toLowerCase().includes(ql))) ||
