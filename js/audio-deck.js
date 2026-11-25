@@ -535,8 +535,7 @@
     if (!urls.length) return;
     const url = urls[0];
     const isFull = isUrlFullTrack(nextTrack, url);
-    const bounds = computeTrackBounds(nextTrack, isFull, 0);
-    const targetStart = isFull ? bounds.previewStart : bounds.previewStart;
+    const targetStart = 0;
     const el = decks[standbyIdx];
     if (!el) return;
 
@@ -571,9 +570,8 @@
         pw.urlIdx++;
         pw.url = pw.urls[pw.urlIdx];
         pw.isFullTrack = isUrlFullTrack(nextTrack, pw.url);
-        const fbBounds = computeTrackBounds(nextTrack, pw.isFullTrack, 0);
-        pw.targetStart = fbBounds.previewStart;
-        pw.sought = pw.targetStart <= 0.02;
+        pw.targetStart = 0;
+        pw.sought = true;
         try {
           el.src = pw.url;
           el.load();
@@ -657,6 +655,7 @@
     const fadeMs = Number.isFinite(opts.crossfadeMs) ? Math.max(80, opts.crossfadeMs) : CROSSFADE_MS;
     playTrack(nextTrack, {
       fromAutoPlay: true,
+      fromStart: true,
       crossfadeMs: fadeMs,
     });
 
@@ -806,7 +805,7 @@
     let initialStartSec = 0;
     if (typeof opts.startSec === "number" && Number.isFinite(opts.startSec)) {
       initialStartSec = Math.max(0, opts.startSec);
-    } else if (opts.fromStart) {
+    } else if (opts.fromStart || opts.fromAutoPlay) {
       initialStartSec = 0;
     } else {
       initialStartSec = initBounds.previewStart;
@@ -933,7 +932,8 @@
         voice.url = voice.urls[fbAttemptIdx];
         voice.isFullTrack = isUrlFullTrack(tr, voice.url);
         const fbBounds = computeTrackBounds(tr, voice.isFullTrack, 0);
-        voice.seekPending = fbBounds.previewStart > 0.02 ? fbBounds.previewStart : null;
+        const fbStart = (opts.fromStart || opts.fromAutoPlay) ? 0 : fbBounds.previewStart;
+        voice.seekPending = fbStart > 0.02 ? fbStart : null;
         voice.loopWindowActive = true;
         try {
           el.loop = !autoPlay && !voice.isFullTrack && voice.stopIdx < 0;
@@ -978,7 +978,7 @@
     if (el.readyState >= 1) {
       if (voice.seekPending !== null) {
         applyPendingSeek();
-      } else if (!alreadySought && initialStartSec === 0) {
+      } else if (initialStartSec === 0 && (el.currentTime || 0) > 0.05) {
         try { el.currentTime = 0; } catch (_) {}
       }
     }

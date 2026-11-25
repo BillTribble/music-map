@@ -9,7 +9,6 @@
   // Public opaque Web3Forms UUID (zero email address in client bundle; paste key from web3forms.com)
   let web3FormsKey = "";
   const WEB3FORMS_URL = "https://api.web3forms.com/submit";
-  const INSTAGRAM_URL = "https://www.instagram.com/bill_tribble/";
   const DEFAULT_PEAK_BARS = 160;
 
   // Official inline brand SVG paths (zero external icon CDNs)
@@ -727,10 +726,6 @@
             <span class="ms">${sent ? "check" : "mail"}</span>
             <span>${sent ? (hasRelay ? "Request sent" : "Requested") : "Request track"}</span>
           </button>
-        </div>
-        <div class="request-helper">
-          <span>${sent ? (hasRelay ? "Bill has your track request." : "Request logged for Bill.") : "Spam-protected track request"}</span>
-          ${!hasRelay ? `<a class="ig-dm-link" href="${INSTAGRAM_URL}" target="_blank" rel="noopener noreferrer"><span class="ms" style="font-size:13px">open_in_new</span><span>Instagram</span></a>` : ""}
         </div>
       </div>`;
   }

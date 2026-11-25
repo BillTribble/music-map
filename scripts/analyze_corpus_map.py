@@ -574,6 +574,28 @@ DEFAULT_EXCLUDED_IDS = {
     "archive_2018_23_59",
     "archive_2018_23_60",
     "archive_2018_23_67",
+    "archive_2018_23_6",
+    "archive_2018_23_7",
+    "archive_2018_23_8",
+    "archive_2018_23_9",
+    "archive_2018_23_10",
+    "archive_2018_23_12",
+    "archive_2018_23_13",
+    "archive_2018_23_14",
+    "archive_2018_23_15",
+    "archive_2018_23_16",
+    "archive_2018_23_17",
+    "archive_2018_23_18",
+    "archive_2018_23_20",
+    "archive_2018_23_22",
+    "archive_2018_23_23",
+    "archive_2018_23_24",
+    "archive_2018_23_25",
+    "archive_2018_23_28",
+    "archive_2018_23_29",
+    "archive_2018_23_30",
+    "archive_2018_23_31",
+    "present_electro_45",
 }
 
 CANONICAL_ARCHETYPES: list[tuple[str, str, int]] = [
@@ -1347,14 +1369,27 @@ def reanalyze_track_worker(ffmpeg_bin: str, base_dir: Path, t_in: dict) -> dict:
     return t
 
 
+def is_excluded_by_folder_rule(path_str: str) -> bool:
+    if not path_str:
+        return False
+    parts = [p.strip() for p in path_str.lower().split("/") if p.strip()]
+    for idx, p in enumerate(parts[:-1]):
+        if p in ("^ exports - reflective album", "exports - reflective album", "exports-reflective album"):
+            next_sub = parts[idx + 1] if idx + 1 < len(parts) - 1 else ""
+            if next_sub not in ("^ uptempo level match", "uptempo level match"):
+                return True
+    return False
+
+
 def load_excluded_ids(exclusions_path: Path | None) -> set[str]:
+    out = set(DEFAULT_EXCLUDED_IDS)
     if exclusions_path and exclusions_path.exists():
         data = json.loads(exclusions_path.read_text(encoding="utf-8"))
         if isinstance(data, dict) and "excluded_ids" in data:
-            return set(str(x) for x in data["excluded_ids"])
-        if isinstance(data, list):
-            return set(str(x) for x in data)
-    return set(DEFAULT_EXCLUDED_IDS)
+            out.update(str(x) for x in data["excluded_ids"])
+        elif isinstance(data, list):
+            out.update(str(x) for x in data)
+    return out
 
 
 def main() -> None:
@@ -1477,9 +1512,13 @@ def main() -> None:
             print(f"[CALIBRATION] {t['id']} ({t['title']}) -> {best_arch} ({ARCH_LABELS[best_arch]}), top3={top3}")
 
     excluded_ids = set() if args.keep_excluded else load_excluded_ids(args.exclusions_json)
-    if excluded_ids:
+    if not args.keep_excluded:
         before_n = len(analyzed)
-        analyzed = [t for t in analyzed if t["id"] not in excluded_ids]
+        analyzed = [
+            t for t in analyzed
+            if t["id"] not in excluded_ids
+            and not is_excluded_by_folder_rule(str(t.get("local_path") or cat_path_by_id.get(t["id"]) or ""))
+        ]
         print(f"Filtered exclusions ({before_n} -> {len(analyzed)} tracks; {before_n - len(analyzed)} excluded)")
 
     layout = cluster_and_layout(analyzed)

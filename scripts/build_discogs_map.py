@@ -17,7 +17,104 @@ _ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 DEFAULT_DATA_JS = os.path.join(_ROOT, "js", "data.js")
 DEFAULT_FEATURES = "/tmp/music_map_discogs_features.npz"
 DEFAULT_CATALOG = os.path.expanduser("~/tmp/music_map_staging/catalog_587_enriched.json")
+DEFAULT_EXCLUSIONS = os.path.expanduser("~/tmp/music_map_staging/exclusions.json")
 DEFAULT_OUT_JS = os.path.join(_ROOT, "js", "data.js")
+
+DEFAULT_EXCLUDED_IDS = {
+    "archive_2013_18_44",
+    "archive_2018_23_33",
+    "archive_2018_23_64",
+    "archive_2018_23_65",
+    "present_electro_57",
+    "present_electro_44",
+    "present_electro_33",
+    "hd_2005_35",
+    "archive_2013_18_151",
+    "sketches_2024_25_10",
+    "archive_2013_18_24",
+    "archive_2013_18_25",
+    "archive_2013_18_48",
+    "archive_2013_18_99",
+    "archive_2013_18_109",
+    "archive_2013_18_110",
+    "archive_2013_18_111",
+    "archive_2013_18_124",
+    "archive_2013_18_92",
+    "archive_2013_18_100",
+    "archive_2013_18_113",
+    "archive_2013_18_115",
+    "archive_2013_18_144",
+    "ecstatic_wave_7",
+    "ecstatic_wave_8",
+    "archive_2013_18_104",
+    "archive_2013_18_118",
+    "archive_2018_23_4",
+    "archive_2018_23_5",
+    "archive_2018_23_21",
+    "archive_2018_23_27",
+    "archive_2018_23_49",
+    "archive_2018_23_50",
+    "sketches_2024_25_20",
+    "remixes_commissions_4",
+    "remixes_commissions_5",
+    "remixes_commissions_7",
+    "remixes_commissions_11",
+    "remixes_commissions_19",
+    "archive_2018_23_34",
+    "archive_2018_23_35",
+    "archive_2018_23_40",
+    "archive_2018_23_52",
+    "archive_2018_23_55",
+    "archive_2018_23_59",
+    "archive_2018_23_60",
+    "archive_2018_23_67",
+    "archive_2018_23_6",
+    "archive_2018_23_7",
+    "archive_2018_23_8",
+    "archive_2018_23_9",
+    "archive_2018_23_10",
+    "archive_2018_23_12",
+    "archive_2018_23_13",
+    "archive_2018_23_14",
+    "archive_2018_23_15",
+    "archive_2018_23_16",
+    "archive_2018_23_17",
+    "archive_2018_23_18",
+    "archive_2018_23_20",
+    "archive_2018_23_22",
+    "archive_2018_23_23",
+    "archive_2018_23_24",
+    "archive_2018_23_25",
+    "archive_2018_23_28",
+    "archive_2018_23_29",
+    "archive_2018_23_30",
+    "archive_2018_23_31",
+    "present_electro_45",
+}
+
+
+def is_excluded_by_folder_rule(path_str: str) -> bool:
+  if not path_str:
+    return False
+  parts = [p.strip() for p in path_str.lower().split("/") if p.strip()]
+  for idx, p in enumerate(parts[:-1]):
+    if p in ("^ exports - reflective album", "exports - reflective album", "exports-reflective album"):
+      next_sub = parts[idx + 1] if idx + 1 < len(parts) - 1 else ""
+      if next_sub not in ("^ uptempo level match", "uptempo level match"):
+        return True
+  return False
+
+
+def load_excluded_ids(exclusions_path: str | None) -> set[str]:
+  out = set(DEFAULT_EXCLUDED_IDS)
+  if exclusions_path and os.path.exists(exclusions_path):
+    with open(exclusions_path, "r", encoding="utf-8") as f:
+      obj = json.load(f)
+    if isinstance(obj, dict) and "excluded_ids" in obj:
+      out.update(str(x) for x in obj["excluded_ids"])
+    elif isinstance(obj, list):
+      out.update(str(x) for x in obj)
+  return out
 
 # Canonical 10-cluster musical slots (idx 0..9)
 STYLE_SLOTS = [
@@ -440,7 +537,7 @@ def classify_folder_guidance(t: dict, cat_entry: dict | None) -> dict:
       prior[0] += 0.08
       allowed = {0, 1, 2}
       rule = "folder:le_garage_microtonal"
-    elif "06 - ecstatic wave" in low or ("reflective disc" in low and "^ uptempo" in low):
+    elif "06 - ecstatic wave" in low or ("reflective disc" in low and "^ uptempo level match" in low):
       prior[3] += 0.18
       prior[1] += 0.12
       prior[5] += 0.08
@@ -450,7 +547,7 @@ def classify_folder_guidance(t: dict, cat_entry: dict | None) -> dict:
       prior[8] += 0.26
       allowed = {8, 0, 2}
       rule = "folder:piano_acoustic"
-    elif "^ downtempo" in low or "summon downtempo" in low:
+    elif "summon downtempo" in low:
       prior[2] += 0.20
       prior[0] += 0.08
       prior[8] += 0.08
@@ -636,7 +733,7 @@ def compute_organic_continuum_and_ai_layout(X_hybrid, proto_centers, priors, clu
   return coords
 
 
-def build_dataset(data_js_path, features_path, catalog_path, out_js_path):
+def build_dataset(data_js_path, features_path, catalog_path, out_js_path, exclusions_path=DEFAULT_EXCLUSIONS):
   raw = open(data_js_path, "r", encoding="utf-8").read()
   prefix = "window.CORPUS_DATA = "
   s = raw[raw.index(prefix) + len(prefix) :].rstrip()
@@ -644,15 +741,20 @@ def build_dataset(data_js_path, features_path, catalog_path, out_js_path):
     s = s[:-1]
   data = json.loads(s)
 
+  excluded_ids = load_excluded_ids(exclusions_path)
   cat_by_id = {}
   if catalog_path and os.path.exists(catalog_path):
     cat_obj = json.load(open(catalog_path, "r", encoding="utf-8"))
     for ct in cat_obj.get("tracks", []):
       if isinstance(ct, dict) and ct.get("id"):
-        cat_by_id[str(ct["id"])] = ct
+        tid = str(ct["id"])
+        cat_by_id[tid] = ct
+        if is_excluded_by_folder_rule(str(ct.get("local_path") or "")):
+          excluded_ids.add(tid)
 
   feats = np.load(features_path)
-  tracks = data["tracks"]
+  tracks = [t for t in data["tracks"] if str(t.get("id")) not in excluded_ids]
+  data["tracks"] = tracks
   n_tracks = len(tracks)
 
   feat_id_to_row = {str(x): idx for idx, x in enumerate(feats["track_ids"])}
@@ -785,9 +887,12 @@ def build_dataset(data_js_path, features_path, catalog_path, out_js_path):
 
   for section in ("eras", "phases"):
     for item in data.get(section, []):
+      kept_sub = []
       for sub_t in item.get("tracks", []):
         if isinstance(sub_t, dict) and sub_t.get("id") in track_updates:
           sub_t.update(track_updates[sub_t["id"]])
+          kept_sub.append(sub_t)
+      item["tracks"] = kept_sub
 
   style_groups = []
   for cidx in range(10):
@@ -839,6 +944,7 @@ def build_dataset(data_js_path, features_path, catalog_path, out_js_path):
         "cy": round(float(np.min(coords[ai_indices, 1])) - 0.035, 4),
     })
 
+  data["meta"]["total_map_tracks"] = n_tracks
   data["meta"]["classifier"] = "essentia-discogs400"
   data["meta"]["classifier_label"] = "Folder-Guided Essentia Discogs-400"
   data["meta"]["silhouette"] = round(sil_2d, 3)
@@ -878,9 +984,10 @@ def main():
   parser.add_argument("--data-js", default=DEFAULT_DATA_JS)
   parser.add_argument("--features", default=DEFAULT_FEATURES)
   parser.add_argument("--catalog", default=DEFAULT_CATALOG)
+  parser.add_argument("--exclusions", default=DEFAULT_EXCLUSIONS)
   parser.add_argument("--out", default=DEFAULT_OUT_JS)
   args = parser.parse_args()
-  build_dataset(args.data_js, args.features, args.catalog, args.out)
+  build_dataset(args.data_js, args.features, args.catalog, args.out, args.exclusions)
 
 
 if __name__ == "__main__":

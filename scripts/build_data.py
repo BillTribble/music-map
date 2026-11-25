@@ -769,6 +769,28 @@ DEFAULT_EXCLUDED_IDS = {
     "archive_2018_23_59",
     "archive_2018_23_60",
     "archive_2018_23_67",
+    "archive_2018_23_6",
+    "archive_2018_23_7",
+    "archive_2018_23_8",
+    "archive_2018_23_9",
+    "archive_2018_23_10",
+    "archive_2018_23_12",
+    "archive_2018_23_13",
+    "archive_2018_23_14",
+    "archive_2018_23_15",
+    "archive_2018_23_16",
+    "archive_2018_23_17",
+    "archive_2018_23_18",
+    "archive_2018_23_20",
+    "archive_2018_23_22",
+    "archive_2018_23_23",
+    "archive_2018_23_24",
+    "archive_2018_23_25",
+    "archive_2018_23_28",
+    "archive_2018_23_29",
+    "archive_2018_23_30",
+    "archive_2018_23_31",
+    "present_electro_45",
 }
 
 PRIVATE_TRACK_KEYS = (
@@ -783,14 +805,33 @@ PRIVATE_TRACK_KEYS = (
 )
 
 
+def is_excluded_by_folder_rule(path_str: str) -> bool:
+    if not path_str:
+        return False
+    parts = [p.strip() for p in path_str.lower().split("/") if p.strip()]
+    for idx, p in enumerate(parts[:-1]):
+        if p in ("^ exports - reflective album", "exports - reflective album", "exports-reflective album"):
+            next_sub = parts[idx + 1] if idx + 1 < len(parts) - 1 else ""
+            if next_sub not in ("^ uptempo level match", "uptempo level match"):
+                return True
+    return False
+
+
 def load_excluded_ids(exclusions_path: Path | None) -> set[str]:
+    out = set(DEFAULT_EXCLUDED_IDS)
     if exclusions_path and exclusions_path.exists():
         data = json.loads(exclusions_path.read_text(encoding="utf-8"))
         if isinstance(data, dict) and "excluded_ids" in data:
-            return set(str(x) for x in data["excluded_ids"])
-        if isinstance(data, list):
-            return set(str(x) for x in data)
-    return set(DEFAULT_EXCLUDED_IDS)
+            out.update(str(x) for x in data["excluded_ids"])
+        elif isinstance(data, list):
+            out.update(str(x) for x in data)
+    cat_path = STAGING_DIR / "catalog_587_enriched.json"
+    if cat_path.exists():
+        cat_obj = json.loads(cat_path.read_text(encoding="utf-8"))
+        for ct in cat_obj.get("tracks", []):
+            if isinstance(ct, dict) and ct.get("id") and is_excluded_by_folder_rule(str(ct.get("local_path") or "")):
+                out.add(str(ct["id"]))
+    return out
 
 
 def ensure_feat_vecs(tracks: list[dict]) -> None:

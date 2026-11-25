@@ -92,6 +92,8 @@ EXCLUDED_PATH_SUBSTRS = (
     "04 meghan -reflection",
     "08 reflektor - tpj",
     "heilung tenet edit",
+    "beyond distance",
+    "last dat",
 )
 EXCLUDED_FILE_TOKENS = ("stem", "backing", "drumloop")
 EXCLUDED_EXACT_FILES = {"bass.wav", "vocals.wav", "perc.wav", "other.wav"}
@@ -222,6 +224,11 @@ def is_excluded(rel_path: str, size_bytes: int, dirs_with_top_render: set[str]) 
         if sub in low:
             return f"excluded_path:{sub}"
     parent_parts = parts[:-1]
+    for idx, p in enumerate(parent_parts):
+        if p in ("^ exports - reflective album", "exports - reflective album", "exports-reflective album"):
+            next_sub = parent_parts[idx + 1] if idx + 1 < len(parent_parts) else ""
+            if next_sub not in ("^ uptempo level match", "uptempo level match"):
+                return "excluded_reflective_non_uptempo_level_match"
     for p in parent_parts:
         if p in EXCLUDED_DIR_NAMES:
             return f"excluded_dir:{p}"
