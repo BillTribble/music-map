@@ -1272,6 +1272,9 @@
     logPrivateTrackEvent("track-request", t);
     const hasRelay = Boolean((web3FormsKey || "").trim());
     if (!hasRelay) {
+      if (typeof window !== "undefined" && window.BTMM_EVENTS && typeof window.BTMM_EVENTS.recordRequest === "function") {
+        window.BTMM_EVENTS.recordRequest(t, { source: "player-request" });
+      }
       requestedIds.add(t.id);
       render();
       return;
@@ -1330,6 +1333,9 @@
         throw new Error(json.message || "Could not send request right now.");
       }
       requestedIds.add(t.id);
+      if (typeof window !== "undefined" && window.BTMM_EVENTS && typeof window.BTMM_EVENTS.recordRequest === "function") {
+        window.BTMM_EVENTS.recordRequest(t, { email: visitorEmail, note, source: "player-request-form" });
+      }
       formOpenForId = null;
       draftNote = "";
     } catch (err) {
@@ -1494,17 +1500,30 @@
       }
       const dlLink = ev.target.closest("[data-dl-kind]");
       if (dlLink && selectedId && byId.has(selectedId)) {
-        logPrivateTrackEvent(dlLink.getAttribute("data-dl-kind"), byId.get(selectedId));
+        const dlKind = dlLink.getAttribute("data-dl-kind");
+        const dlTrack = byId.get(selectedId);
+        logPrivateTrackEvent(dlKind, dlTrack);
+        if (typeof window !== "undefined" && window.BTMM_EVENTS && typeof window.BTMM_EVENTS.recordDownload === "function") {
+          window.BTMM_EVENTS.recordDownload(dlTrack, dlKind, "player-cta", dlLink.getAttribute("href") || "");
+        }
       }
     });
   }
 
   function toggleStar(tid) {
     if (!tid) return;
-    if (starred.has(tid)) starred.delete(tid);
-    else starred.add(tid);
+    const nextStarred = !starred.has(tid);
+    if (nextStarred) starred.add(tid);
+    else starred.delete(tid);
     saveStars();
     render();
+    const t = byId.get(tid);
+    if (t) {
+      logPrivateTrackEvent(nextStarred ? "track-star" : "track-unstar", t);
+      if (typeof window !== "undefined" && window.BTMM_EVENTS && typeof window.BTMM_EVENTS.recordStarToggle === "function") {
+        window.BTMM_EVENTS.recordStarToggle(t, nextStarred, { source: "player-star" });
+      }
+    }
     if (hooks && hooks.onStarChange) hooks.onStarChange(starred);
   }
 
