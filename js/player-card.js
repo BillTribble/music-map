@@ -613,160 +613,7 @@
     ctx.closePath();
   }
 
-  function drawMiniWaveform(ctx, W, H, t, snap, pal) {
-    const sidePad = 8;
-    const barStep = 5;
-    const barW = 3;
-    const barCount = Math.max(18, Math.floor((W - sidePad * 2 + (barStep - barW)) / barStep));
-    const totalBarsW = barCount * barStep - (barStep - barW);
-    const startX = Math.floor((W - totalBarsW) * 0.5);
-    const maxBarH = Math.max(12, H - 8);
-
-    const rawBars = getResampledBars(t, barCount);
-    let peakMax = 1;
-    for (let i = 0; i < barCount; i++) {
-      if ((rawBars[i] || 0) > peakMax) peakMax = rawBars[i];
-    }
-    const denom = Math.max(65, peakMax);
-    const heights = new Array(barCount);
-    for (let i = 0; i < barCount; i++) {
-      const prev = rawBars[Math.max(0, i - 1)] || 12;
-      const curr = rawBars[i] || 12;
-      const next = rawBars[Math.min(barCount - 1, i + 1)] || 12;
-      const smoothNorm = clamp((prev * 0.22 + curr * 0.56 + next * 0.22) / denom, 0.14, 1);
-      heights[i] = Math.max(4, Math.round(smoothNorm * maxBarH));
-    }
-
-    const dispFrac = isWaveScrubbing && scrubFrac !== null ? scrubFrac : snap.progressFrac;
-    const hasProgress = snap.isPlaying || dispFrac > 0.001;
-    const progressX = hasProgress ? clamp(startX + dispFrac * totalBarsW, startX, startX + totalBarsW) : startX;
-
-    // 1. Unplayed capsule bars (right of playhead) + hover seek preview
-    const miniMushActive = Boolean(snap.autoPlay && snap.hasMush && snap.mushFadeFrac !== null);
-    ctx.save();
-    ctx.beginPath();
-    ctx.rect(progressX, 0, Math.max(0, W - progressX), H);
-    ctx.clip();
-    for (let i = 0; i < barCount; i++) {
-      const x = startX + i * barStep;
-      if (x + barW <= progressX) continue;
-      const barFrac = (i + 0.5) / barCount;
-      const inHover = waveHoverFrac !== null && !isWaveScrubbing && barFrac <= waveHoverFrac;
-      const inMushTail = miniMushActive && barFrac >= snap.mushFadeFrac;
-      const barH = heights[i];
-      const y = (H - barH) * 0.5;
-      ctx.fillStyle = inHover ? pal.primary : (inMushTail ? pal.outline : pal.onSurfaceVariant);
-      ctx.globalAlpha = inHover ? 0.35 : (inMushTail ? 0.11 : 0.25);
-      drawRoundedRect(ctx, x, y, barW, barH, barW * 0.5);
-      ctx.fill();
-    }
-    ctx.restore();
-
-    // 2. Played accent capsule bars (left of playhead, continuous sub-pixel clip)
-    if (hasProgress && progressX > startX) {
-      ctx.save();
-      ctx.beginPath();
-      ctx.rect(0, 0, progressX, H);
-      ctx.clip();
-      for (let i = 0; i < barCount; i++) {
-        const x = startX + i * barStep;
-        if (x >= progressX) break;
-        const barFrac = (i + 0.5) / barCount;
-        const inRewindHover = waveHoverFrac !== null && !isWaveScrubbing && waveHoverFrac < dispFrac && barFrac >= waveHoverFrac;
-        const barH = heights[i];
-        const y = (H - barH) * 0.5;
-        ctx.fillStyle = pal.primary;
-        ctx.globalAlpha = inRewindHover ? 0.32 : 0.45;
-        drawRoundedRect(ctx, x, y, barW, barH, barW * 0.5);
-        ctx.fill();
-      }
-      ctx.restore();
-    }
-
-    // 3. Subtle hover seek cursor
-    if (waveHoverFrac !== null && !isWaveScrubbing) {
-      const hx = Math.round(startX + waveHoverFrac * totalBarsW) + 0.5;
-      ctx.save();
-      ctx.strokeStyle = pal.onSurface;
-      ctx.globalAlpha = 0.28;
-      ctx.lineWidth = 1;
-      ctx.beginPath();
-      ctx.moveTo(hx, 4);
-      ctx.lineTo(hx, H - 4);
-      ctx.stroke();
-      ctx.restore();
-    }
-
-    // 4. Live playhead needle
-    if (hasProgress) {
-      const px = clamp(progressX, startX + 1, startX + totalBarsW - 1);
-      ctx.save();
-      ctx.strokeStyle = pal.primary;
-      ctx.globalAlpha = 0.85;
-      ctx.lineWidth = 1.5;
-      ctx.beginPath();
-      ctx.moveTo(px, 4);
-      ctx.lineTo(px, H - 4);
-      ctx.stroke();
-      ctx.restore();
-    }
-  }
-
-  function prepareCanvas2d(canvasEl, minH = 10) {
-    if (!canvasEl) return null;
-    const rect = canvasEl.getBoundingClientRect();
-    if (rect.width < 12 || rect.height < minH) return null;
-    const dpr = Math.min(3, (typeof window !== "undefined" && window.devicePixelRatio) || 1);
-    const pxW = Math.round(rect.width * dpr);
-    const pxH = Math.round(rect.height * dpr);
-    if (canvasEl.width !== pxW || canvasEl.height !== pxH) {
-      canvasEl.width = pxW;
-      canvasEl.height = pxH;
-    }
-    const ctx = canvasEl.getContext("2d");
-    if (!ctx) return null;
-    ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
-    ctx.clearRect(0, 0, rect.width, rect.height);
-    return { ctx, W: rect.width, H: rect.height };
-  }
-
-  function syncWaveVisuals() {
-    if (!cardEl || cardEl.hidden || !selectedId || !byId.has(selectedId)) return;
-    const t = byId.get(selectedId);
-    const canvas = cardEl.querySelector("#mp-waveform");
-    const miniCanvas = cardEl.querySelector("#mp-mini-waveform");
-    const wrapEl = cardEl.querySelector("#mp-wave-wrap");
-    const miniWrapEl = cardEl.querySelector("#mp-mini-wave-wrap");
-    const timeEl = cardEl.querySelector("#mp-wave-time");
-
-    const snap = readPlaybackSnapshot(t);
-    if (timeEl) {
-      const nextTxt = formatWaveTimeText(snap);
-      if (timeEl.textContent !== nextTxt) timeEl.textContent = nextTxt;
-    }
-    const vNow = String(Math.round(snap.currentTime));
-    const vMax = String(Math.round(snap.timelineDur));
-    [wrapEl, miniWrapEl].forEach((el) => {
-      if (!el) return;
-      if (el.getAttribute("aria-valuenow") !== vNow) el.setAttribute("aria-valuenow", vNow);
-      if (el.getAttribute("aria-valuemax") !== vMax) el.setAttribute("aria-valuemax", vMax);
-    });
-
-    const pal = resolveWavePalette();
-    const nowPerf = typeof performance !== "undefined" ? performance.now() : 0;
-    const isMorphing = nowPerf < collapseSyncUntilMs;
-
-    if (collapsed || isMorphing) {
-      const miniSurface = prepareCanvas2d(miniCanvas, 8);
-      if (miniSurface) {
-        drawMiniWaveform(miniSurface.ctx, miniSurface.W, miniSurface.H, t, snap, pal);
-      }
-      if (collapsed && !isMorphing) return;
-    }
-
-    const expSurface = prepareCanvas2d(canvas, 8);
-    if (!expSurface) return;
-    const { ctx, W, H } = expSurface;
+  function drawWaveformSurface(ctx, W, H, t, snap, pal, compact) {
     const barStep = 3;
     const barW = 2;
     const sidePad = 8;
@@ -774,10 +621,11 @@
     const totalBarsW = barCount * barStep - (barStep - barW);
     const startX = Math.floor((W - totalBarsW) * 0.5);
 
-    const splitY = Math.round(H * 0.67);
-    const gapY = 1.5;
-    const maxUpperH = Math.max(8, splitY - 6 - gapY * 0.5);
-    const maxLowerH = Math.max(4, H - 6 - splitY - gapY * 0.5);
+    const splitY = Math.round(H * (compact ? 0.69 : 0.67));
+    const gapY = compact ? 1.2 : 1.5;
+    const vPad = compact ? 3.5 : 6;
+    const maxUpperH = Math.max(compact ? 6 : 8, splitY - vPad - gapY * 0.5);
+    const maxLowerH = Math.max(compact ? 3 : 4, H - vPad - splitY - gapY * 0.5);
 
     const w0 = snap.hasPreviewWindow ? clamp(snap.winStart / snap.timelineDur, 0, 1) : 0;
     const w1 = snap.hasPreviewWindow ? clamp(snap.winEnd / snap.timelineDur, w0, 1) : 0;
@@ -788,10 +636,11 @@
     if (snap.hasPreviewWindow && winX1 > winX0 + 2) {
       const fullSpan = w1 - w0 >= 0.98;
       if (snap.showLoopMarkers || !fullSpan) {
+        const winPad = compact ? 2 : 3;
         ctx.save();
         ctx.fillStyle = pal.secondaryContainer;
         ctx.globalAlpha = snap.showLoopMarkers ? 0.36 : 0.18;
-        drawRoundedRect(ctx, winX0, 3, winX1 - winX0, H - 6, 5);
+        drawRoundedRect(ctx, winX0, winPad, winX1 - winX0, H - winPad * 2, compact ? 4 : 5);
         ctx.fill();
         ctx.restore();
       }
@@ -803,10 +652,11 @@
       const mFadeX = startX + snap.mushFadeFrac * totalBarsW;
       const endX = startX + totalBarsW;
       if (endX > mFadeX + 3) {
+        const mushPad = compact ? 2.5 : 4;
         ctx.save();
         ctx.fillStyle = pal.surfaceVariant;
         ctx.globalAlpha = 0.22;
-        drawRoundedRect(ctx, mFadeX, 4, endX - mFadeX, H - 8, 4);
+        drawRoundedRect(ctx, mFadeX, mushPad, endX - mFadeX, H - mushPad * 2, compact ? 3 : 4);
         ctx.fill();
         ctx.restore();
       }
@@ -821,8 +671,8 @@
       const barFrac = (i + 0.5) / barCount;
       const amp = bars[i] || 12;
       const x = startX + i * barStep;
-      const uH = Math.max(2, Math.round((amp / 100) * maxUpperH));
-      const lH = Math.max(1.5, Math.round((amp / 100) * maxLowerH));
+      const uH = Math.max(compact ? 1.75 : 2, Math.round((amp / 100) * maxUpperH));
+      const lH = Math.max(compact ? 1.25 : 1.5, Math.round((amp / 100) * maxLowerH));
 
       const played = hasProgress && barFrac <= dispFrac;
       const inWin = snap.hasPreviewWindow && barFrac >= w0 && barFrac <= w1;
@@ -835,8 +685,8 @@
       const inMushFadeTail = showMushCue && barFrac >= snap.mushFadeFrac;
 
       let col = pal.onSurfaceVariant;
-      let uAlpha = 0.30;
-      let lAlpha = 0.14;
+      let uAlpha = compact ? 0.32 : 0.30;
+      let lAlpha = compact ? 0.15 : 0.14;
 
       if (played) {
         col = pal.primary;
@@ -871,14 +721,15 @@
     // 2b. Subtle dashed Auto-play fade-start marker at mush_onset_sec + 3.0s
     if (showMushCue && snap.mushFadeFrac > 0.05 && snap.mushFadeFrac < 0.98) {
       const mx = Math.round(startX + snap.mushFadeFrac * totalBarsW) + 0.5;
+      const mPad = compact ? 3 : 5;
       ctx.save();
       ctx.strokeStyle = pal.outline;
       ctx.globalAlpha = 0.52;
       ctx.lineWidth = 1;
       if (typeof ctx.setLineDash === "function") ctx.setLineDash([2, 2]);
       ctx.beginPath();
-      ctx.moveTo(mx, 5);
-      ctx.lineTo(mx, H - 5);
+      ctx.moveTo(mx, mPad);
+      ctx.lineTo(mx, H - mPad);
       ctx.stroke();
       ctx.restore();
     }
@@ -888,40 +739,42 @@
       if (snap.showLoopMarkers) {
         const bx0 = Math.round(winX0) + 0.5;
         const bx1 = Math.round(winX1) - 0.5;
-        const cap = 4.5;
+        const cap = compact ? 3.5 : 4.5;
+        const bPad = compact ? 2.5 : 3.5;
         ctx.save();
         ctx.strokeStyle = pal.secondary;
         ctx.globalAlpha = 0.92;
-        ctx.lineWidth = 1.6;
+        ctx.lineWidth = compact ? 1.4 : 1.6;
         ctx.beginPath();
         // Left loop bracket [
-        ctx.moveTo(bx0 + cap, 3.5);
-        ctx.lineTo(bx0, 3.5);
-        ctx.lineTo(bx0, H - 3.5);
-        ctx.lineTo(bx0 + cap, H - 3.5);
+        ctx.moveTo(bx0 + cap, bPad);
+        ctx.lineTo(bx0, bPad);
+        ctx.lineTo(bx0, H - bPad);
+        ctx.lineTo(bx0 + cap, H - bPad);
         // Right loop bracket ]
-        ctx.moveTo(bx1 - cap, 3.5);
-        ctx.lineTo(bx1, 3.5);
-        ctx.lineTo(bx1, H - 3.5);
-        ctx.lineTo(bx1 - cap, H - 3.5);
+        ctx.moveTo(bx1 - cap, bPad);
+        ctx.lineTo(bx1, bPad);
+        ctx.lineTo(bx1, H - bPad);
+        ctx.lineTo(bx1 - cap, H - bPad);
         ctx.stroke();
         ctx.restore();
       } else if (w0 > 0.01) {
         const cx = Math.round(winX0) + 0.5;
+        const cPad = compact ? 3 : 4;
         ctx.save();
         ctx.strokeStyle = pal.secondary;
         ctx.fillStyle = pal.secondary;
         ctx.globalAlpha = 0.72;
-        ctx.lineWidth = 1.25;
+        ctx.lineWidth = compact ? 1.15 : 1.25;
         ctx.beginPath();
-        ctx.moveTo(cx, 4);
-        ctx.lineTo(cx, H - 4);
+        ctx.moveTo(cx, cPad);
+        ctx.lineTo(cx, H - cPad);
         ctx.stroke();
         // Subtle cue-in flag triangle at top of snippet start
         ctx.beginPath();
-        ctx.moveTo(cx, 3.5);
-        ctx.lineTo(cx + 4.5, 6);
-        ctx.lineTo(cx, 8.5);
+        ctx.moveTo(cx, compact ? 2.5 : 3.5);
+        ctx.lineTo(cx + (compact ? 3.8 : 4.5), compact ? 4.6 : 6);
+        ctx.lineTo(cx, compact ? 6.7 : 8.5);
         ctx.closePath();
         ctx.fill();
         ctx.restore();
@@ -931,13 +784,14 @@
     // 4. Hover scrub preview cursor
     if (waveHoverFrac !== null && !isWaveScrubbing) {
       const hx = Math.round(startX + waveHoverFrac * totalBarsW) + 0.5;
+      const hPad = compact ? 2.5 : 3;
       ctx.save();
       ctx.strokeStyle = pal.onSurface;
       ctx.globalAlpha = 0.34;
       ctx.lineWidth = 1;
       ctx.beginPath();
-      ctx.moveTo(hx, 3);
-      ctx.lineTo(hx, H - 3);
+      ctx.moveTo(hx, hPad);
+      ctx.lineTo(hx, H - hPad);
       ctx.stroke();
       ctx.restore();
     }
@@ -945,19 +799,78 @@
     // 5. Live playhead needle
     if (hasProgress) {
       const px = clamp(startX + dispFrac * totalBarsW, startX + 1, startX + totalBarsW - 1);
+      const nPad = compact ? 3 : 4;
       ctx.save();
       ctx.strokeStyle = pal.primary;
       ctx.fillStyle = pal.primary;
-      ctx.lineWidth = 1.75;
+      ctx.lineWidth = compact ? 1.6 : 1.75;
       ctx.beginPath();
-      ctx.moveTo(px, 4);
-      ctx.lineTo(px, H - 4);
+      ctx.moveTo(px, nPad);
+      ctx.lineTo(px, H - nPad);
       ctx.stroke();
       ctx.beginPath();
-      ctx.arc(px, 5, 2.4, 0, Math.PI * 2);
+      ctx.arc(px, compact ? 3.8 : 5, compact ? 2.0 : 2.4, 0, Math.PI * 2);
       ctx.fill();
       ctx.restore();
     }
+  }
+
+  function prepareCanvas2d(canvasEl, minH = 10) {
+    if (!canvasEl) return null;
+    const rect = canvasEl.getBoundingClientRect();
+    if (rect.width < 12 || rect.height < minH) return null;
+    const dpr = Math.min(3, (typeof window !== "undefined" && window.devicePixelRatio) || 1);
+    const pxW = Math.round(rect.width * dpr);
+    const pxH = Math.round(rect.height * dpr);
+    if (canvasEl.width !== pxW || canvasEl.height !== pxH) {
+      canvasEl.width = pxW;
+      canvasEl.height = pxH;
+    }
+    const ctx = canvasEl.getContext("2d");
+    if (!ctx) return null;
+    ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+    ctx.clearRect(0, 0, rect.width, rect.height);
+    return { ctx, W: rect.width, H: rect.height };
+  }
+
+  function syncWaveVisuals() {
+    if (!cardEl || cardEl.hidden || !selectedId || !byId.has(selectedId)) return;
+    const t = byId.get(selectedId);
+    const canvas = cardEl.querySelector("#mp-waveform");
+    const miniCanvas = cardEl.querySelector("#mp-mini-waveform");
+    const wrapEl = cardEl.querySelector("#mp-wave-wrap");
+    const miniWrapEl = cardEl.querySelector("#mp-mini-wave-wrap");
+    const timeEl = cardEl.querySelector("#mp-wave-time");
+    const miniTimeEl = cardEl.querySelector("#mp-mini-wave-time");
+
+    const snap = readPlaybackSnapshot(t);
+    const nextTxt = formatWaveTimeText(snap);
+    [timeEl, miniTimeEl].forEach((el) => {
+      if (el && el.textContent !== nextTxt) el.textContent = nextTxt;
+    });
+    const vNow = String(Math.round(snap.currentTime));
+    const vMax = String(Math.round(snap.timelineDur));
+    [wrapEl, miniWrapEl].forEach((el) => {
+      if (!el) return;
+      if (el.getAttribute("aria-valuenow") !== vNow) el.setAttribute("aria-valuenow", vNow);
+      if (el.getAttribute("aria-valuemax") !== vMax) el.setAttribute("aria-valuemax", vMax);
+    });
+
+    const pal = resolveWavePalette();
+    const nowPerf = typeof performance !== "undefined" ? performance.now() : 0;
+    const isMorphing = nowPerf < collapseSyncUntilMs;
+
+    if (collapsed || isMorphing) {
+      const miniSurface = prepareCanvas2d(miniCanvas, 8);
+      if (miniSurface) {
+        drawWaveformSurface(miniSurface.ctx, miniSurface.W, miniSurface.H, t, snap, pal, true);
+      }
+      if (collapsed && !isMorphing) return;
+    }
+
+    const expSurface = prepareCanvas2d(canvas, 8);
+    if (!expSurface) return;
+    drawWaveformSurface(expSurface.ctx, expSurface.W, expSurface.H, t, snap, pal, false);
   }
 
   function stopWaveRaf() {
@@ -1166,6 +1079,10 @@
     if (miniShell) {
       miniShell.setAttribute("aria-hidden", collapsed ? "false" : "true");
       if ("inert" in miniShell) miniShell.inert = !collapsed;
+      if (!collapsed) {
+        const miniWave = miniShell.querySelector("#mp-mini-wave-wrap");
+        if (miniWave) miniWave.classList.remove("is-early-hover");
+      }
     }
     if (expandShell) {
       expandShell.setAttribute("aria-hidden", collapsed ? "true" : "false");
@@ -1268,29 +1185,43 @@
       cardEl.innerHTML = `
         <div id="mp-mini-shell" class="mp-mini-shell" aria-hidden="${collapsed ? "false" : "true"}">
           <div class="mp-shell-inner">
-            <div class="mp-mini-row">
-              <div class="mp-mini-transport">
-                <button type="button" class="btn-tonal mp-play ${isPlaying ? "is-playing" : ""}" id="mp-mini-play" data-player-play="${esc(t.id)}" aria-label="${isPlaying ? "Pause" : "Play"}" title="${isPlaying ? "Pause (Space)" : "Play (Space)"}">
-                  <span class="ms filled">${isPlaying ? "pause" : isPend ? "hourglass_top" : "play_arrow"}</span>
-                </button>
-                <div class="mp-mini-skip-group" role="group" aria-label="Skip between similar tracks">
-                  <button type="button" class="icon-btn mp-mini-skip-btn" id="mp-mini-prev" data-player-prev="1" aria-label="Previous similar track" title="Previous similar track">
-                    <span class="ms" aria-hidden="true">skip_previous</span>
+            <div class="mp-mini-rows">
+              <div class="mp-mini-top">
+                <div class="mp-mini-transport">
+                  <button type="button" class="btn-tonal mp-play ${isPlaying ? "is-playing" : ""}" id="mp-mini-play" data-player-play="${esc(t.id)}" aria-label="${isPlaying ? "Pause" : "Play"}" title="${isPlaying ? "Pause (Space)" : "Play (Space)"}">
+                    <span class="ms filled">${isPlaying ? "pause" : isPend ? "hourglass_top" : "play_arrow"}</span>
                   </button>
-                  <button type="button" class="icon-btn mp-mini-skip-btn" id="mp-mini-next" data-player-next="1" aria-label="Next similar track" title="Next similar track">
-                    <span class="ms" aria-hidden="true">skip_next</span>
+                  <div class="mp-mini-skip-group" role="group" aria-label="Skip between similar tracks">
+                    <button type="button" class="icon-btn mp-mini-skip-btn" id="mp-mini-prev" data-player-prev="1" aria-label="Previous similar track" title="Previous similar track">
+                      <span class="ms" aria-hidden="true">skip_previous</span>
+                    </button>
+                    <button type="button" class="icon-btn mp-mini-skip-btn" id="mp-mini-next" data-player-next="1" aria-label="Next similar track" title="Next similar track">
+                      <span class="ms" aria-hidden="true">skip_next</span>
+                    </button>
+                  </div>
+                </div>
+                <div class="mp-mini-title-wrap">
+                  <span class="mp-mini-title" id="mp-mini-title-text" title="${esc(t.title)}">${esc(t.title)}</span>
+                </div>
+                <div class="mp-mini-actions">
+                  <button type="button" class="star-btn mp-mini-star-btn ${isStar ? "is-starred" : ""}" id="mp-mini-star" data-player-star="${esc(t.id)}" aria-pressed="${isStar}" aria-label="${isStar ? "Unstar track" : "Star track"}" title="${isStar ? "Remove star" : "Star track"}">
+                    <span class="ms">star</span>
+                  </button>
+                  <button type="button" class="icon-btn mp-expand-btn" id="mp-expand" aria-label="Expand player" title="Expand player">
+                    <span class="ms">expand_less</span>
                   </button>
                 </div>
               </div>
-              <div class="mp-wave-wrap mp-mini-wave-wrap" id="mp-mini-wave-wrap" data-wave-wrap="mini" role="slider" tabindex="0" aria-label="Seek ${esc(t.title)}" aria-valuemin="0" aria-valuemax="${Math.round(snap.timelineDur)}" aria-valuenow="${Math.round(snap.currentTime)}" title="${esc(t.title)} — click or drag to seek">
-                <canvas id="mp-mini-waveform" class="mp-wave-canvas mp-mini-wave-canvas" aria-hidden="true"></canvas>
-                <div class="mp-mini-title-overlay">
-                  <span class="mp-mini-title" id="mp-mini-title-text">${esc(t.title)}</span>
+              <div class="mp-mini-wave-row">
+                <div class="mp-wave-wrap mp-mini-wave-wrap" id="mp-mini-wave-wrap" data-wave-wrap="mini" role="slider" tabindex="0" aria-label="Seek ${esc(t.title)}" aria-valuemin="0" aria-valuemax="${Math.round(snap.timelineDur)}" aria-valuenow="${Math.round(snap.currentTime)}" title="${esc(t.title)} — click or drag to seek">
+                  <canvas id="mp-mini-waveform" class="mp-wave-canvas mp-mini-wave-canvas" aria-hidden="true"></canvas>
+                  <button type="button" class="mp-wave-restart-btn mp-mini-wave-restart-btn" id="mp-mini-wave-restart" data-player-restart="${esc(t.id)}" aria-label="Restart track from 0:00" title="Restart track from 0:00">
+                    <span class="ms filled" aria-hidden="true">skip_previous</span>
+                    <span>0:00</span>
+                  </button>
+                  <div id="mp-mini-wave-time" class="mp-wave-time mp-mini-wave-time">${esc(timeReadout)}</div>
                 </div>
               </div>
-              <button type="button" class="icon-btn mp-expand-btn" id="mp-expand" aria-label="Expand player" title="Expand player">
-                <span class="ms">expand_less</span>
-              </button>
             </div>
           </div>
         </div>
@@ -1302,8 +1233,15 @@
     } else {
       const miniPlayBtn = miniShell.querySelector("#mp-mini-play");
       if (miniPlayBtn) miniPlayBtn.setAttribute("data-player-play", t.id);
+      const miniStarBtn = miniShell.querySelector("#mp-mini-star");
+      if (miniStarBtn) miniStarBtn.setAttribute("data-player-star", t.id);
+      const miniRestartBtn = miniShell.querySelector("#mp-mini-wave-restart");
+      if (miniRestartBtn) miniRestartBtn.setAttribute("data-player-restart", t.id);
       const miniTitleEl = miniShell.querySelector("#mp-mini-title-text");
-      if (miniTitleEl && miniTitleEl.textContent !== t.title) miniTitleEl.textContent = t.title;
+      if (miniTitleEl) {
+        if (miniTitleEl.textContent !== t.title) miniTitleEl.textContent = t.title;
+        if (miniTitleEl.title !== t.title) miniTitleEl.title = t.title;
+      }
       const miniWaveWrap = miniShell.querySelector("#mp-mini-wave-wrap");
       if (miniWaveWrap) {
         miniWaveWrap.setAttribute("aria-label", `Seek ${t.title}`);
@@ -1330,7 +1268,7 @@
           </div>
         </div>
         <div class="mp-titles">
-          <div class="mp-name" title="${esc(t.title)}">${esc(t.title)}</div>
+          <div id="mp-title" class="mp-name mp-title" title="${esc(t.title)}">${esc(t.title)}</div>
           <div class="mp-meta" title="${esc(metaFull)}"><span class="mp-meta-text">${esc(metaShort)}</span></div>
         </div>
       </div>
@@ -1733,9 +1671,7 @@
       const frac = fracFromPointerEvent(wrap, ev);
       scrubFrac = frac;
       waveHoverFrac = frac;
-      if (wrap.id === "mp-wave-wrap") {
-        wrap.classList.remove("is-early-hover");
-      }
+      wrap.classList.remove("is-early-hover");
       if (typeof wrap.setPointerCapture === "function") {
         try { wrap.setPointerCapture(ev.pointerId); } catch (_) {}
       }
@@ -1757,24 +1693,27 @@
         return;
       }
       const expWave = cardEl.querySelector("#mp-wave-wrap");
+      const miniWave = cardEl.querySelector("#mp-mini-wave-wrap");
       if (wrap) {
         const onRestartBtn = Boolean(
           ev.target &&
           typeof ev.target.closest === "function" &&
-          ev.target.closest("#mp-wave-restart")
+          ev.target.closest("[data-player-restart]")
         );
         const rawFrac = fracFromPointerEvent(wrap, ev);
         waveHoverFrac = onRestartBtn ? 0 : rawFrac;
-        if (expWave) {
+        [expWave, miniWave].forEach((wEl) => {
+          if (!wEl) return;
           const isEarly =
-            wrap === expWave &&
+            wrap === wEl &&
             ev.pointerType !== "touch" &&
             (onRestartBtn || rawFrac <= EARLY_WAVE_HOVER_MAX_FRAC);
-          expWave.classList.toggle("is-early-hover", isEarly);
-        }
+          wEl.classList.toggle("is-early-hover", isEarly);
+        });
         syncWaveVisuals();
       } else {
         if (expWave) expWave.classList.remove("is-early-hover");
+        if (miniWave) miniWave.classList.remove("is-early-hover");
         if (waveHoverFrac !== null) {
           waveHoverFrac = null;
           syncWaveVisuals();
@@ -1808,7 +1747,9 @@
     });
     cardEl.addEventListener("pointerleave", () => {
       const expWave = cardEl.querySelector("#mp-wave-wrap");
+      const miniWave = cardEl.querySelector("#mp-mini-wave-wrap");
       if (expWave) expWave.classList.remove("is-early-hover");
+      if (miniWave) miniWave.classList.remove("is-early-hover");
       if (!isWaveScrubbing && waveHoverFrac !== null) {
         waveHoverFrac = null;
         syncWaveVisuals();
