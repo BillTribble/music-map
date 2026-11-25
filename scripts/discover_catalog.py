@@ -350,7 +350,9 @@ def clean_title(rel_path: str) -> str:
     stem = Path(norm_nfc(rel_path)).stem
     t = re.sub(r"^(?:Bill\s+Tribble\s*[-–]+\s*)", "", stem, flags=re.IGNORECASE)
     t = re.sub(r"_\(Matched\).*$", "", t, flags=re.IGNORECASE)
-    t = re.sub(r"\s+20\d{2}-\d{2}-\d{2}(?:\s+\d{4})?$", "", t)
+    t = re.sub(r"\s*-?\s*bw\s+ext\b", "", t, flags=re.IGNORECASE)
+    t = re.sub(r"\s+20\d{2}-\d{2}-\d{2}(?:\s+\d{4})?\b", "", t)
+    t = re.sub(r"\s+_(\d+)$", r" (\1)", t)
     t = re.sub(r"\s+-\s+remaster\s+\d+$", "", t, flags=re.IGNORECASE)
     return re.sub(r"\s+", " ", t).strip() or stem
 

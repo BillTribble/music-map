@@ -884,11 +884,11 @@ def compute_organic_continuum_and_ai_layout(
 
     # 5-region sub-archipelago inside Generative AI reserve (distinct mini-islands with breathing channels for sub-labels)
     sub_pockets = {
-        "ai_sub_orch":      (np.array([0.768, 0.305]), (0.720, 0.822), (0.252, 0.372)),
-        "ai_sub_world_exp": (np.array([0.904, 0.335]), (0.842, 0.964), (0.252, 0.440)),
-        "ai_sub_downtempo": (np.array([0.770, 0.528]), (0.720, 0.824), (0.445, 0.625)),
-        "ai_sub_house":     (np.array([0.903, 0.640]), (0.838, 0.966), (0.510, 0.775)),
-        "ai_sub_bass":      (np.array([0.785, 0.798]), (0.722, 0.858), (0.700, 0.892)),
+        "ai_sub_orch":      (np.array([0.768, 0.302]), (0.720, 0.822), (0.252, 0.366)),
+        "ai_sub_world_exp": (np.array([0.904, 0.335]), (0.842, 0.964), (0.252, 0.436)),
+        "ai_sub_downtempo": (np.array([0.770, 0.536]), (0.720, 0.824), (0.456, 0.625)),
+        "ai_sub_house":     (np.array([0.903, 0.644]), (0.838, 0.966), (0.516, 0.778)),
+        "ai_sub_bass":      (np.array([0.785, 0.802]), (0.722, 0.858), (0.708, 0.894)),
     }
     sub_members_local = {k: [] for k in sub_pockets}
     for local_i, global_i in enumerate(ai_idx):
@@ -963,6 +963,21 @@ def build_dataset(
     for gt in g_obj.get("tracks", []):
       if isinstance(gt, dict) and gt.get("id") and str(gt["id"]) not in excluded_ids:
         genai_by_id[str(gt["id"])] = dict(gt)
+
+  def _clean_ai_display_title(raw_t: str) -> str:
+    s_t = str(raw_t or "").strip()
+    s_t = re.sub(r"\s*-?\s*bw\s+ext\b", "", s_t, flags=re.IGNORECASE)
+    s_t = re.sub(r"\s+20\d{2}-\d{2}-\d{2}(?:\s+\d{4})?\b", "", s_t)
+    s_t = re.sub(r"\s+_(\d+)$", r" (\1)", s_t)
+    s_t = re.sub(r"\s+", " ", s_t).strip()
+    if s_t and s_t[0].islower() and not s_t.startswith("pr3s3nt"):
+      s_t = s_t[0].upper() + s_t[1:]
+    return s_t or str(raw_t or "")
+
+  for gid, gt in genai_by_id.items():
+    ct = _clean_ai_display_title(gt.get("title", ""))
+    gt["title"] = ct
+    gt["shortTitle"] = ct.split(" (")[0][:26] if " (" in ct and len(ct) > 26 else ct[:26]
 
   feats = np.load(features_path)
   tracks = [t for t in data["tracks"] if str(t.get("id")) not in excluded_ids]
@@ -1174,33 +1189,27 @@ def build_dataset(
           [tracks[j]["id"], round(float(sims[j]), 3)] for j in nn_idx
       ]
 
-  new_by_era = {}
-  for nt in new_ai_tracks:
-    new_by_era.setdefault(str(nt.get("era") or "sketches_2024_25"), []).append(dict(nt))
-
+  # Keep data["eras"] & data["phases"] strictly handcrafted non-AI tracks so Ableton analytical views stay pure
+  ai_id_set = {str(t["id"]) for t in tracks if t.get("is_ai")}
   for item in data.get("eras", []):
     kept_sub = []
-    seen_e = set()
     for sub_t in item.get("tracks", []):
       if isinstance(sub_t, dict) and sub_t.get("id") in track_updates:
         tid = str(sub_t["id"])
-        seen_e.add(tid)
+        if tid in ai_id_set:
+          continue
         sub_t.update(track_updates[tid])
-        if tid in genai_by_id:
-          for k in ("title", "shortTitle", "full_duration_sec", "peaks", "cue_sec", "preview_start_sec", "preview_dur_sec", "stream_url", "preview_url"):
-            if k in genai_by_id[tid]:
-              sub_t[k] = genai_by_id[tid][k]
         kept_sub.append(sub_t)
-    for nt in new_by_era.get(str(item.get("id") or ""), []):
-      if str(nt["id"]) not in seen_e:
-        kept_sub.append(dict(nt))
     item["tracks"] = kept_sub
 
   for item in data.get("phases", []):
     kept_sub = []
     for sub_t in item.get("tracks", []):
       if isinstance(sub_t, dict) and sub_t.get("id") in track_updates:
-        sub_t.update(track_updates[sub_t["id"]])
+        tid = str(sub_t["id"])
+        if tid in ai_id_set:
+          continue
+        sub_t.update(track_updates[tid])
         kept_sub.append(sub_t)
     item["tracks"] = kept_sub
 

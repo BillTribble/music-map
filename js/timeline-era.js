@@ -30,14 +30,34 @@
     return Math.max(0.03, Math.min(0.97, raw));
   }
 
+  const GENAI_ERA_ID = "genai_2025";
+  const GENAI_ERA_DEF = {
+    id: GENAI_ERA_ID,
+    label: "Gen AI 25",
+    shortLabel: "Gen AI",
+    sublabel: "2024–25",
+  };
+
+  function eraKeyOf(t) {
+    return t && t.is_ai ? GENAI_ERA_ID : (t ? t.era : "");
+  }
+
   function computeLayout(tracks, eras, erasById, vw, vh) {
     const isMobile = vw <= 800;
-    const eraList = (eras && eras.length) ? eras : [...erasById.values()];
+    const baseEras = (eras && eras.length) ? eras.slice() : [...erasById.values()];
+    const hasAiTracks = Boolean((tracks || []).some((t) => t && t.is_ai));
+    const eraList = baseEras.slice();
+    if (hasAiTracks && !eraList.some((e) => e.id === GENAI_ERA_ID)) {
+      const sk26Idx = eraList.findIndex((e) => e.id === "sketches_2026");
+      if (sk26Idx >= 0) eraList.splice(sk26Idx, 0, GENAI_ERA_DEF);
+      else eraList.push(GENAI_ERA_DEF);
+    }
     const eraIndexById = new Map(eraList.map((e, i) => [e.id, i]));
     const byEra = new Map(eraList.map((e) => [e.id, []]));
     (tracks || []).forEach((t) => {
-      if (!byEra.has(t.era)) byEra.set(t.era, []);
-      byEra.get(t.era).push(t);
+      const ek = eraKeyOf(t);
+      if (!byEra.has(ek)) byEra.set(ek, []);
+      byEra.get(ek).push(t);
     });
 
     const dense = (tracks || []).length > 140;
@@ -258,8 +278,9 @@
     ctx.scale(zoom.k, zoom.k);
 
     // Subtle alternating tonal era bands
+    const selEraKey = selectedTrack ? eraKeyOf(selectedTrack) : null;
     data.bands.forEach((b) => {
-      const isAct = activeEraId === b.id || (selectedTrack && selectedTrack.era === b.id);
+      const isAct = activeEraId === b.id || selEraKey === b.id;
       if (b.idx % 2 === 1 || isAct) {
         ctx.save();
         ctx.globalAlpha = isAct ? 0.65 : 0.38;

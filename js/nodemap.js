@@ -219,12 +219,16 @@
     return !t.is_ai && !t.is_spoken_word && t.cluster_id === activeClusterId;
   }
 
+  function eraKeyOf(t) {
+    return t && t.is_ai ? "genai_2025" : (t ? t.era : "");
+  }
+
   function isMatch(t) {
     if (isSketchHidden(t)) return false;
     if (filterSet && !filterSet.has(t.id)) return false;
     if (starFilter && window.BTMM_PLAYER && !window.BTMM_PLAYER.isStarred(t.id)) return false;
     if (layout === "vibe" && !isClusterMatch(t)) return false;
-    if (layout === "era" && activeEraId && t.era !== activeEraId) return false;
+    if (layout === "era" && activeEraId && eraKeyOf(t) !== activeEraId) return false;
     return true;
   }
 
@@ -323,17 +327,19 @@
       visNodes.forEach((n) => {
         const t = n.t;
         if (t.is_spoken_word) return;
-        if (!byEra.has(t.era)) byEra.set(t.era, []);
-        byEra.get(t.era).push(t);
+        const ek = eraKeyOf(t);
+        if (!byEra.has(ek)) byEra.set(ek, []);
+        byEra.get(ek).push(t);
       });
       byEra.forEach((list) => {
         for (let i = 0; i < list.length; i++) {
           const t = list[i];
           const tTerr = territoryOf(t);
+          const ek = eraKeyOf(t);
           const near = (trackNear[t.id] || []).find(([nid]) => {
             if (!visSet.has(nid)) return false;
             const nt = byId.get(nid);
-            return nt && nt.era === t.era && territoryOf(nt) === tTerr;
+            return nt && eraKeyOf(nt) === ek && territoryOf(nt) === tTerr;
           });
           if (near) {
             const k = keyFor(t.id, near[0]);
@@ -898,6 +904,7 @@
     const next = Boolean(val);
     if (next === showEraGenAi) return showEraGenAi;
     showEraGenAi = next;
+    if (!showEraGenAi && activeEraId === "genai_2025") activeEraId = null;
     if (layout === "era") {
       computeTargetPositions();
       nodes.forEach((n) => { n.x = n.tx; n.y = n.ty; });
@@ -984,6 +991,7 @@
     setShowEraGenAi,
     getShowEraGenAi: () => showEraGenAi,
     getEdgesCountFor: (tid) => edges.filter((e) => e.a === tid || e.b === tid).length,
+    getNodeScreenPos: (tid) => { const n = nodeById.get(tid); return n && Number.isFinite(n.px) ? [n.px, n.py] : null; },
     setColorMode(mode) { colorMode = mode; paint(); },
     getColorMode: () => colorMode,
     refreshTheme() { samplePalette(); paint(); },
