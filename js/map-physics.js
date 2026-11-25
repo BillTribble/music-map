@@ -299,10 +299,17 @@
           lastTapTs = 0;
           stopMomentum();
           const nextK = zoom.k < 2.2 ? 3.8 : (zoom.k < 6.0 ? 8.0 : 1.0);
-          const ratio = nextK / zoom.k;
-          zoom.x = px - (px - zoom.x) * ratio;
-          zoom.y = py - (py - zoom.y) * ratio;
-          zoom.k = nextK;
+          if (nextK === 1.0 && typeof opts.getDefaultZoom === "function") {
+            const defZ = opts.getDefaultZoom();
+            zoom.k = defZ.k;
+            zoom.x = defZ.x;
+            zoom.y = defZ.y;
+          } else {
+            const ratio = nextK / zoom.k;
+            zoom.x = px - (px - zoom.x) * ratio;
+            zoom.y = py - (py - zoom.y) * ratio;
+            zoom.k = nextK;
+          }
           clampZoom();
           opts.onFullPaint();
           return;
@@ -316,8 +323,11 @@
         ev.preventDefault();
         stopMomentum();
         const zoom = opts.getZoom();
+        const [vw, vh] = opts.getViewport();
+        const [worldW, worldH] = opts.getWorldSize();
+        const canPanWorld = zoom.k > 1.005 || worldW * zoom.k > vw + 1 || worldH * zoom.k > vh + 1;
         const [px, py] = pointerLocalXY(ev);
-        if (!ev.ctrlKey && zoom.k > 1.005 && Math.abs(ev.deltaX) > Math.abs(ev.deltaY)) {
+        if (!ev.ctrlKey && canPanWorld && Math.abs(ev.deltaX) > Math.abs(ev.deltaY)) {
           zoom.x -= ev.deltaX;
           zoom.y -= ev.deltaY;
           clampZoom();

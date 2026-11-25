@@ -387,7 +387,6 @@
         if (!m || (isHidden && isHidden(m.t))) return;
         const sx = Number.isFinite(m.px) ? m.px : m.x * zoom.k + zoom.x;
         const sy = Number.isFinite(m.py) ? m.py : m.y * zoom.k + zoom.y;
-        if (zoomed && (sx < -40 || sx > vw + 40 || sy < -40 || sy > vh + 40)) return;
         if (sx < rMinX) rMinX = sx;
         if (sx > rMaxX) rMaxX = sx;
         if (sy < rMinY) rMinY = sy;
@@ -398,25 +397,38 @@
         const padX = rg.is_spoken_group ? (isWide ? 24 : 14) : (isWide ? 24 : 12);
         const padTop = rg.is_spoken_group ? (isWide ? 18 : 12) : (isWide ? 26 : 14);
         const padBot = rg.is_spoken_group ? (isWide ? 18 : 12) : (isWide ? 24 : 14);
-        reserveGuardBoxes.push([
-          Math.max(4, rMinX - padX) - 2,
-          Math.max(4, rMinY - padTop) - 26,
-          Math.min(vw - 6, rMaxX + padX) + 4,
-          Math.min(vh - 6, rMaxY + padBot) + 4,
-        ]);
-        const rShort = rg.short_label || MOBILE_SHORT[rg.label];
-        const rLbl = (!isWide && !zoomed && rShort) ? rShort : rg.label;
-        const rHw = Math.ceil(textWidth(fontSpec, rLbl) * 0.57 + 8);
-        const rHh = Math.ceil(fs * 0.65 + 3.5);
-        const rHeaderOffset = rg.is_spoken_group ? (isWide ? 22 : 16) : (isWide ? 34 : 18);
-        const rBoxCenterX = Math.max(rHw + 8, Math.min(vw - rHw - 8, (rMinX + rMaxX) * 0.5));
-        const rHeaderY = Math.max(rHh + 10, rMinY - rHh - rHeaderOffset);
-        reserveGuardBoxes.push([
-          rBoxCenterX - rHw - 6,
-          rHeaderY - rHh - 4,
-          rBoxCenterX + rHw + 6,
-          rHeaderY + rHh + 4,
-        ]);
+        const gx0 = rMinX - padX;
+        const gx1 = rMaxX + padX;
+        if (gx1 > -24 && gx0 < vw + 24) {
+          reserveGuardBoxes.push([
+            gx0 - 2,
+            rMinY - padTop - 26,
+            gx1 + 4,
+            rMaxY + padBot + 4,
+          ]);
+          const rShort = rg.short_label || MOBILE_SHORT[rg.label];
+          let rLbl = (!isWide && !zoomed && rShort) ? rShort : rg.label;
+          let rHw = Math.ceil(textWidth(fontSpec, rLbl) * 0.57 + 8);
+          if (rg.is_ai_group && rShort && (vw - gx0 < 2 * rHw + 12)) {
+            rLbl = rShort;
+            rHw = Math.ceil(textWidth(fontSpec, rLbl) * 0.57 + 8);
+          }
+          const rHh = Math.ceil(fs * 0.65 + 3.5);
+          const rHeaderOffset = rg.is_spoken_group ? (isWide ? 22 : 16) : (isWide ? 34 : 18);
+          const rRawCenterX = (rMinX + rMaxX) * 0.5;
+          const rBoxCenterX = (vw - gx0 >= 2 * rHw + 12)
+            ? Math.max(gx0 + rHw + 2, Math.min(gx1 - rHw - 2, Math.min(vw - rHw - 10, rRawCenterX)))
+            : rRawCenterX;
+          const rHeaderY = Math.max(rHh + 10, rMinY - rHh - rHeaderOffset);
+          if (rBoxCenterX - rHw >= 4 && rBoxCenterX + rHw <= vw - 4) {
+            reserveGuardBoxes.push([
+              rBoxCenterX - rHw - 6,
+              rHeaderY - rHh - 4,
+              rBoxCenterX + rHw + 6,
+              rHeaderY + rHh + 4,
+            ]);
+          }
+        }
       }
     });
 
@@ -456,7 +468,9 @@
       if (!members.length) return;
       const anyMatch = members.some((m) => isMatch(m.t));
 
+      const isDedicatedIsland = Boolean(g.is_ai_group || g.is_spoken_group);
       let minX = Infinity, maxX = -Infinity, minY = Infinity, maxY = -Infinity;
+      let fullMinX = Infinity, fullMaxX = -Infinity, fullMinY = Infinity, fullMaxY = -Infinity;
       let topX = 0, visCount = 0;
       const xs = [], ys = [];
       const fullXs = [], fullYs = [];
@@ -468,7 +482,11 @@
         const sy = Number.isFinite(m.py) ? m.py : m.y * zoom.k + zoom.y;
         fullXs.push(sx);
         fullYs.push(sy);
-        if (zoomed && (sx < -40 || sx > vw + 40 || sy < -40 || sy > vh + 40)) continue;
+        if (sx < fullMinX) fullMinX = sx;
+        if (sx > fullMaxX) fullMaxX = sx;
+        if (sy < fullMinY) fullMinY = sy;
+        if (sy > fullMaxY) fullMaxY = sy;
+        if (!isDedicatedIsland && zoomed && (sx < -40 || sx > vw + 40 || sy < -40 || sy > vh + 40)) continue;
         xs.push(sx);
         ys.push(sy);
         if (sx < minX) minX = sx;
@@ -480,7 +498,6 @@
       if (visCount === 0) return;
 
       // Never stamp a primary genre landmark header on a zoomed viewport over 1–2 stray border outliers
-      const isDedicatedIsland = Boolean(g.is_ai_group || g.is_spoken_group);
       if (zoomed && !isDedicatedIsland && members.length >= 4) {
         const minReq = Math.max(3, Math.ceil(members.length * 0.12));
         if (visCount < Math.min(members.length, minReq)) return;
@@ -524,9 +541,9 @@
       const cMinX = xs[qLo], cMaxX = xs[qHi];
       const cMinY = ys[qLo], cMaxY = ys[qHi];
       const shortLbl = g.short_label || MOBILE_SHORT[g.label];
-      const label = (!isWide && !zoomed && shortLbl) ? shortLbl : g.label;
-      const tw = textWidth(fontSpec, label);
-      const hw = Math.ceil(tw * 0.50 + 2.5);
+      let label = (!isWide && !zoomed && shortLbl) ? shortLbl : g.label;
+      let tw = textWidth(fontSpec, label);
+      let hw = Math.ceil(tw * 0.50 + 2.5);
       const hh = Math.ceil(fs * 0.56 + 2);
 
       const clampX = (x) => Math.max(hw + 6, Math.min(vw - hw - 6, x));
@@ -618,17 +635,57 @@
       let bestDotHits = Infinity;
 
       if (g.is_ai_group || g.is_spoken_group) {
+        const islPadX = g.is_spoken_group ? (isWide ? 24 : 14) : (isWide ? 24 : 12);
+        const islPadTop = g.is_spoken_group ? (isWide ? 18 : 12) : (isWide ? 32 : 14);
+        const islPadBot = g.is_spoken_group ? (isWide ? 18 : 12) : (isWide ? 22 : 14);
+        const islBx0 = fullMinX - islPadX;
+        const islBx1 = fullMaxX + islPadX;
+        const islBy0 = fullMinY - islPadTop;
+        const islBy1 = fullMaxY + islPadBot;
+        if (islBx1 < -20 || islBx0 > vw + 20 || islBy1 < -20 || islBy0 > vh + 20) return;
+
+        // Render dedicated territory boundary in true world-projected coordinates so partial right-edge peeks clip naturally
+        if (g.is_spoken_group && islBx1 - islBx0 >= 20 && islBy1 - islBy0 >= 20) {
+          const sBox = document.createElementNS(NS, "rect");
+          sBox.setAttribute("class", "map-ai-territory-box map-spoken-island-box");
+          sBox.setAttribute("x", islBx0.toFixed(1));
+          sBox.setAttribute("y", islBy0.toFixed(1));
+          sBox.setAttribute("width", (islBx1 - islBx0).toFixed(1));
+          sBox.setAttribute("height", (islBy1 - islBy0).toFixed(1));
+          sBox.setAttribute("rx", "14");
+          svgGroup.insertBefore(sBox, svgGroup.firstChild);
+        } else if (g.is_ai_group && islBx1 - islBx0 > 24 && islBy1 - islBy0 > 24) {
+          const tBox = document.createElementNS(NS, "rect");
+          tBox.setAttribute("class", "map-ai-territory-box");
+          tBox.setAttribute("x", islBx0.toFixed(1));
+          tBox.setAttribute("y", islBy0.toFixed(1));
+          tBox.setAttribute("width", (islBx1 - islBx0).toFixed(1));
+          tBox.setAttribute("height", (islBy1 - islBy0).toFixed(1));
+          tBox.setAttribute("rx", "18");
+          svgGroup.insertBefore(tBox, svgGroup.firstChild);
+        }
+
+        if (g.is_ai_group && shortLbl && (vw - islBx0 < 2 * hw + 12)) {
+          label = shortLbl;
+          tw = textWidth(fontSpec, label);
+          hw = Math.ceil(tw * 0.50 + 2.5);
+        }
         const headerOffset = g.is_spoken_group ? (isWide ? 22 : 16) : (isWide ? 34 : 18);
-        const boxCenterX = Math.max(hw + 8, Math.min(vw - hw - 8, (minX + maxX) * 0.5));
-        const headerY = Math.max(hh + 10, minY - hh - headerOffset);
-        const hBox = [boxCenterX - hw, headerY - hh, boxCenterX + hw, headerY + hh];
-        if (!uiBoxes.some((ub) => boxOverlap(hBox, ub)) && !placedFam.some((pb) => boxOverlap(hBox, pb))) {
-          best = [boxCenterX, headerY];
-          bestDotHits = 0;
+        const rawCenterX = (fullMinX + fullMaxX) * 0.5;
+        const boxCenterX = (vw - islBx0 >= 2 * hw + 12)
+          ? Math.max(islBx0 + hw + 2, Math.min(islBx1 - hw - 2, Math.min(vw - hw - 10, rawCenterX)))
+          : rawCenterX;
+        const headerY = Math.max(hh + 10, fullMinY - hh - headerOffset);
+        if (boxCenterX - hw >= 4 && boxCenterX + hw <= vw - 4) {
+          const hBox = [boxCenterX - hw, headerY - hh, boxCenterX + hw, headerY + hh];
+          if (!uiBoxes.some((ub) => boxOverlap(hBox, ub)) && !placedFam.some((pb) => boxOverlap(hBox, pb))) {
+            best = [boxCenterX, headerY];
+            bestDotHits = 0;
+          }
         }
       }
 
-      if (!best) {
+      if (!best && !isDedicatedIsland) {
         const isOwnDot = new Uint8Array(dotLen);
         for (let di = 0; di < dotLen; di++) {
           if (ownSet.has(allDots[di][2])) isOwnDot[di] = 1;
@@ -636,8 +693,8 @@
 
         const seenCand = new Set();
         const distWeight = zoomed ? 0.55 : (isWide ? 0.85 : 1.15);
-        const outerMaxCore = isWide ? 240 : 88;
-        const outerMaxBox = isWide ? 160 : 46;
+        const outerMaxCore = isWide ? 240 : 108;
+        const outerMaxBox = isWide ? 160 : 56;
 
         for (let ci = 0; ci < cands.length; ci++) {
           const cx = zoomed ? cands[ci][0] : clampX(cands[ci][0]);
@@ -725,81 +782,51 @@
         }
       }
 
-      if (!best) return;
-      if (!isWide && !zoomed && !isDedicatedIsland && bestDotHits >= 1) return;
+      if (best && (isWide || zoomed || isDedicatedIsland || bestDotHits < 1)) {
+        placedFam.push([best[0] - hw - 6, best[1] - hh - 4, best[0] + hw + 6, best[1] + hh + 4]);
 
-      placedFam.push([best[0] - hw - 6, best[1] - hh - 4, best[0] + hw + 6, best[1] + hh + 4]);
+        const grp = document.createElementNS(NS, "g");
+        const isOwnAiSubActive = Boolean(
+          g.is_ai_group && activeClusterId && activeClusterId.startsWith("ai_sub_")
+        );
+        const cls =
+          "map-family-group" +
+          (activeClusterId === g.id ? " is-active" : "") +
+          (!anyMatch || (activeClusterId && activeClusterId !== g.id && !isOwnAiSubActive) ? " is-dim" : "");
+        grp.setAttribute("class", cls);
+        grp.setAttribute("transform", `translate(${best[0].toFixed(1)}, ${best[1].toFixed(1)})`);
 
-      const grp = document.createElementNS(NS, "g");
-      const isOwnAiSubActive = Boolean(
-        g.is_ai_group && activeClusterId && activeClusterId.startsWith("ai_sub_")
-      );
-      const cls =
-        "map-family-group" +
-        (activeClusterId === g.id ? " is-active" : "") +
-        (!anyMatch || (activeClusterId && activeClusterId !== g.id && !isOwnAiSubActive) ? " is-dim" : "");
-      grp.setAttribute("class", cls);
-      grp.setAttribute("transform", `translate(${best[0].toFixed(1)}, ${best[1].toFixed(1)})`);
+        const hit = document.createElementNS(NS, "rect");
+        hit.setAttribute("class", "map-family-hit");
+        hit.setAttribute("x", (-hw).toFixed(1));
+        hit.setAttribute("y", (-hh).toFixed(1));
+        hit.setAttribute("width", (hw * 2).toFixed(1));
+        hit.setAttribute("height", (hh * 2).toFixed(1));
+        hit.setAttribute("rx", "8");
 
-      const hit = document.createElementNS(NS, "rect");
-      hit.setAttribute("class", "map-family-hit");
-      hit.setAttribute("x", (-hw).toFixed(1));
-      hit.setAttribute("y", (-hh).toFixed(1));
-      hit.setAttribute("width", (hw * 2).toFixed(1));
-      hit.setAttribute("height", (hh * 2).toFixed(1));
-      hit.setAttribute("rx", "8");
+        const txt = document.createElementNS(NS, "text");
+        txt.setAttribute("class", "map-family-label");
+        txt.style.fontSize = `${fs}px`;
+        txt.setAttribute("y", (fs * 0.34).toFixed(1));
+        txt.textContent = label;
 
-      const txt = document.createElementNS(NS, "text");
-      txt.setAttribute("class", "map-family-label");
-      txt.setAttribute("y", (fs * 0.34).toFixed(1));
-      txt.textContent = label;
-
-      grp.append(hit, txt);
-      grp.addEventListener("click", (ev) => {
-        ev.stopPropagation();
-        if (onToggleCluster) onToggleCluster(g.id);
-      });
-      svgGroup.appendChild(grp);
-
-      // Dedicated Spoken Word mini-island boundary
-      if (g.is_spoken_group) {
-        const sPadX = isWide ? 24 : 14;
-        const sPadY = isWide ? 18 : 12;
-        const sx0 = Math.max(4, minX - sPadX);
-        const sy0 = Math.max(4, minY - sPadY);
-        const sx1 = Math.min(vw - 6, maxX + sPadX);
-        const sy1 = Math.min(vh - 6, maxY + sPadY);
-        if (sx1 - sx0 >= 20 && sy1 - sy0 >= 20) {
-          const sBox = document.createElementNS(NS, "rect");
-          sBox.setAttribute("class", "map-ai-territory-box map-spoken-island-box");
-          sBox.setAttribute("x", sx0.toFixed(1));
-          sBox.setAttribute("y", sy0.toFixed(1));
-          sBox.setAttribute("width", (sx1 - sx0).toFixed(1));
-          sBox.setAttribute("height", (sy1 - sy0).toFixed(1));
-          sBox.setAttribute("rx", "14");
-          svgGroup.insertBefore(sBox, svgGroup.firstChild);
-        }
+        grp.append(hit, txt);
+        grp.addEventListener("click", (ev) => {
+          ev.stopPropagation();
+          if (onToggleCluster) onToggleCluster(g.id);
+        });
+        svgGroup.appendChild(grp);
       }
 
-      // Dedicated Generative AI territory boundary + internal Discogs genre sub-labels
+      // Internal Discogs genre sub-labels inside the Generative AI territory box
       if (g.is_ai_group) {
         const padX = isWide ? 24 : 12;
         const padTop = isWide ? 32 : 14;
         const padBot = isWide ? 22 : 14;
-        const bx0 = Math.max(4, minX - padX);
-        const by0 = Math.max(4, minY - padTop);
-        const bx1 = Math.min(vw - 6, maxX + padX);
-        const by1 = Math.min(vh - 6, maxY + padBot);
-        if (bx1 - bx0 > 28 && by1 - by0 > 28) {
-          const tBox = document.createElementNS(NS, "rect");
-          tBox.setAttribute("class", "map-ai-territory-box");
-          tBox.setAttribute("x", bx0.toFixed(1));
-          tBox.setAttribute("y", by0.toFixed(1));
-          tBox.setAttribute("width", (bx1 - bx0).toFixed(1));
-          tBox.setAttribute("height", (by1 - by0).toFixed(1));
-          tBox.setAttribute("rx", "18");
-          svgGroup.insertBefore(tBox, svgGroup.firstChild);
-        }
+        const bx0 = fullMinX - padX;
+        const by0 = fullMinY - padTop;
+        const bx1 = fullMaxX + padX;
+        const by1 = fullMaxY + padBot;
 
         if ((isWide || zoom.k >= 1.35) && Array.isArray(g.sub_groups)) {
           const subFs = zoomed ? 12.5 : 11.5;
@@ -833,9 +860,10 @@
             const stw = textWidth(subFont, sLbl);
             const shw = Math.ceil(stw * 0.56 + 6);
             const shh = Math.ceil(subFs * 0.64 + 3);
+            if (sMaxX + shw < -20 || sMinX - shw > vw + 20) return;
 
-            const clampLoX = Math.max(shw + 6, bx0 + shw + 5);
-            const clampHiX = Math.min(vw - shw - 6, bx1 - shw - 5);
+            const clampLoX = bx0 + shw + 5;
+            const clampHiX = bx1 - shw - 5;
             const clampLoY = Math.max(shh + 8, by0 + shh + 12);
             const clampHiY = Math.min(vh - shh - 8, by1 - shh - 10);
 
@@ -868,8 +896,9 @@
               if (sOwn.has(allDots[di][2])) sIsOwn[di] = 1;
             }
             for (let sci = 0; sci < sCands.length; sci++) {
-              const scx = clampLoX <= clampHiX ? Math.max(clampLoX, Math.min(clampHiX, sCands[sci][0])) : Math.max(shw + 6, Math.min(vw - shw - 6, sCands[sci][0]));
+              const scx = clampLoX <= clampHiX ? Math.max(clampLoX, Math.min(clampHiX, sCands[sci][0])) : sCands[sci][0];
               const scy = clampLoY <= clampHiY ? Math.max(clampLoY, Math.min(clampHiY, sCands[sci][1])) : Math.max(shh + 8, Math.min(vh - shh - 8, sCands[sci][1]));
+              if (scx - shw < 6 || scx + shw > vw - 6) continue;
               const sp0 = scx - shw - 3, sp1 = scy - shh - 3, sp2 = scx + shw + 3, sp3 = scy + shh + 3;
               const sbox = [sp0, sp1, sp2, sp3];
               if (uiBoxes.some((ub) => boxOverlap(sbox, ub))) continue;

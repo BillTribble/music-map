@@ -61,6 +61,7 @@
   let nodeById = new Map();
   let edges = [];
   let eraLayout = null;
+  let vibeLayout = null;
   let groupEls = [];
 
   let layout = "vibe"; // "vibe" | "era"
@@ -68,6 +69,7 @@
   let filterSet = null;
   let starFilter = false;
   let showSketches = false;
+  let showVibeGenAi = true;
   let showEraGenAi = false;
   let activeClusterId = null;
   let activeEraId = null;
@@ -152,11 +154,15 @@
     return Math.max(2.0, base * zoomShrink);
   }
 
+  function isGenAiShown() {
+    return layout === "era" ? showEraGenAi : showVibeGenAi;
+  }
+
   function isSketchHidden(t) {
     if (!t) return false;
+    if (Boolean(t.is_ai) && !isGenAiShown()) return true;
     const hideSketch = !showSketches && Boolean(t.is_sketch);
-    const hideEraAi = layout === "era" && !showEraGenAi && Boolean(t.is_ai);
-    if (!hideSketch && !hideEraAi) return false;
+    if (!hideSketch) return false;
     const playId = hooks && hooks.playing ? hooks.playing() : null;
     const pendId = hooks && hooks.pending ? hooks.pending() : null;
     if (t.id === selectedId || t.id === playId || t.id === pendId) return false;
@@ -240,22 +246,95 @@
     return true;
   }
 
-  function vibeTarget(tid) {
-    const coords = trackMap[tid];
-    const norm = (coords && (coords.vibe || coords.similarity)) || [0.5, 0.5];
+  function computeVibeLayout() {
+    const isMobile = vw <= 768;
     const topPad = vw <= 800 ? 64 : PAD;
     const sidePad = vw <= 800 ? 16 : PAD;
     const botPad = vw <= 800 ? 24 : PAD;
-    const w = Math.max(220, vw - sidePad * 2);
+    const rawW = Math.max(220, vw - sidePad * 2);
     const rawH = Math.max(200, vh - topPad - botPad);
-    // Keep organic archipelago proportions on portrait mobile instead of stretching vertically 2.1x
-    const h = vh > vw * 1.15 ? Math.min(rawH, w * 1.38) : rawH;
+
+    let hMinX = Infinity, hMaxX = -Infinity;
+    let aMinX = Infinity, aMaxX = -Infinity;
+    let hasHuman = false, hasAi = false;
+
+    for (let i = 0; i < tracks.length; i++) {
+      const t = tracks[i];
+      if (!t || t.is_spoken_word) continue;
+      const coords = trackMap[t.id];
+      const norm = coords && (coords.vibe || coords.similarity);
+      if (!norm) continue;
+      const nx = norm[0];
+      if (t.is_ai) {
+        if (showVibeGenAi) {
+          if (nx < aMinX) aMinX = nx;
+          if (nx > aMaxX) aMaxX = nx;
+          hasAi = true;
+        }
+      } else {
+        if (nx < hMinX) hMinX = nx;
+        if (nx > hMaxX) hMaxX = nx;
+        hasHuman = true;
+      }
+    }
+
+    let offsetX = sidePad;
+    let spanW = rawW;
+    let virtualW = vw;
+
+    if (hasHuman && hasAi && showVibeGenAi && aMaxX > hMinX + 0.05) {
+      // Frame default Vibe view over human islands with AI reserve ~30% visible on desktop, ~10% visible on mobile
+      const visFrac = isMobile ? 0.10 : 0.30;
+      const aiPadX = vw > 840 ? 24 : 12;
+      const leftPad = isMobile ? 20 : 76;
+      const rightWorldPad = isMobile ? 16 : 28;
+      const targetNormX = aMinX + visFrac * (aMaxX - aMinX);
+      const denom = Math.max(0.15, targetNormX - hMinX);
+      spanW = (vw - leftPad - (2 * visFrac - 1) * aiPadX) / denom;
+      offsetX = leftPad - hMinX * spanW;
+      const aiBoxRight = offsetX + aMaxX * spanW + aiPadX;
+      virtualW = Math.max(vw, Math.ceil(aiBoxRight + rightWorldPad));
+    } else if (hasHuman && !showVibeGenAi && hMaxX > hMinX + 0.05) {
+      // Show Gen AI is OFF: center 100% of the human-made catalog cleanly across the full viewport
+      const sideMargin = isMobile ? 24 : Math.max(88, Math.round(vw * 0.085));
+      spanW = (vw - sideMargin * 2) / (hMaxX - hMinX);
+      offsetX = sideMargin - hMinX * spanW;
+      virtualW = vw;
+    }
+
+    const h = vh > vw * 1.15
+      ? Math.min(rawH, Math.max(rawW * 1.38, Math.min(spanW * 1.05, rawH * 0.88)))
+      : rawH;
     const startY = topPad + (rawH - h) * 0.36;
-    return [sidePad + norm[0] * w, startY + norm[1] * h];
+    const spreadScale = Math.max(1, Math.min(1.55, Math.hypot(spanW / rawW, 1) / Math.SQRT2));
+
+    return {
+      offsetX,
+      spanW,
+      startY,
+      spanH: h,
+      virtualW,
+      virtualH: vh,
+      spreadScale,
+      defaultZoom: { k: 1, x: 0, y: 0 },
+    };
+  }
+
+  function vibeTarget(tid) {
+    const coords = trackMap[tid];
+    const norm = (coords && (coords.vibe || coords.similarity)) || [0.5, 0.5];
+    const vl = vibeLayout || computeVibeLayout();
+    let tx = vl.offsetX + norm[0] * vl.spanW;
+    const tr = byId.get(tid);
+    if (tr && tr.is_spoken_word && !showVibeGenAi) {
+      tx = Math.min(vw - 74, tx);
+    }
+    return [tx, vl.startY + norm[1] * vl.spanH];
   }
 
   function computeTargetPositions() {
     if (layout === "era" && window.BTMM_TIMELINE_ERA) {
+      vibeLayout = null;
       const visTracks = tracks.filter((t) => !isSketchHidden(t));
       eraLayout = window.BTMM_TIMELINE_ERA.computeLayout(visTracks, eras, erasById, vw, vh);
       nodes.forEach((n) => {
@@ -265,24 +344,13 @@
       });
     } else {
       eraLayout = null;
+      vibeLayout = computeVibeLayout();
       nodes.forEach((n) => {
         const [tx, ty] = vibeTarget(n.id);
         n.tx = tx;
         n.ty = ty;
       });
     }
-  }
-
-  function edgeBend(key, isWeak) {
-    let h = 2166136261 >>> 0;
-    for (let i = 0; i < key.length; i++) {
-      h ^= key.charCodeAt(i);
-      h = Math.imul(h, 16777619) >>> 0;
-    }
-    const sign = (h & 1) === 0 ? 1 : -1;
-    const base = isWeak ? 0.14 : 0.11;
-    const jitter = ((h >>> 1) % 7) * 0.009;
-    return sign * (base + jitter);
   }
 
   function buildEdges() {
@@ -293,17 +361,18 @@
       if (pairs.has(k)) return;
       const aCanon = a < b ? a : b;
       const bCanon = a < b ? b : a;
-      pairs.set(k, { a: aCanon, b: bCanon, w, weak, bend: edgeBend(k, weak) });
+      pairs.set(k, { a: aCanon, b: bCanon, w, weak });
     };
     const visNodes = nodes.filter((n) => !isSketchHidden(n.t));
     const visSet = new Set(visNodes.map((n) => n.id));
 
     if (layout === "vibe") {
       const minDim = Math.min(vw, vh);
-      const maxChordPx = minDim * 0.145;
-      const maxIntraBridgePx = minDim * 0.22;
-      const maxWebPx = minDim * 0.275;
-      const maxSpanBridgePx = minDim * 0.36;
+      const spreadScale = (vibeLayout && vibeLayout.spreadScale) || 1;
+      const maxChordPx = minDim * 0.145 * spreadScale;
+      const maxIntraBridgePx = minDim * 0.22 * spreadScale;
+      const maxWebPx = minDim * 0.275 * spreadScale;
+      const maxSpanBridgePx = minDim * 0.36 * spreadScale;
       const MIN_CHORD_SIM = 0.56;
       const MIN_INTRA_SPAN_SIM = 0.28;
 
@@ -429,10 +498,10 @@
         });
         weaveCands.sort((p, q) => q.score - p.score);
         for (const c of weaveCands) {
-          const maxNodeCross = c.terr === "ai" ? 2 : 3;
+          const maxNodeCross = 2;
           if ((crossDeg.get(c.a) || 0) >= maxNodeCross || (crossDeg.get(c.b) || 0) >= maxNodeCross) continue;
           const cKey = keyFor(c.ca, c.cb);
-          const maxPair = c.terr === "ai" ? 4 : 6;
+          const maxPair = c.terr === "ai" ? 3 : 4;
           if ((pairConstCnt.get(cKey) || 0) >= maxPair) continue;
           addEdge(c.a, c.b, c.sim, true);
           bumpCross(c.a, c.b, cKey);
@@ -523,12 +592,13 @@
     const starLbl = document.getElementById("star-btn-label");
     const sketchLbl = document.getElementById("sketch-btn-label");
     const genaiLbl = document.getElementById("era-genai-btn-label");
+    const genAiActive = isGenAiShown();
     if (starLbl) starLbl.textContent = starFilter ? "Starred only · On" : "Starred only";
     if (sketchLbl) sketchLbl.textContent = showSketches ? "Hide sketches" : "Show sketches";
-    if (genaiLbl) genaiLbl.textContent = showEraGenAi ? "Hide Gen AI" : "Show Gen AI";
+    if (genaiLbl) genaiLbl.textContent = genAiActive ? "Hide Gen AI" : "Show Gen AI";
     if (starBtn) starBtn.classList.toggle("is-hint-open", hudHoverTarget === "star");
     if (sketchBtn) sketchBtn.classList.toggle("is-hint-open", hudHoverTarget === "sketch");
-    if (eraGenAiBtn) eraGenAiBtn.classList.toggle("is-hint-open", layout === "era" && hudHoverTarget === "genai");
+    if (eraGenAiBtn) eraGenAiBtn.classList.toggle("is-hint-open", hudHoverTarget === "genai");
   }
 
   function syncStarHud() {
@@ -543,12 +613,11 @@
       sketchBtn.setAttribute("aria-label", showSketches ? "Hide sketches" : "Show sketches");
     }
     if (eraGenAiBtn) {
-      const inEra = layout === "era";
-      eraGenAiBtn.hidden = !inEra;
-      if (!inEra && hudHoverTarget === "genai") hudHoverTarget = null;
-      eraGenAiBtn.classList.toggle("is-active", showEraGenAi);
-      eraGenAiBtn.setAttribute("aria-pressed", String(showEraGenAi));
-      eraGenAiBtn.setAttribute("aria-label", showEraGenAi ? "Hide Gen AI" : "Show Gen AI");
+      const genAiActive = isGenAiShown();
+      eraGenAiBtn.hidden = false;
+      eraGenAiBtn.classList.toggle("is-active", genAiActive);
+      eraGenAiBtn.setAttribute("aria-pressed", String(genAiActive));
+      eraGenAiBtn.setAttribute("aria-label", genAiActive ? "Hide Gen AI" : "Show Gen AI");
     }
     updateHudHint();
     if (starEmptyEl) {
@@ -649,8 +718,9 @@
 
     const isLight = document.documentElement.getAttribute("data-theme") === "light";
     const zoomScale = Math.max(1, zoom.k);
-    const maxLocalDist = Math.min(vw, vh) * 0.22 * zoomScale + 18;
-    const maxBridgeDist = Math.min(vw, vh) * 0.36 * zoomScale + 24;
+    const spreadScale = layout === "vibe" && vibeLayout ? vibeLayout.spreadScale : 1;
+    const maxLocalDist = Math.min(vw, vh) * 0.22 * spreadScale * zoomScale + 18;
+    const maxBridgeDist = Math.min(vw, vh) * 0.36 * spreadScale * zoomScale + 24;
 
     // Draw edges & shrunk jewel circles directly in 1:1 screen space so zooming never inflates circle size
     edges.forEach((e) => {
@@ -681,13 +751,13 @@
           if (d >= maxBridgeDist) return;
           const tBridge = Math.max(0.48, 1 - (d / maxBridgeDist) * 0.56);
           const simBoost = 0.86 + 0.24 * Math.min(1, Math.max(0, ((e.w || 0.68) - 0.64) / 0.22));
-          edgeAlpha = (isLight ? 0.34 : 0.38) * tBridge * simBoost;
-          edgeWidth = 0.96;
+          edgeAlpha = (isLight ? 0.32 : 0.36) * tBridge * simBoost;
+          edgeWidth = 0.95;
         } else {
           if (d >= maxLocalDist) return;
           const tLocal = Math.max(0.48, 1 - (d / maxLocalDist) * 0.60);
-          edgeAlpha = (isLight ? 0.52 : 0.58) * tLocal;
-          edgeWidth = 1.2;
+          edgeAlpha = (isLight ? 0.48 : 0.54) * tLocal;
+          edgeWidth = 1.15;
         }
         if (edgeAlpha < 0.02) return;
       } else if (!lit && !aMatch && !bMatch) {
@@ -701,21 +771,8 @@
         ctx.moveTo(a.px, a.py);
         ctx.quadraticCurveTo(mx, (a.py + b.py) * 0.5 + arcOff, b.px, b.py);
       } else {
-        const dx = b.px - a.px;
-        const dy = b.py - a.py;
-        const chord = Math.hypot(dx, dy);
-        if (chord > 3) {
-          const bend = e.bend !== undefined ? e.bend : 0.14;
-          const maxBow = 44 * Math.sqrt(zoomScale);
-          const bow = Math.max(-maxBow, Math.min(maxBow, chord * bend));
-          const cx = (a.px + b.px) * 0.5 + (-dy / chord) * bow;
-          const cy = (a.py + b.py) * 0.5 + (dx / chord) * bow;
-          ctx.moveTo(a.px, a.py);
-          ctx.quadraticCurveTo(cx, cy, b.px, b.py);
-        } else {
-          ctx.moveTo(a.px, a.py);
-          ctx.lineTo(b.px, b.py);
-        }
+        ctx.moveTo(a.px, a.py);
+        ctx.lineTo(b.px, b.py);
       }
 
       if (lit) {
@@ -869,7 +926,27 @@
     if (layout === "era" && eraLayout && eraLayout.virtualW && eraLayout.virtualH) {
       return [eraLayout.virtualW, eraLayout.virtualH];
     }
+    if (layout === "vibe" && vibeLayout && vibeLayout.virtualW && vibeLayout.virtualH) {
+      return [vibeLayout.virtualW, vibeLayout.virtualH];
+    }
     return [vw, vh];
+  }
+
+  function defaultMapZoom() {
+    if (layout === "era" && eraLayout && eraLayout.defaultZoom) {
+      return { ...eraLayout.defaultZoom };
+    }
+    if (layout === "vibe" && vibeLayout && vibeLayout.defaultZoom) {
+      return { ...vibeLayout.defaultZoom };
+    }
+    return { k: 1, x: 0, y: 0 };
+  }
+
+  function resetCamera() {
+    stopMomentum();
+    zoom = defaultMapZoom();
+    clampZoom();
+    paint();
   }
 
   function clampZoom() {
@@ -884,6 +961,7 @@
     physics = window.BTMM_MAP_PHYSICS.createController({
       mapWrap,
       getZoom: () => zoom,
+      getDefaultZoom: defaultMapZoom,
       getViewport: () => [vw, vh],
       getWorldSize: worldSize,
       onTransform: () => {
@@ -981,7 +1059,7 @@
       eraGenAiBtn.addEventListener("click", (ev) => {
         ev.stopPropagation();
         if (isTouchEvent(ev)) hudHoverTarget = null;
-        setShowEraGenAi(!showEraGenAi);
+        setShowGenAi(!isGenAiShown());
       });
       eraGenAiBtn.addEventListener("pointerenter", (ev) => {
         if (ev.pointerType === "touch") return;
@@ -1001,6 +1079,7 @@
       const ro = new ResizeObserver((entries) => {
         const cr = entries[0] && entries[0].contentRect;
         if (!cr || cr.width < 40 || cr.height < 40) return;
+        if (Math.abs(cr.width - vw) < 0.5 && Math.abs(cr.height - vh) < 0.5) return;
         if (resizeRaf) cancelAnimationFrame(resizeRaf);
         resizeRaf = requestAnimationFrame(() => {
           resizeRaf = 0;
@@ -1025,10 +1104,17 @@
 
   function relayout(animate = false) {
     stopMomentum();
+    const prevVw = vw;
+    const prevVh = vh;
     resizeCanvas();
     computeTargetPositions();
-    if (layout === "era" && eraLayout) zoom = { ...eraLayout.defaultZoom };
+    if (layout === "era" && eraLayout) {
+      zoom = { ...eraLayout.defaultZoom };
+    } else if ((prevVw <= 768) !== (vw <= 768)) {
+      zoom = defaultMapZoom();
+    }
     clampZoom();
+    if (prevVw !== vw || prevVh !== vh) buildEdges();
     tweenToTargets(animate);
     drawFloatingLabels();
   }
@@ -1038,11 +1124,13 @@
     stopMomentum();
     const tr = byId.get(tid);
     if (tr && isSketchHidden(tr)) {
-      showSketches = true;
-      if (layout === "era") {
-        computeTargetPositions();
-        nodes.forEach((n) => { n.x = n.tx; n.y = n.ty; });
+      if (tr.is_ai) {
+        if (layout === "era") showEraGenAi = true;
+        else showVibeGenAi = true;
       }
+      if (tr.is_sketch) showSketches = true;
+      computeTargetPositions();
+      nodes.forEach((n) => { n.x = n.tx; n.y = n.ty; });
       buildEdges();
     }
     if (opts && opts.centerNode) {
@@ -1073,11 +1161,7 @@
     activeEraId = null;
     resizeCanvas();
     computeTargetPositions();
-    if (layout === "era" && eraLayout) {
-      zoom = { ...eraLayout.defaultZoom };
-    } else {
-      zoom = { k: 1, x: 0, y: 0 };
-    }
+    zoom = defaultMapZoom();
     clampZoom();
     buildEdges();
     tweenToTargets(animate);
@@ -1100,6 +1184,37 @@
     return showSketches;
   }
 
+  function setShowVibeGenAi(val) {
+    const next = Boolean(val);
+    if (next === showVibeGenAi) return showVibeGenAi;
+    stopMomentum();
+    showVibeGenAi = next;
+    if (!showVibeGenAi) {
+      if (activeClusterId === "ai_generative" || (activeClusterId && activeClusterId.startsWith("ai_sub_"))) {
+        activeClusterId = null;
+      }
+      const selTr = selectedId ? byId.get(selectedId) : null;
+      if (selTr && selTr.is_ai) {
+        selectedId = null;
+        if (window.BTMM_PLAYER) window.BTMM_PLAYER.select(null, { silent: true });
+      }
+      const hovTr = hoverId ? byId.get(hoverId) : null;
+      if (hovTr && hovTr.is_ai) {
+        hoverId = null;
+        if (mapWrap) mapWrap.classList.remove("has-hover");
+      }
+    }
+    if (layout === "vibe") {
+      computeTargetPositions();
+      nodes.forEach((n) => { n.x = n.tx; n.y = n.ty; });
+      zoom = defaultMapZoom();
+      clampZoom();
+    }
+    buildEdges();
+    paint();
+    return showVibeGenAi;
+  }
+
   function setShowEraGenAi(val) {
     const next = Boolean(val);
     if (next === showEraGenAi) return showEraGenAi;
@@ -1113,6 +1228,10 @@
     buildEdges();
     paint();
     return showEraGenAi;
+  }
+
+  function setShowGenAi(val) {
+    return layout === "era" ? setShowEraGenAi(val) : setShowVibeGenAi(val);
   }
 
   function setClusterFilter(cid) {
@@ -1159,6 +1278,7 @@
     ringG = elSvg("g", "map-rings");
     svg.append(ringG, groupG);
 
+    vibeLayout = computeVibeLayout();
     nodes = tracks.map((t) => {
       const [x, y] = vibeTarget(t.id);
       return { id: t.id, t, x, y, sx: x, sy: y, tx: x, ty: y };
@@ -1167,9 +1287,10 @@
 
     computeTargetPositions();
     nodes.forEach((n) => { n.x = n.tx; n.y = n.ty; });
+    bindEvents();
+    zoom = defaultMapZoom();
     clampZoom();
     buildEdges();
-    bindEvents();
     paint();
     if (typeof document !== "undefined" && document.fonts && document.fonts.ready) {
       document.fonts.ready.then(() => paint());
@@ -1180,9 +1301,11 @@
     init,
     paint,
     focus,
+    resetCamera,
     setLayout,
     getLayout: () => layout,
     getZoom: () => ({ ...zoom }),
+    getWorldSize: worldSize,
     isCoasting: () => Boolean(physics && physics.isCoasting && physics.isCoasting()),
     selected: () => selectedId,
     setSelectedSilent(tid) { selectedId = tid; paint(); },
@@ -1191,6 +1314,10 @@
     setClusterFilter,
     setShowSketches,
     getShowSketches: () => showSketches,
+    setShowGenAi,
+    getShowGenAi: isGenAiShown,
+    setShowVibeGenAi,
+    getShowVibeGenAi: () => showVibeGenAi,
     setShowEraGenAi,
     getShowEraGenAi: () => showEraGenAi,
     getEdges: () => edges.slice(),
