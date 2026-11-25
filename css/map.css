@@ -48,7 +48,7 @@
 
 /* Expressive Syne cartographic floating family landmarks + surface knock-out halo */
 .map-family-label {
-  font: 600 11.2px var(--font-display);
+  font: 600 11.5px var(--font-display);
   fill: var(--md-sys-color-outline);
   letter-spacing: -0.015em;
   text-anchor: middle;
@@ -59,19 +59,11 @@
   stroke-linejoin: round;
   transition: fill 160ms var(--ease-std), opacity 180ms var(--ease-std);
 }
-.map.is-zoomed .map-family-label {
-  font-size: 15.5px;
-  font-weight: 700;
-  stroke-width: 4px;
-}
 @media (min-width: 841px) {
   .map-family-label {
-    font-size: 16.5px;
+    font-size: 16.2px;
     font-weight: 700;
     stroke-width: 4px;
-  }
-  .map.is-zoomed .map-family-label {
-    font-size: 18.5px;
   }
 }
 .map-family-group:hover .map-family-label {

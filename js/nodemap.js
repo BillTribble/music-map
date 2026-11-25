@@ -558,12 +558,21 @@
     edges = [...pairs.values()];
   }
 
+  function repaintLabelsFrame() {
+    paintCanvas();
+    drawFloatingLabels();
+  }
+
   function drawFloatingLabels() {
     if (!groupG) return;
-    groupG.innerHTML = "";
     groupEls = [];
 
     if (layout === "era" && window.BTMM_TIMELINE_ERA && eraLayout) {
+      if (window.BTMM_MAP_LABELS && window.BTMM_MAP_LABELS.clearClusterDom) {
+        window.BTMM_MAP_LABELS.clearClusterDom(groupG);
+      } else {
+        groupG.innerHTML = "";
+      }
       window.BTMM_TIMELINE_ERA.renderOverlay(groupG, eraLayout, zoom, vw, vh, activeEraId, (eraId) => {
         activeEraId = activeEraId === eraId ? null : eraId;
         activeClusterId = null;
@@ -584,6 +593,7 @@
         isMatch,
         isHidden: isSketchHidden,
         mapWrap,
+        onRequestFrame: repaintLabelsFrame,
         onToggleCluster: (cid) => setClusterFilter(activeClusterId === cid ? null : cid),
       });
     }
@@ -842,11 +852,15 @@
     if (window.BTMM_MAP_LABELS) {
       window.BTMM_MAP_LABELS.drawScreenTrackLabels(ctx, {
         nodes,
+        nodeById,
+        styleGroups,
         zoom,
         vw,
         vh,
         palette,
         isMatch,
+        isHidden: isSketchHidden,
+        activeClusterId,
         nodeScreenRadius,
         trackColor,
         playId,
@@ -856,6 +870,7 @@
         mapWrap,
         layout,
         eraLeftGutter: eraLayout && eraLayout.leftGutter ? eraLayout.leftGutter : 94,
+        onRequestFrame: repaintLabelsFrame,
       });
     }
 
