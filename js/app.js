@@ -845,7 +845,79 @@
     const rawHash = (typeof window !== "undefined" && window.location && window.location.hash || "").replace(/^#/, "");
     const mappedHash = rawHash === "similarity" ? "vibe" : rawHash;
     if (VIEWS.some((v) => v.id === mappedHash)) state.tab = mappedHash;
+
+    // Resolve optional ?track=<id|slug> deep-link before initial renderView
+    let deepLinkTrack = null;
+    if (typeof window !== "undefined" && window.location && window.location.search) {
+      try {
+        const rawTrackParam = (new URLSearchParams(window.location.search).get("track") || "").trim();
+        if (rawTrackParam) {
+          if (byId.has(rawTrackParam)) {
+            deepLinkTrack = byId.get(rawTrackParam);
+          } else {
+            const lowerParam = rawTrackParam.toLowerCase();
+            const slugify = (s) => String(s || "").toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/^-+|-+$/g, "");
+            const targetSlug = slugify(rawTrackParam);
+            deepLinkTrack =
+              tracks.find((t) => String(t.id || "").toLowerCase() === lowerParam) ||
+              (targetSlug ? tracks.find((t) => slugify(t.title) === targetSlug) : null) ||
+              null;
+          }
+        }
+      } catch (_) {}
+    }
+
+    if (deepLinkTrack && !isMapTab()) {
+      state.tab = "vibe";
+    }
     renderView();
+
+    if (deepLinkTrack && typeof window !== "undefined") {
+      if (deepLinkTrack.is_sketch && window.ME_NODEMAP && typeof window.ME_NODEMAP.setShowSketches === "function") {
+        window.ME_NODEMAP.setShowSketches(true);
+      }
+      if (state.tab === "era" && deepLinkTrack.is_ai && window.ME_NODEMAP && typeof window.ME_NODEMAP.setShowEraGenAi === "function") {
+        window.ME_NODEMAP.setShowEraGenAi(true);
+      }
+      if (window.BTMM_PLAYER && typeof window.BTMM_PLAYER.setCollapsed === "function") {
+        window.BTMM_PLAYER.setCollapsed(false);
+      }
+      if (window.ME_NODEMAP && typeof window.ME_NODEMAP.focus === "function") {
+        window.ME_NODEMAP.focus(deepLinkTrack.id, { centerNode: true });
+      } else if (window.BTMM_PLAYER) {
+        window.BTMM_PLAYER.select(deepLinkTrack.id, { silent: true });
+      }
+      if (window.ME_AUDIO && typeof window.ME_AUDIO.playTrack === "function") {
+        window.ME_AUDIO.playTrack(deepLinkTrack.id, { startSec: 0, fromStart: true, isManual: true });
+      }
+
+      // One-shot browser autoplay-policy safeguard: if cold un-gestured play() was blocked, start on first user gesture
+      const linkedId = deepLinkTrack.id;
+      let unlockDisarmed = false;
+      const disarmUnlock = () => {
+        if (unlockDisarmed) return;
+        unlockDisarmed = true;
+        window.removeEventListener("pointerdown", onFirstGesture, true);
+        window.removeEventListener("keydown", onFirstGesture, true);
+      };
+      const onFirstGesture = (ev) => {
+        if (unlockDisarmed) return;
+        disarmUnlock();
+        if (!window.ME_AUDIO || window.ME_AUDIO.playing() || window.ME_AUDIO.pending()) return;
+        if (!window.BTMM_PLAYER || window.BTMM_PLAYER.selected() !== linkedId) return;
+        const tgt = ev && ev.target && typeof ev.target.closest === "function" ? ev.target : null;
+        if (tgt && tgt.closest("[data-player-play], [data-player-restart], #mp-wave-wrap, [data-track-play], #set-mute")) {
+          return;
+        }
+        if (ev && ev.type === "keydown" && (ev.code === "Space" || ev.key === " " || ev.key === "Escape")) {
+          return;
+        }
+        window.ME_AUDIO.playTrack(linkedId, { startSec: 0, fromStart: true, isManual: true });
+      };
+      window.addEventListener("pointerdown", onFirstGesture, true);
+      window.addEventListener("keydown", onFirstGesture, true);
+    }
+
     if (typeof window !== "undefined") {
       window.__APP_LOADED__ = true;
       window.__APP_TEST__ = { state, DATA, VIEWS, MODE_LABELS, setTab, renderView, applyTheme };

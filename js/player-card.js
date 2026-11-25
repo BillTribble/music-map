@@ -49,6 +49,9 @@
   let optimisticSeekUntilMs = 0;
   let waveRafId = null;
   let lastRenderedTrackId = null;
+  let lastRenderedCollapsed = null;
+  let copiedForId = null;
+  let copiedTimer = null;
   let cachedThemeKey = "";
   let cachedPalette = null;
   let themeObserver = null;
@@ -445,8 +448,105 @@
     ctx.closePath();
   }
 
+  function drawMiniWaveform(ctx, W, H, t, snap, pal) {
+    const sidePad = 8;
+    const barStep = 5;
+    const barW = 3;
+    const barCount = Math.max(18, Math.floor((W - sidePad * 2 + (barStep - barW)) / barStep));
+    const totalBarsW = barCount * barStep - (barStep - barW);
+    const startX = Math.floor((W - totalBarsW) * 0.5);
+    const maxBarH = Math.max(12, H - 8);
+
+    const rawBars = getResampledBars(t, barCount);
+    let peakMax = 1;
+    for (let i = 0; i < barCount; i++) {
+      if ((rawBars[i] || 0) > peakMax) peakMax = rawBars[i];
+    }
+    const denom = Math.max(65, peakMax);
+    const heights = new Array(barCount);
+    for (let i = 0; i < barCount; i++) {
+      const prev = rawBars[Math.max(0, i - 1)] || 12;
+      const curr = rawBars[i] || 12;
+      const next = rawBars[Math.min(barCount - 1, i + 1)] || 12;
+      const smoothNorm = clamp((prev * 0.22 + curr * 0.56 + next * 0.22) / denom, 0.14, 1);
+      heights[i] = Math.max(4, Math.round(smoothNorm * maxBarH));
+    }
+
+    const dispFrac = isWaveScrubbing && scrubFrac !== null ? scrubFrac : snap.progressFrac;
+    const hasProgress = snap.isPlaying || dispFrac > 0.001;
+    const progressX = hasProgress ? clamp(startX + dispFrac * totalBarsW, startX, startX + totalBarsW) : startX;
+
+    // 1. Unplayed capsule bars (right of playhead) + hover seek preview
+    ctx.save();
+    ctx.beginPath();
+    ctx.rect(progressX, 0, Math.max(0, W - progressX), H);
+    ctx.clip();
+    for (let i = 0; i < barCount; i++) {
+      const x = startX + i * barStep;
+      if (x + barW <= progressX) continue;
+      const barFrac = (i + 0.5) / barCount;
+      const inHover = waveHoverFrac !== null && !isWaveScrubbing && barFrac <= waveHoverFrac;
+      const barH = heights[i];
+      const y = (H - barH) * 0.5;
+      ctx.fillStyle = inHover ? pal.primary : pal.onSurfaceVariant;
+      ctx.globalAlpha = inHover ? 0.35 : 0.25;
+      drawRoundedRect(ctx, x, y, barW, barH, barW * 0.5);
+      ctx.fill();
+    }
+    ctx.restore();
+
+    // 2. Played accent capsule bars (left of playhead, continuous sub-pixel clip)
+    if (hasProgress && progressX > startX) {
+      ctx.save();
+      ctx.beginPath();
+      ctx.rect(0, 0, progressX, H);
+      ctx.clip();
+      for (let i = 0; i < barCount; i++) {
+        const x = startX + i * barStep;
+        if (x >= progressX) break;
+        const barFrac = (i + 0.5) / barCount;
+        const inRewindHover = waveHoverFrac !== null && !isWaveScrubbing && waveHoverFrac < dispFrac && barFrac >= waveHoverFrac;
+        const barH = heights[i];
+        const y = (H - barH) * 0.5;
+        ctx.fillStyle = pal.primary;
+        ctx.globalAlpha = inRewindHover ? 0.32 : 0.45;
+        drawRoundedRect(ctx, x, y, barW, barH, barW * 0.5);
+        ctx.fill();
+      }
+      ctx.restore();
+    }
+
+    // 3. Subtle hover seek cursor
+    if (waveHoverFrac !== null && !isWaveScrubbing) {
+      const hx = Math.round(startX + waveHoverFrac * totalBarsW) + 0.5;
+      ctx.save();
+      ctx.strokeStyle = pal.onSurface;
+      ctx.globalAlpha = 0.28;
+      ctx.lineWidth = 1;
+      ctx.beginPath();
+      ctx.moveTo(hx, 4);
+      ctx.lineTo(hx, H - 4);
+      ctx.stroke();
+      ctx.restore();
+    }
+
+    // 4. Live playhead needle
+    if (hasProgress) {
+      const px = clamp(progressX, startX + 1, startX + totalBarsW - 1);
+      ctx.save();
+      ctx.strokeStyle = pal.primary;
+      ctx.globalAlpha = 0.85;
+      ctx.lineWidth = 1.5;
+      ctx.beginPath();
+      ctx.moveTo(px, 4);
+      ctx.lineTo(px, H - 4);
+      ctx.stroke();
+      ctx.restore();
+    }
+  }
+
   function syncWaveVisuals() {
-    if (!cardEl || cardEl.hidden || collapsed || !selectedId || !byId.has(selectedId)) return;
+    if (!cardEl || cardEl.hidden || !selectedId || !byId.has(selectedId)) return;
     const t = byId.get(selectedId);
     const canvas = cardEl.querySelector("#mp-waveform");
     const wrapEl = cardEl.querySelector("#mp-wave-wrap");
@@ -483,6 +583,10 @@
     const pal = resolveWavePalette();
     const W = rect.width;
     const H = rect.height;
+    if (collapsed) {
+      drawMiniWaveform(ctx, W, H, t, snap, pal);
+      return;
+    }
     const barStep = 3;
     const barW = 2;
     const sidePad = 8;
@@ -648,7 +752,7 @@
     if (waveRafId !== null) return;
     function tick() {
       waveRafId = null;
-      if (!cardEl || cardEl.hidden || collapsed || !selectedId || !byId.has(selectedId)) return;
+      if (!cardEl || cardEl.hidden || !selectedId || !byId.has(selectedId)) return;
       if (typeof document !== "undefined" && document.hidden) return;
       const t = byId.get(selectedId);
       const snap = readPlaybackSnapshot(t);
@@ -752,6 +856,16 @@
       const ic = autoBtn.querySelector(".ms");
       if (ic) ic.textContent = snap.autoPlay ? "playlist_play" : "repeat";
     }
+    const copyBtn = cardEl.querySelector("#mp-copy-link");
+    if (copyBtn) {
+      const isCopied = copiedForId === t.id;
+      copyBtn.classList.toggle("is-copied", isCopied);
+      copyBtn.setAttribute("aria-label", isCopied ? "Link copied" : "Copy direct link to track");
+      const ic = copyBtn.querySelector(".ms");
+      const lbl = copyBtn.querySelector(".mp-copy-lbl");
+      if (ic) ic.textContent = isCopied ? "check" : "link";
+      if (lbl) lbl.textContent = isCopied ? "Copied" : "Copy link";
+    }
   }
 
   function render() {
@@ -759,6 +873,7 @@
     if (!selectedId || !byId.has(selectedId)) {
       cardEl.hidden = true;
       lastRenderedTrackId = null;
+      lastRenderedCollapsed = null;
       stopWaveRaf();
       return;
     }
@@ -771,9 +886,10 @@
     const isStar = starred.has(t.id);
 
     if (
-      !collapsed &&
       lastRenderedTrackId === t.id &&
-      (isWaveScrubbing ||
+      lastRenderedCollapsed === collapsed &&
+      (collapsed ||
+        isWaveScrubbing ||
         (formOpenForId === t.id &&
           typeof document !== "undefined" &&
           cardEl.contains(document.activeElement) &&
@@ -782,6 +898,7 @@
       syncInPlaceButtons(t, snap);
       syncWaveVisuals();
       if (isPlaying || isPend || isWaveScrubbing) ensureWaveRaf();
+      else stopWaveRaf();
       return;
     }
 
@@ -789,21 +906,27 @@
     cardEl.classList.toggle("is-collapsed", collapsed);
 
     if (collapsed) {
-      lastRenderedTrackId = null;
-      stopWaveRaf();
       cardEl.innerHTML = `
         <div class="mp-mini-row">
           <button type="button" class="btn-tonal mp-play ${isPlaying ? "is-playing" : ""}" data-player-play="${esc(t.id)}" aria-label="${isPlaying ? "Pause" : "Play"}" title="${isPlaying ? "Pause (Space)" : "Play (Space)"}">
             <span class="ms filled">${isPlaying ? "pause" : isPend ? "hourglass_top" : "play_arrow"}</span>
           </button>
-          <div class="mp-mini-title" title="${esc(t.title)}">${esc(t.title)}</div>
-          <button type="button" class="star-btn ${isStar ? "is-starred" : ""}" data-player-star="${esc(t.id)}" aria-pressed="${isStar}" aria-label="${isStar ? "Unstar track" : "Star track"}" title="${isStar ? "Remove star" : "Star track"}">
-            <span class="ms">star</span>
-          </button>
-          <button type="button" class="icon-btn" id="mp-expand" aria-label="Expand player" title="Expand player">
+          <div class="mp-wave-wrap mp-mini-wave-wrap" id="mp-wave-wrap" role="slider" tabindex="0" aria-label="Seek ${esc(t.title)}" aria-valuemin="0" aria-valuemax="${Math.round(snap.timelineDur)}" aria-valuenow="${Math.round(snap.currentTime)}" title="${esc(t.title)} — click or drag to seek">
+            <canvas id="mp-waveform" class="mp-wave-canvas mp-mini-wave-canvas" aria-hidden="true"></canvas>
+            <div class="mp-mini-title-overlay">
+              <span class="mp-mini-title">${esc(t.title)}</span>
+            </div>
+          </div>
+          <button type="button" class="icon-btn mp-expand-btn" id="mp-expand" aria-label="Expand player" title="Expand player">
             <span class="ms">expand_less</span>
           </button>
         </div>`;
+      lastRenderedTrackId = t.id;
+      lastRenderedCollapsed = true;
+      observeWaveWrap();
+      syncWaveVisuals();
+      if (isPlaying || isPend) ensureWaveRaf();
+      else stopWaveRaf();
       return;
     }
 
@@ -847,6 +970,10 @@
             <span class="ms">skip_previous</span>
             <span>0:00</span>
           </button>
+          <button type="button" class="mp-ctrl-btn ${copiedForId === t.id ? "is-copied" : ""}" id="mp-copy-link" data-player-copy-link="${esc(t.id)}" aria-label="${copiedForId === t.id ? "Link copied" : "Copy direct link to track"}" title="Copy direct link that opens &amp; plays this track">
+            <span class="ms">${copiedForId === t.id ? "check" : "link"}</span>
+            <span class="mp-copy-lbl">${copiedForId === t.id ? "Copied" : "Copy link"}</span>
+          </button>
           <button type="button" class="mp-ctrl-btn ${snap.autoPlay ? "is-active" : ""}" id="mp-autoplay-toggle" data-player-autoplay="1" aria-pressed="${snap.autoPlay}" aria-label="Auto-play similar tracks" title="${snap.autoPlay ? "Auto-play on: plays full track & 1s crossfades to nearest similar track (click to loop snippet)" : "Auto-play off: looping snippet window (click to enable Auto-play)"}">
             <span class="ms">${snap.autoPlay ? "playlist_play" : "repeat"}</span>
             <span>Auto-play</span>
@@ -878,6 +1005,7 @@
       ${buildTierActionsHtml(t)}`;
 
     lastRenderedTrackId = t.id;
+    lastRenderedCollapsed = false;
     observeWaveWrap();
     syncWaveVisuals();
     if (isPlaying || isPend) ensureWaveRaf();
@@ -983,6 +1111,66 @@
       window.ME_AUDIO.setAutoPlay(next);
     }
     render();
+  }
+
+  function buildTrackShareUrl(tid) {
+    const targetId = String(tid || selectedId || "");
+    if (!targetId) return "";
+    if (typeof window === "undefined" || !window.location) {
+      return `?track=${encodeURIComponent(targetId)}`;
+    }
+    const u = new URL(window.location.href);
+    u.search = "";
+    u.hash = "";
+    u.searchParams.set("track", targetId);
+    return u.toString();
+  }
+
+  async function copyTextToClipboard(text) {
+    if (!text) return false;
+    if (typeof navigator !== "undefined" && navigator.clipboard && typeof navigator.clipboard.writeText === "function") {
+      try {
+        await navigator.clipboard.writeText(text);
+        return true;
+      } catch (_) {}
+    }
+    if (typeof document !== "undefined" && document.body) {
+      const ta = document.createElement("textarea");
+      ta.value = text;
+      ta.setAttribute("readonly", "");
+      ta.style.position = "fixed";
+      ta.style.opacity = "0";
+      ta.style.pointerEvents = "none";
+      document.body.appendChild(ta);
+      ta.focus();
+      ta.select();
+      let ok = false;
+      try { ok = document.execCommand("copy"); } catch (_) {}
+      document.body.removeChild(ta);
+      return ok;
+    }
+    return false;
+  }
+
+  async function handleCopyTrackLink(tid) {
+    if (!tid || !byId.has(tid)) return;
+    const shareUrl = buildTrackShareUrl(tid);
+    if (!shareUrl) return;
+    if (typeof window !== "undefined" && window.history && typeof window.history.replaceState === "function") {
+      try { window.history.replaceState(null, "", shareUrl); } catch (_) {}
+    }
+    await copyTextToClipboard(shareUrl);
+    logPrivateTrackEvent("track-copy-link", byId.get(tid));
+    copiedForId = tid;
+    if (copiedTimer) clearTimeout(copiedTimer);
+    render();
+    copiedTimer = setTimeout(() => {
+      copiedTimer = null;
+      if (copiedForId === tid) {
+        copiedForId = null;
+        render();
+      }
+    }, 1800);
   }
 
   function handleRequestTrack(t) {
@@ -1162,12 +1350,14 @@
       }
       if (ev.target.closest("#mp-collapse")) {
         collapsed = true;
+        waveHoverFrac = null;
         saveCollapsed();
         render();
         return;
       }
       if (ev.target.closest("#mp-expand")) {
         collapsed = false;
+        waveHoverFrac = null;
         saveCollapsed();
         render();
         return;
@@ -1175,6 +1365,11 @@
       const restartBtn = ev.target.closest("[data-player-restart]");
       if (restartBtn) {
         handleRestartTrack(restartBtn.getAttribute("data-player-restart"));
+        return;
+      }
+      const copyLinkBtn = ev.target.closest("[data-player-copy-link]");
+      if (copyLinkBtn) {
+        handleCopyTrackLink(copyLinkBtn.getAttribute("data-player-copy-link"));
         return;
       }
       if (ev.target.closest("[data-player-autoplay]")) {
@@ -1291,11 +1486,12 @@
     starredSet: () => starred,
     starredCount: () => starred.size,
     isCollapsed: () => collapsed,
-    setCollapsed(v) { collapsed = Boolean(v); saveCollapsed(); render(); },
+    setCollapsed(v) { collapsed = Boolean(v); waveHoverFrac = null; saveCollapsed(); render(); },
     isInfoOpen: () => infoOpen,
     setInfoOpen(v) { infoOpen = Boolean(v); render(); },
     setWeb3FormsKey(k) { web3FormsKey = String(k || ""); render(); },
     refreshWaveform: syncWaveVisuals,
+    getShareUrl: (tid) => buildTrackShareUrl(tid || selectedId),
     logPrivateTrackEvent,
   };
 })();

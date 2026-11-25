@@ -880,12 +880,36 @@
     drawFloatingLabels();
   }
 
-  function focus(tid) {
+  function focus(tid, opts = {}) {
     if (!byId.has(tid)) return;
     stopMomentum();
+    const tr = byId.get(tid);
+    if (tr && isSketchHidden(tr)) {
+      showSketches = true;
+      if (layout === "era") {
+        computeTargetPositions();
+        nodes.forEach((n) => { n.x = n.tx; n.y = n.ty; });
+      }
+      buildEdges();
+    }
+    if (opts && opts.centerNode) {
+      const n = nodeById.get(tid);
+      if (n) {
+        const targetK = Math.max(1, Math.min(4, Number(opts.zoomK) || 1.85));
+        const anchorX = vw <= 840 ? vw * 0.5 : vw * 0.42;
+        const anchorY = vw <= 840 ? vh * 0.34 : vh * 0.45;
+        zoom = {
+          k: targetK,
+          x: anchorX - n.x * targetK,
+          y: anchorY - n.y * targetK,
+        };
+        clampZoom();
+      }
+    }
     selectedId = tid;
     if (window.BTMM_PLAYER) window.BTMM_PLAYER.select(tid, { silent: true });
     paint();
+    drawFloatingLabels();
   }
 
   function setLayout(nextLay, animate = true) {
