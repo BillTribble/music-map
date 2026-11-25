@@ -1007,7 +1007,7 @@
           <span class="badge badge-blue mono-num">${Math.round(t.bpm || 0)} BPM</span>
           ${t.is_ai ? '<span class="badge badge-indigo">Generative AI</span>' : ""}
           ${sketch ? '<span class="badge badge-amber">Sketch</span>' : ""}
-          ${wip ? '<span class="badge badge-teal mp-wip-badge">Work in progress</span>' : (!released ? '<span class="badge badge-purple">Unreleased</span>' : "")}
+          ${!released ? '<span class="badge badge-purple">Unreleased</span>' : ""}
         </div>
         ${Array.isArray(t.discogs_styles) && t.discogs_styles.length ? `
         <div class="mp-discogs-line">

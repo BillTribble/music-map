@@ -695,8 +695,8 @@ DEFAULT_EXCLUDED_IDS = {
     "ep_concepts_9", "ep_concepts_11", "ep_concepts_12", "ep_concepts_13",
     "ep_concepts_18", "ep_concepts_21", "ep_concepts_23", "ep_concepts_25", "ep_concepts_30",
     "archive_2013_18_105",
-    "present_electro_31", "present_electro_1", "present_electro_47", "present_electro_35",
-    "hd_2005_23", "hd_2005_48", "present_electro_61", "hd_2005_6", "psychedailies_6",
+    "present_electro_59", "present_electro_1", "present_electro_47", "present_electro_35",
+    "present_electro_51", "present_electro_53", "present_electro_62", "hd_2005_6", "psychedailies_6",
     "archive_2013_18_5", "archive_2013_18_60", "archive_2013_18_84", "archive_2018_23_53",
     "archive_2013_18_93", "archive_2013_18_94", "archive_2018_23_63",
 }

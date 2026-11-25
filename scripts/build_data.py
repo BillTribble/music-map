@@ -130,8 +130,10 @@ PRESENT_1997_2004_ORDERED_TRACKS: dict[str, tuple[int, list[str]]] = {
         "present_electro_3",   # Bethnal Green Sunset
         "present_electro_13",  # I Want 2 Rock Out
         "present_electro_25",  # Ultra Fx
-        "present_electro_51",  # pr3s3nt - Grimy
-        "present_electro_53",  # pr3s3nt - WAR hard mix
+        "present_electro_51",  # pr3s3nt - Grimy (lossy MP3 fallback if present)
+        "hd_2005_23",          # pr3s3nt - Grimy (lossless ALAC master)
+        "present_electro_53",  # pr3s3nt - WAR hard mix (lossy MP3 fallback if present)
+        "hd_2005_48",          # pr3s3nt - WAR hard mix (lossless ALAC master)
         "present_electro_60",  # The Pills
         "present_electro_28",  # 1st Idea (sketch)
     ]),
@@ -140,7 +142,7 @@ PRESENT_1997_2004_ORDERED_TRACKS: dict[str, tuple[int, list[str]]] = {
 PRESENT_1997_2004_ERA_MAP: dict[str, tuple[str, int, int]] = {}
 for _era_id, (_era_yr, _tids) in PRESENT_1997_2004_ORDERED_TRACKS.items():
     for _slot_idx, _tid in enumerate(_tids, start=1):
-        _yr = 1997 if _tid == "present_electro_41" else (2004 if _tid in {"present_electro_4", "present_electro_46", "present_electro_51", "present_electro_53", "present_electro_60"} else _era_yr)
+        _yr = 1997 if _tid == "present_electro_41" else (2004 if _tid in {"present_electro_4", "present_electro_46", "present_electro_51", "hd_2005_23", "present_electro_53", "hd_2005_48", "present_electro_60"} else _era_yr)
         PRESENT_1997_2004_ERA_MAP[_tid] = (_era_id, _yr, _slot_idx)
 
 
@@ -994,14 +996,18 @@ DEFAULT_EXCLUDED_IDS = {
     "ep_concepts_9", "ep_concepts_11", "ep_concepts_12", "ep_concepts_13",
     "ep_concepts_18", "ep_concepts_21", "ep_concepts_23", "ep_concepts_25", "ep_concepts_30",
     "archive_2013_18_105",
-    "present_electro_31", "present_electro_1", "present_electro_47", "present_electro_35",
-    "hd_2005_23", "hd_2005_48", "present_electro_61", "hd_2005_6", "psychedailies_6",
+    "present_electro_59", "present_electro_1", "present_electro_47", "present_electro_35",
+    "present_electro_51", "present_electro_53", "present_electro_62", "hd_2005_6", "psychedailies_6",
     "archive_2013_18_5", "archive_2013_18_60", "archive_2013_18_84", "archive_2018_23_53",
     "archive_2013_18_93", "archive_2013_18_94", "archive_2018_23_63",
 }
 
 TITLE_OVERRIDES = {
     "hd_2005_10": "pr3s3nt - As we Enter",
+    "present_electro_31": "The Importance of Having Compassion for Humans",
+    "present_electro_61": "tripping with Raymond and Stanley at cheese and wine parties",
+    "hd_2005_23": "pr3s3nt - Grimy",
+    "hd_2005_48": "pr3s3nt - WAR hard mix",
 }
 
 PRIVATE_TRACK_KEYS = (

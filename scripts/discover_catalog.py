@@ -178,6 +178,10 @@ EXCLUDED_EXACT_REL_PATHS = {
 }
 TITLE_OVERRIDES_BY_REL_PATH = {
     "me music - 2005 hard drive/as we enter mix2.m4a": "pr3s3nt - As we Enter",
+    "me archive/present trax/epic/compassion.wav": "The Importance of Having Compassion for Humans",
+    "me archive/present trax/mid tempo/tripping.wav": "tripping with Raymond and Stanley at cheese and wine parties",
+    "me music - 2005 hard drive/grimy ruffmix.m4a": "pr3s3nt - Grimy",
+    "me music - 2005 hard drive/war pr3s3nt mix hard.m4a": "pr3s3nt - WAR hard mix",
 }
 EXCLUDED_FILE_TOKENS = ("stem", "backing", "drumloop")
 EXCLUDED_EXACT_FILES = {"bass.wav", "vocals.wav", "perc.wav", "other.wav"}
