@@ -1,4 +1,4 @@
-// Asynchronous Cloudflare Worker + D1 Event Client (Stars, Unstars, Track Downloads & Requests)
+// Asynchronous Cloudflare Worker + D1 Event Client (Stars, Unstars, Qualified Plays, Track Downloads & Requests)
 // Zero cookies, zero PII, optimistic non-blocking transport (keepalive fetch + sendBeacon fallback).
 (function () {
   "use strict";
@@ -8,6 +8,8 @@
   const LEGACY_STAR_KEY = "me.starred";
   const STAR_DEBOUNCE_MS = 650;
   const DL_DEDUP_MS = 1500;
+  const PLAY_SAMPLE_MS = 250;
+  const MIN_PLAY_DELTA_FLUSH_SEC = 1.0;
 
   // Populated at deploy time once Cloudflare Worker URL is live; overridable via window.BTMM_EVENTS_API_URL
   const DEFAULT_API_BASE = "https://music-map-events.billtribble.workers.dev";
@@ -23,6 +25,26 @@
   let sessionHashSync = "";
   let sessionHashPromise = null;
   let volatileSeed = "";
+
+  // Qualified Play Session State (>= 10s real audible playback, or >= 50% for < 20s clips)
+  let activePlaySession = null;
+  let playTickTimer = null;
+  let audioDeckBound = false;
+  let lastTrackIntent = { trackId: null, source: "manual", atMs: 0 };
+
+  function nowWallMs() {
+    return typeof performance !== "undefined" && typeof performance.now === "function"
+      ? performance.now()
+      : Date.now();
+  }
+
+  function computeQualifyThresholdSec(trackDurationSec) {
+    const dur = Number(trackDurationSec) || 0;
+    if (dur > 0) {
+      return Math.min(10.0, Math.max(3.0, 0.5 * dur));
+    }
+    return 10.0;
+  }
 
   function getApiBase() {
     if (typeof window !== "undefined") {
@@ -387,22 +409,311 @@
     recordDownload(track, dlKind, source, href);
   }
 
+  function stopPlayTickTimer() {
+    if (playTickTimer !== null) {
+      clearInterval(playTickTimer);
+      playTickTimer = null;
+    }
+  }
+
+  function ensurePlayTickTimer() {
+    if (playTickTimer !== null) return;
+    playTickTimer = setInterval(sampleActivePlayback, PLAY_SAMPLE_MS);
+  }
+
+  function createPlaySession(track, source) {
+    return {
+      playId: `pl_${randomHex(8)}`,
+      trackId: track.id,
+      track,
+      source: source === "autoplay" ? "autoplay" : "manual",
+      startedWallMs: nowWallMs(),
+      audibleSec: 0,
+      reportedSec: 0,
+      qualified: false,
+      lastSampleWallMs: 0,
+      lastMediaTime: null,
+      wasPlaying: false,
+    };
+  }
+
+  function flushPlaySessionProgress(session, useBeacon = false) {
+    if (!session || !session.qualified || !session.track || !session.track.id) return null;
+    const totalSec = Math.round(session.audibleSec * 100) / 100;
+    if (totalSec - session.reportedSec < MIN_PLAY_DELTA_FLUSH_SEC) return null;
+    session.reportedSec = totalSec;
+    return postEventPayload(
+      {
+        track_id: session.track.id,
+        track_title: session.track.title || session.track.id,
+        era: resolveEraLabel(session.track),
+        event_type: "play_end",
+        source: session.source,
+        play_id: session.playId,
+        listened_sec: totalSec,
+      },
+      useBeacon
+    );
+  }
+
+  function finalizePlaySession(useBeacon = false) {
+    if (!activePlaySession) {
+      stopPlayTickTimer();
+      return null;
+    }
+    const outgoing = activePlaySession;
+    activePlaySession = null;
+    stopPlayTickTimer();
+    return flushPlaySessionProgress(outgoing, useBeacon);
+  }
+
+  function sampleActivePlayback() {
+    if (typeof window === "undefined" || !window.ME_AUDIO) return;
+    const ma = window.ME_AUDIO;
+    const voice = typeof ma.activeVoice === "function" ? ma.activeVoice() : null;
+    if (!voice || voice.disposed || !voice.htmlAudio || !voice.trackId) {
+      if (activePlaySession) {
+        activePlaySession.wasPlaying = false;
+        activePlaySession.lastSampleWallMs = 0;
+        activePlaySession.lastMediaTime = null;
+      }
+      stopPlayTickTimer();
+      return;
+    }
+
+    const tid = voice.trackId;
+    if (!activePlaySession || activePlaySession.trackId !== tid) {
+      if (activePlaySession) {
+        finalizePlaySession(false);
+      }
+      const tr = resolveTrack(voice.track || tid);
+      if (!tr || !tr.id) return;
+      const inferredSource =
+        lastTrackIntent.trackId === tid && nowWallMs() - lastTrackIntent.atMs < 3000
+          ? lastTrackIntent.source
+          : "manual";
+      activePlaySession = createPlaySession(tr, inferredSource);
+    }
+    ensurePlayTickTimer();
+
+    const el = voice.htmlAudio;
+    const audioEnabled = typeof ma.isEnabled === "function" ? Boolean(ma.isEnabled()) : true;
+    const masterVol = typeof ma.getVolume === "function" ? Number(ma.getVolume()) : 1;
+    const isAudible = Boolean(
+      !el.paused &&
+      !el.ended &&
+      !el.muted &&
+      el.readyState >= 2 &&
+      audioEnabled &&
+      masterVol > 0.001
+    );
+
+    const now = nowWallMs();
+    const curMediaTime = Number(el.currentTime) || 0;
+
+    if (isAudible) {
+      if (
+        activePlaySession.wasPlaying &&
+        activePlaySession.lastSampleWallMs > 0 &&
+        activePlaySession.lastMediaTime !== null
+      ) {
+        const wallDt = Math.max(0, (now - activePlaySession.lastSampleWallMs) / 1000);
+        const mediaDt = curMediaTime - activePlaySession.lastMediaTime;
+        if (wallDt > 0 && wallDt <= 4.0) {
+          if (mediaDt > 0 && mediaDt <= wallDt * 1.45 + 0.25) {
+            activePlaySession.audibleSec += Math.min(wallDt, mediaDt);
+          } else if (mediaDt < 0 && wallDt <= 1.25) {
+            // Seamless snippet loop wraparound while continuously playing
+            activePlaySession.audibleSec += Math.min(wallDt, 0.35);
+          }
+        }
+      }
+      activePlaySession.wasPlaying = true;
+      activePlaySession.lastSampleWallMs = now;
+      activePlaySession.lastMediaTime = curMediaTime;
+
+      const mediaDur =
+        (Number.isFinite(el.duration) && el.duration > 0 ? el.duration : 0) ||
+        Number(activePlaySession.track.full_duration_sec) ||
+        Number(activePlaySession.track.duration_sec) ||
+        0;
+      const thresholdSec = computeQualifyThresholdSec(mediaDur);
+
+      if (!activePlaySession.qualified && activePlaySession.audibleSec >= thresholdSec) {
+        activePlaySession.qualified = true;
+        const qualifiedListenSec = Math.round(activePlaySession.audibleSec * 100) / 100;
+        activePlaySession.reportedSec = qualifiedListenSec;
+        postEventPayload(
+          {
+            track_id: activePlaySession.track.id,
+            track_title: activePlaySession.track.title || activePlaySession.track.id,
+            era: resolveEraLabel(activePlaySession.track),
+            event_type: "play",
+            source: activePlaySession.source,
+            play_id: activePlaySession.playId,
+            listened_sec: qualifiedListenSec,
+          },
+          false
+        );
+      }
+    } else {
+      activePlaySession.wasPlaying = false;
+      activePlaySession.lastSampleWallMs = now;
+      activePlaySession.lastMediaTime = curMediaTime;
+    }
+  }
+
+  function beginTrackPlaySession(trackOrId, source) {
+    const track = resolveTrack(trackOrId);
+    if (!track || !track.id) return;
+    const normSource = source === "autoplay" ? "autoplay" : "manual";
+
+    sampleActivePlayback();
+
+    if (activePlaySession && activePlaySession.trackId === track.id) {
+      // Same track resumed from pause: preserve accumulated audible time in the same play_id
+      activePlaySession.wasPlaying = false;
+      activePlaySession.lastSampleWallMs = 0;
+      activePlaySession.lastMediaTime = null;
+      if (!activePlaySession.qualified && nowWallMs() - activePlaySession.startedWallMs < 2500) {
+        activePlaySession.source = normSource;
+      }
+      ensurePlayTickTimer();
+      return;
+    }
+
+    if (activePlaySession) {
+      finalizePlaySession(false);
+    }
+
+    activePlaySession = createPlaySession(track, normSource);
+    ensurePlayTickTimer();
+  }
+
+  function ensureAudioDeckBound() {
+    if (audioDeckBound || typeof window === "undefined" || !window.ME_AUDIO) return;
+    const ma = window.ME_AUDIO;
+    audioDeckBound = true;
+
+    if (typeof ma.playTrack === "function" && !ma.playTrack.__btmmWrapped) {
+      const origPlayTrack = ma.playTrack;
+      const wrappedPlayTrack = function (trackOrId, opts = {}) {
+        const isAuto = Boolean(
+          opts && (opts.fromAutoPlay || (typeof opts.stopIdx === "number" && opts.stopIdx >= 0 && !opts.isManual))
+        );
+        const source = isAuto ? "autoplay" : "manual";
+        lastTrackIntent = {
+          trackId: typeof trackOrId === "object" && trackOrId ? trackOrId.id : String(trackOrId || ""),
+          source,
+          atMs: nowWallMs(),
+        };
+        beginTrackPlaySession(trackOrId, source);
+        const res = origPlayTrack.call(ma, trackOrId, opts);
+        ensurePlayTickTimer();
+        return res;
+      };
+      wrappedPlayTrack.__btmmWrapped = true;
+      ma.playTrack = wrappedPlayTrack;
+    }
+
+    if (typeof ma.stop === "function" && !ma.stop.__btmmWrapped) {
+      const origStop = ma.stop;
+      const wrappedStop = function () {
+        sampleActivePlayback();
+        finalizePlaySession(false);
+        return origStop.apply(ma, arguments);
+      };
+      wrappedStop.__btmmWrapped = true;
+      ma.stop = wrappedStop;
+    }
+
+    if (typeof ma.onStateChange === "function") {
+      ma.onStateChange(() => {
+        sampleActivePlayback();
+        if (typeof ma.playing === "function" && ma.playing()) {
+          ensurePlayTickTimer();
+        }
+      });
+    }
+  }
+
+  function notifyTrackIntent(trackOrId, opts = {}) {
+    ensureAudioDeckBound();
+    if (!trackOrId) {
+      sampleActivePlayback();
+      finalizePlaySession(false);
+      return;
+    }
+    const track = resolveTrack(trackOrId);
+    if (!track || !track.id) return;
+    const source = opts && opts.source === "autoplay" ? "autoplay" : "manual";
+    lastTrackIntent = { trackId: track.id, source, atMs: nowWallMs() };
+    if (
+      activePlaySession &&
+      activePlaySession.trackId === track.id &&
+      !activePlaySession.qualified &&
+      nowWallMs() - activePlaySession.startedWallMs < 5000
+    ) {
+      activePlaySession.source = source;
+    }
+    if (typeof window !== "undefined" && window.ME_AUDIO && typeof window.ME_AUDIO.playing === "function" && window.ME_AUDIO.playing()) {
+      ensurePlayTickTimer();
+    }
+  }
+
+  async function fetchPopular(opts = {}) {
+    const base = getApiBase();
+    if (!base) return null;
+    const range = encodeURIComponent(String(opts.range || "all"));
+    const limit = encodeURIComponent(String(opts.limit || 200));
+    const fresh = opts.fresh ? "&fresh=1" : "";
+    try {
+      const resp = await fetch(`${base}/api/popular?range=${range}&limit=${limit}${fresh}`, {
+        method: "GET",
+        mode: "cors",
+        credentials: "omit",
+      });
+      if (!resp.ok) return null;
+      return await resp.json().catch(() => null);
+    } catch (_) {
+      return null;
+    }
+  }
+
   function init() {
     hydrateCatalogIndex();
     ensureSessionHash();
+    ensureAudioDeckBound();
 
     if (typeof document !== "undefined") {
+      if (document.readyState === "loading") {
+        document.addEventListener("DOMContentLoaded", () => {
+          hydrateCatalogIndex();
+          ensureAudioDeckBound();
+        });
+      } else {
+        setTimeout(() => {
+          hydrateCatalogIndex();
+          ensureAudioDeckBound();
+        }, 0);
+      }
       document.addEventListener("click", handleDelegatedAnchorDownload, true);
       document.addEventListener("auxclick", handleDelegatedAnchorDownload, true);
       document.addEventListener("visibilitychange", () => {
         if (document.visibilityState === "hidden") {
           flushAllPendingStars(true);
+          sampleActivePlayback();
+          if (activePlaySession) {
+            flushPlaySessionProgress(activePlaySession, true);
+          }
         }
       });
     }
     if (typeof window !== "undefined") {
       window.addEventListener("pagehide", () => {
         flushAllPendingStars(true);
+        sampleActivePlayback();
+        finalizePlaySession(true);
       });
     }
   }
@@ -415,7 +726,26 @@
       recordStarToggle,
       recordDownload,
       recordRequest,
+      notifyTrackIntent,
+      fetchPopular,
       flushAllPendingStars,
+      flushActivePlay: (useBeacon = false) => {
+        sampleActivePlayback();
+        return finalizePlaySession(Boolean(useBeacon));
+      },
+      getPlaySessionState: () => {
+        sampleActivePlayback();
+        if (!activePlaySession) return null;
+        return {
+          playId: activePlaySession.playId,
+          trackId: activePlaySession.trackId,
+          source: activePlaySession.source,
+          audibleSec: Math.round(activePlaySession.audibleSec * 100) / 100,
+          reportedSec: activePlaySession.reportedSec,
+          qualified: activePlaySession.qualified,
+        };
+      },
+      computeQualifyThresholdSec,
       getSessionHash: () => ensureSessionHash(),
     };
   }

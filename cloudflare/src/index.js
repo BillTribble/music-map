@@ -1,24 +1,30 @@
 /**
  * Cloudflare Worker + D1 Backend for Bill Tribble Music Map
- * - Logs Star, Unstar, Track Download (MP3 / FLAC / Audio), and Track Request events in D1
- * - Sends instant email notifications on Track Star & Track Download (Resend API + Cloudflare Email Routing)
+ * - Logs Star, Unstar, Track Download (MP3 / FLAC / Audio), Qualified Play (manual vs autoplay + listened_sec),
+ *   and Track Request events in D1
+ * - Sends instant email notifications strictly on Track Star, Track Download, & Track Request (NEVER on Plays)
  *   with per-session & per-IP anti-spam deduplication
- * - Serves sanitized aggregate Hot List JSON (/api/hotlist) for billtribble.github.io/stats/
+ * - Serves cached weighted Popularity Score (/api/popular) and aggregate Hot List (/api/hotlist)
  */
 
-const VALID_EVENT_TYPES = new Set(["star", "unstar", "download", "request"]);
+const VALID_EVENT_TYPES = new Set(["star", "unstar", "download", "request", "play", "play_end"]);
+const VALID_PLAY_SOURCES = new Set(["manual", "autoplay"]);
+const VALID_RANGES = new Set(["today", "7d", "30d", "90d", "all"]);
 const TRACK_ID_RE = /^[a-zA-Z0-9_.:-]{1,120}$/;
 const SESSION_HASH_RE = /^[a-f0-9]{12,64}$/i;
+const PLAY_ID_RE = /^[a-zA-Z0-9_-]{6,64}$/;
 const EMAIL_RE = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
 
 const STAR_EMAIL_COOLDOWN_SEC = 12 * 3600;     // 12h per (session_hash, track_id) prevents ★/☆ toggle spam
 const DOWNLOAD_EMAIL_COOLDOWN_SEC = 10 * 60;   // 10m per (session_hash, track_id, format) prevents double-click dupes
 const REQUEST_EMAIL_COOLDOWN_SEC = 300;        // 5m per (session_hash, track_id, requester_email) prevents accidental double-submit
 const IP_EMAIL_HOURLY_CAP = 15;                // Max 15 notification emails/hr per hashed IP
-const IP_EVENTS_PER_MIN_CAP = 60;              // Max 60 event writes/min per hashed IP
+const IP_EVENTS_PER_MIN_CAP = 90;              // Max 90 event writes/min per hashed IP
+const POPULAR_CACHE_TTL_MS = 15 * 1000;        // 15s edge/isolate cache for /api/popular (cleared on write)
 
 let schemaInitialized = false;
 const devOutbox = [];
+const popularCache = new Map();
 
 function escHtml(val) {
   return String(val ?? "")
@@ -101,9 +107,11 @@ async function ensureSchema(db) {
         track_id TEXT NOT NULL,
         track_title TEXT NOT NULL,
         era TEXT NOT NULL DEFAULT '',
-        event_type TEXT NOT NULL CHECK (event_type IN ('star', 'unstar', 'download', 'request')),
+        event_type TEXT NOT NULL CHECK (event_type IN ('star', 'unstar', 'download', 'request', 'play')),
         format TEXT NOT NULL DEFAULT '',
         source TEXT NOT NULL DEFAULT '',
+        play_id TEXT NOT NULL DEFAULT '',
+        listened_sec REAL NOT NULL DEFAULT 0,
         session_hash TEXT NOT NULL,
         ip_hash TEXT NOT NULL DEFAULT '',
         country TEXT NOT NULL DEFAULT '',
@@ -112,9 +120,6 @@ async function ensureSchema(db) {
         created_at TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%SZ', 'now'))
       )
     `),
-    db.prepare(`CREATE INDEX IF NOT EXISTS idx_mm_events_created ON music_map_events(created_at DESC, id DESC)`),
-    db.prepare(`CREATE INDEX IF NOT EXISTS idx_mm_events_track ON music_map_events(track_id, event_type)`),
-    db.prepare(`CREATE INDEX IF NOT EXISTS idx_mm_events_ip_window ON music_map_events(ip_hash, created_at DESC)`),
     db.prepare(`
       CREATE TABLE IF NOT EXISTS music_map_track_stars (
         track_id TEXT NOT NULL,
@@ -127,6 +132,17 @@ async function ensureSchema(db) {
     `),
     db.prepare(`CREATE INDEX IF NOT EXISTS idx_mm_stars_track ON music_map_track_stars(track_id)`),
     db.prepare(`
+      CREATE TABLE IF NOT EXISTS music_map_track_listeners (
+        track_id TEXT NOT NULL,
+        session_hash TEXT NOT NULL,
+        first_played_at TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%SZ', 'now')),
+        last_played_at TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%SZ', 'now')),
+        play_count INTEGER NOT NULL DEFAULT 1,
+        PRIMARY KEY (track_id, session_hash)
+      )
+    `),
+    db.prepare(`CREATE INDEX IF NOT EXISTS idx_mm_listeners_track ON music_map_track_listeners(track_id)`),
+    db.prepare(`
       CREATE TABLE IF NOT EXISTS music_map_track_totals (
         track_id TEXT PRIMARY KEY,
         track_title TEXT NOT NULL,
@@ -137,8 +153,14 @@ async function ensureSchema(db) {
         mp3_downloads INTEGER NOT NULL DEFAULT 0,
         flac_downloads INTEGER NOT NULL DEFAULT 0,
         total_requests INTEGER NOT NULL DEFAULT 0,
+        total_plays INTEGER NOT NULL DEFAULT 0,
+        manual_plays INTEGER NOT NULL DEFAULT 0,
+        autoplay_plays INTEGER NOT NULL DEFAULT 0,
+        unique_listeners INTEGER NOT NULL DEFAULT 0,
+        total_listen_sec REAL NOT NULL DEFAULT 0,
         last_starred_at TEXT,
         last_downloaded_at TEXT,
+        last_played_at TEXT,
         updated_at TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%SZ', 'now'))
       )
     `),
@@ -166,6 +188,75 @@ async function ensureSchema(db) {
     db.prepare(`CREATE INDEX IF NOT EXISTS idx_mm_requests_created ON music_map_requests(created_at DESC, id DESC)`),
     db.prepare(`CREATE INDEX IF NOT EXISTS idx_mm_requests_track ON music_map_requests(track_id, created_at DESC)`),
   ]);
+
+  // Self-heal any legacy v1 tables missing 'play' CHECK or play rollup columns
+  const ddlRows = await db
+    .prepare(`SELECT name, sql FROM sqlite_master WHERE type = 'table' AND name IN ('music_map_events', 'music_map_track_totals')`)
+    .all();
+  const ddlByName = new Map(((ddlRows && ddlRows.results) || []).map((r) => [r.name, String(r.sql || "")]));
+
+  const eventsDdl = ddlByName.get("music_map_events") || "";
+  if (eventsDdl && (!eventsDdl.includes("'play'") || !eventsDdl.includes("listened_sec") || !eventsDdl.includes("play_id"))) {
+    await db.batch([
+      db.prepare(`DROP TABLE IF EXISTS music_map_events_v2`),
+      db.prepare(`
+        CREATE TABLE music_map_events_v2 (
+          id INTEGER PRIMARY KEY AUTOINCREMENT,
+          track_id TEXT NOT NULL,
+          track_title TEXT NOT NULL,
+          era TEXT NOT NULL DEFAULT '',
+          event_type TEXT NOT NULL CHECK (event_type IN ('star', 'unstar', 'download', 'request', 'play')),
+          format TEXT NOT NULL DEFAULT '',
+          source TEXT NOT NULL DEFAULT '',
+          play_id TEXT NOT NULL DEFAULT '',
+          listened_sec REAL NOT NULL DEFAULT 0,
+          session_hash TEXT NOT NULL,
+          ip_hash TEXT NOT NULL DEFAULT '',
+          country TEXT NOT NULL DEFAULT '',
+          referrer TEXT NOT NULL DEFAULT '',
+          note TEXT NOT NULL DEFAULT '',
+          created_at TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%SZ', 'now'))
+        )
+      `),
+      db.prepare(`
+        INSERT INTO music_map_events_v2 (
+          id, track_id, track_title, era, event_type, format, source,
+          session_hash, ip_hash, country, referrer, note, created_at
+        )
+        SELECT
+          id, track_id, track_title, era, event_type, format, source,
+          session_hash, ip_hash, country, referrer, note, created_at
+        FROM music_map_events
+      `),
+      db.prepare(`DROP TABLE music_map_events`),
+      db.prepare(`ALTER TABLE music_map_events_v2 RENAME TO music_map_events`),
+    ]);
+  }
+
+  const totalsDdl = ddlByName.get("music_map_track_totals") || "";
+  if (totalsDdl && !totalsDdl.includes("total_plays")) {
+    const alterStmts = [
+      ["total_plays", "ALTER TABLE music_map_track_totals ADD COLUMN total_plays INTEGER NOT NULL DEFAULT 0"],
+      ["manual_plays", "ALTER TABLE music_map_track_totals ADD COLUMN manual_plays INTEGER NOT NULL DEFAULT 0"],
+      ["autoplay_plays", "ALTER TABLE music_map_track_totals ADD COLUMN autoplay_plays INTEGER NOT NULL DEFAULT 0"],
+      ["unique_listeners", "ALTER TABLE music_map_track_totals ADD COLUMN unique_listeners INTEGER NOT NULL DEFAULT 0"],
+      ["total_listen_sec", "ALTER TABLE music_map_track_totals ADD COLUMN total_listen_sec REAL NOT NULL DEFAULT 0"],
+      ["last_played_at", "ALTER TABLE music_map_track_totals ADD COLUMN last_played_at TEXT"],
+    ]
+      .filter(([col]) => !totalsDdl.includes(col))
+      .map(([, sql]) => db.prepare(sql));
+    if (alterStmts.length) {
+      await db.batch(alterStmts);
+    }
+  }
+
+  await db.batch([
+    db.prepare(`CREATE INDEX IF NOT EXISTS idx_mm_events_created ON music_map_events(created_at DESC, id DESC)`),
+    db.prepare(`CREATE INDEX IF NOT EXISTS idx_mm_events_track ON music_map_events(track_id, event_type)`),
+    db.prepare(`CREATE INDEX IF NOT EXISTS idx_mm_events_ip_window ON music_map_events(ip_hash, created_at DESC)`),
+    db.prepare(`CREATE INDEX IF NOT EXISTS idx_mm_events_play_lookup ON music_map_events(track_id, session_hash, play_id)`),
+  ]);
+
   schemaInitialized = true;
 }
 
@@ -547,7 +638,8 @@ function isSuccessfulDelivery(deliveryStatus) {
 }
 
 async function maybeSendNotification(ev, totals, wasNewlyStarred, env) {
-  if (ev.event_type === "unstar") return;
+  // Strictly NEVER send email notifications on play, play_end, or unstar events
+  if (ev.event_type === "unstar" || ev.event_type === "play" || ev.event_type === "play_end") return;
   if (ev.event_type === "star" && !wasNewlyStarred) return;
 
   const nowEpoch = Math.floor(Date.now() / 1000);
@@ -699,8 +791,29 @@ async function handlePostEvent(request, env, ctx, corsHeaders) {
     }
   }
 
-  const format = normalizeFormat(body.format, eventType);
+  const isPlayFamily = eventType === "play" || eventType === "play_end";
   const publicEventNote = eventType === "request" ? "" : rawNote.slice(0, 360);
+  let playSource = "";
+  let playId = "";
+  let listenedSec = 0;
+
+  if (isPlayFamily) {
+    const rawSourceLower = source.toLowerCase();
+    if (rawSourceLower && !VALID_PLAY_SOURCES.has(rawSourceLower)) {
+      return jsonResponse({ ok: false, error: "Invalid play source" }, 400, corsHeaders);
+    }
+    playSource = rawSourceLower === "autoplay" ? "autoplay" : "manual";
+    const rawPlayId = stripCrLf(body.play_id, 64);
+    if (rawPlayId && PLAY_ID_RE.test(rawPlayId)) {
+      playId = rawPlayId;
+    }
+    const rawListen = Number(body.listened_sec);
+    listenedSec = Number.isFinite(rawListen)
+      ? Math.round(Math.max(0, Math.min(3600, rawListen)) * 100) / 100
+      : 0;
+  }
+
+  const format = isPlayFamily ? "" : normalizeFormat(body.format, eventType);
 
   const ipRaw = request.headers.get("cf-connecting-ip") || "0.0.0.0";
   const salt = String(env.IP_HASH_SALT || "btmm-d1-default-salt-v1");
@@ -729,6 +842,84 @@ async function handlePostEvent(request, env, ctx, corsHeaders) {
     .first();
   if (Number((rateRow && rateRow.cnt) || 0) >= IP_EVENTS_PER_MIN_CAP) {
     return jsonResponse({ ok: false, error: "Rate limit exceeded" }, 429, corsHeaders);
+  }
+
+  // Handle play completion delta (or idempotent same-play_id update) without double-counting plays
+  if (isPlayFamily) {
+    let existingPlay = null;
+    if (playId) {
+      existingPlay = await env.DB.prepare(
+        `SELECT id, listened_sec FROM music_map_events
+         WHERE track_id = ? AND session_hash = ? AND play_id = ? AND event_type = 'play'
+         ORDER BY id DESC LIMIT 1`
+      )
+        .bind(trackId, sessionHash, playId)
+        .first();
+    }
+
+    if (existingPlay) {
+      const prevSec = Number(existingPlay.listened_sec || 0);
+      const nextSec = Math.max(prevSec, listenedSec);
+      const deltaSec = Math.round(Math.max(0, nextSec - prevSec) * 100) / 100;
+      if (deltaSec > 0) {
+        await env.DB.batch([
+          env.DB.prepare(`UPDATE music_map_events SET listened_sec = ? WHERE id = ?`).bind(
+            nextSec,
+            existingPlay.id
+          ),
+          env.DB.prepare(
+            `UPDATE music_map_track_totals
+             SET total_listen_sec = ROUND(total_listen_sec + ?, 2),
+                 updated_at = ?
+             WHERE track_id = ?`
+          ).bind(deltaSec, nowIso, trackId),
+          env.DB.prepare(
+            `UPDATE music_map_track_listeners
+             SET last_played_at = ?
+             WHERE track_id = ? AND session_hash = ?`
+          ).bind(nowIso, trackId, sessionHash),
+        ]);
+        popularCache.clear();
+      }
+      const curTotals = (await env.DB.prepare(
+        `SELECT active_stars, total_downloads, mp3_downloads, flac_downloads, total_requests,
+                total_plays, manual_plays, autoplay_plays, unique_listeners, total_listen_sec
+         FROM music_map_track_totals WHERE track_id = ?`
+      )
+        .bind(trackId)
+        .first()) || {};
+      return jsonResponse(
+        {
+          ok: true,
+          track_id: trackId,
+          event_type: eventType,
+          play_updated: true,
+          listened_sec: nextSec,
+          active_stars: Number(curTotals.active_stars || 0),
+          total_downloads: Number(curTotals.total_downloads || 0),
+          total_plays: Number(curTotals.total_plays || 0),
+          manual_plays: Number(curTotals.manual_plays || 0),
+          autoplay_plays: Number(curTotals.autoplay_plays || 0),
+          unique_listeners: Number(curTotals.unique_listeners || 0),
+          total_listen_sec: Number(curTotals.total_listen_sec || 0),
+        },
+        200,
+        corsHeaders
+      );
+    }
+
+    if (eventType === "play_end") {
+      return jsonResponse(
+        {
+          ok: true,
+          track_id: trackId,
+          event_type: "play_end",
+          play_updated: false,
+        },
+        200,
+        corsHeaders
+      );
+    }
   }
 
   // Ensure track totals row exists
@@ -810,12 +1001,39 @@ async function handlePostEvent(request, env, ctx, corsHeaders) {
     )
       .bind(nowIso, trackId)
       .run();
+  } else if (eventType === "play") {
+    const isManual = playSource === "manual" ? 1 : 0;
+    const isAutoplay = playSource === "autoplay" ? 1 : 0;
+
+    await env.DB.prepare(
+      `INSERT INTO music_map_track_listeners (track_id, session_hash, first_played_at, last_played_at, play_count)
+       VALUES (?, ?, ?, ?, 1)
+       ON CONFLICT(track_id, session_hash) DO UPDATE SET
+         last_played_at = excluded.last_played_at,
+         play_count = music_map_track_listeners.play_count + 1`
+    )
+      .bind(trackId, sessionHash, nowIso, nowIso)
+      .run();
+
+    await env.DB.prepare(
+      `UPDATE music_map_track_totals
+       SET total_plays = total_plays + 1,
+           manual_plays = manual_plays + ?,
+           autoplay_plays = autoplay_plays + ?,
+           unique_listeners = (SELECT COUNT(*) FROM music_map_track_listeners WHERE track_id = ?),
+           total_listen_sec = ROUND(total_listen_sec + ?, 2),
+           last_played_at = ?,
+           updated_at = ?
+       WHERE track_id = ?`
+    )
+      .bind(isManual, isAutoplay, trackId, listenedSec, nowIso, nowIso, trackId)
+      .run();
   }
 
   await env.DB.prepare(
     `INSERT INTO music_map_events
-       (track_id, track_title, era, event_type, format, source, session_hash, ip_hash, country, referrer, note, created_at)
-     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
+       (track_id, track_title, era, event_type, format, source, play_id, listened_sec, session_hash, ip_hash, country, referrer, note, created_at)
+     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
   )
     .bind(
       trackId,
@@ -823,7 +1041,9 @@ async function handlePostEvent(request, env, ctx, corsHeaders) {
       era,
       eventType,
       format,
-      source,
+      eventType === "play" ? playSource : source,
+      playId,
+      listenedSec,
       sessionHash,
       ipHash,
       country,
@@ -833,8 +1053,11 @@ async function handlePostEvent(request, env, ctx, corsHeaders) {
     )
     .run();
 
+  popularCache.clear();
+
   const totals = (await env.DB.prepare(
-    `SELECT active_stars, total_star_events, total_downloads, mp3_downloads, flac_downloads, total_requests
+    `SELECT active_stars, total_star_events, total_downloads, mp3_downloads, flac_downloads, total_requests,
+            total_plays, manual_plays, autoplay_plays, unique_listeners, total_listen_sec
      FROM music_map_track_totals
      WHERE track_id = ?`
   )
@@ -846,29 +1069,37 @@ async function handlePostEvent(request, env, ctx, corsHeaders) {
     mp3_downloads: 0,
     flac_downloads: 0,
     total_requests: 0,
+    total_plays: 0,
+    manual_plays: 0,
+    autoplay_plays: 0,
+    unique_listeners: 0,
+    total_listen_sec: 0,
   };
 
-  const eventRecord = {
-    track_id: trackId,
-    track_title: trackTitle,
-    era,
-    event_type: eventType,
-    format,
-    source,
-    session_hash: sessionHash,
-    ip_hash: ipHash,
-    country,
-    requester_email: requesterEmail,
-    note: rawNote,
-    created_at: nowIso,
-  };
+  // Strictly NEVER trigger email notifications on play / unstar events
+  if (eventType === "star" || eventType === "download" || eventType === "request") {
+    const eventRecord = {
+      track_id: trackId,
+      track_title: trackTitle,
+      era,
+      event_type: eventType,
+      format,
+      source,
+      session_hash: sessionHash,
+      ip_hash: ipHash,
+      country,
+      requester_email: requesterEmail,
+      note: rawNote,
+      created_at: nowIso,
+    };
 
-  if (ctx && typeof ctx.waitUntil === "function") {
-    ctx.waitUntil(
-      maybeSendNotification(eventRecord, totals, wasNewlyStarred, env).catch(() => {})
-    );
-  } else {
-    await maybeSendNotification(eventRecord, totals, wasNewlyStarred, env).catch(() => {});
+    if (ctx && typeof ctx.waitUntil === "function") {
+      ctx.waitUntil(
+        maybeSendNotification(eventRecord, totals, wasNewlyStarred, env).catch(() => {})
+      );
+    } else {
+      await maybeSendNotification(eventRecord, totals, wasNewlyStarred, env).catch(() => {});
+    }
   }
 
   return jsonResponse(
@@ -881,10 +1112,20 @@ async function handlePostEvent(request, env, ctx, corsHeaders) {
       mp3_downloads: Number(totals.mp3_downloads || 0),
       flac_downloads: Number(totals.flac_downloads || 0),
       total_requests: Number(totals.total_requests || 0),
+      total_plays: Number(totals.total_plays || 0),
+      manual_plays: Number(totals.manual_plays || 0),
+      autoplay_plays: Number(totals.autoplay_plays || 0),
+      unique_listeners: Number(totals.unique_listeners || 0),
+      total_listen_sec: Number(totals.total_listen_sec || 0),
     },
     200,
     corsHeaders
   );
+}
+
+function normalizeRangeKey(raw) {
+  const r = String(raw || "all").toLowerCase();
+  return VALID_RANGES.has(r) ? r : "all";
 }
 
 function rangeToSinceIso(rangeKey) {
@@ -903,14 +1144,306 @@ function rangeToSinceIso(rangeKey) {
   }
 }
 
+function computePopularityScore({
+  stars = 0,
+  downloads = 0,
+  uniqueListeners = 0,
+  manualPlays = 0,
+  autoplayPlays = 0,
+}) {
+  const raw =
+    Number(stars || 0) * 5 +
+    Number(downloads || 0) * 4 +
+    Number(uniqueListeners || 0) * 2 +
+    Number(manualPlays || 0) * 1.5 +
+    Number(autoplayPlays || 0) * 0.5;
+  return Math.round(raw * 100) / 100;
+}
+
+async function handleGetPopular(request, url, env, corsHeaders) {
+  const rangeKey = normalizeRangeKey(url.searchParams.get("range"));
+  const rawLimit = parseInt(url.searchParams.get("limit") || "200", 10);
+  const limit = Math.max(1, Math.min(600, Number.isFinite(rawLimit) ? rawLimit : 200));
+  const bypassCache =
+    url.searchParams.get("fresh") === "1" ||
+    /(no-cache|no-store)/i.test(request.headers.get("cache-control") || "");
+
+  const cacheKey = `${rangeKey}:${limit}`;
+  const nowMs = Date.now();
+  if (!bypassCache && popularCache.has(cacheKey)) {
+    const hit = popularCache.get(cacheKey);
+    if (nowMs - hit.cachedAtMs < POPULAR_CACHE_TTL_MS) {
+      return jsonResponse(hit.payload, 200, corsHeaders, {
+        "Cache-Control": "public, max-age=15, stale-while-revalidate=45",
+      });
+    }
+    popularCache.delete(cacheKey);
+  }
+
+  const generatedAt = new Date(nowMs).toISOString().replace(/\.\d{3}Z$/, "Z");
+  let tracks = [];
+  let summary = {
+    active_tracks: 0,
+    plays: 0,
+    manual_plays: 0,
+    autoplay_plays: 0,
+    unique_listeners: 0,
+    listened_sec: 0,
+    stars: 0,
+    downloads: 0,
+  };
+
+  if (rangeKey === "all") {
+    const [rowsRes, uniqueRow] = await Promise.all([
+      env.DB.prepare(
+        `SELECT
+           track_id,
+           track_title,
+           era,
+           active_stars,
+           total_downloads,
+           mp3_downloads,
+           flac_downloads,
+           total_requests,
+           total_plays,
+           manual_plays,
+           autoplay_plays,
+           unique_listeners,
+           total_listen_sec,
+           last_starred_at,
+           last_downloaded_at,
+           last_played_at,
+           updated_at
+         FROM music_map_track_totals
+         WHERE (active_stars > 0 OR total_downloads > 0 OR total_plays > 0)
+         ORDER BY (active_stars * 5.0 + total_downloads * 4.0 + unique_listeners * 2.0 + manual_plays * 1.5 + autoplay_plays * 0.5) DESC,
+                  total_plays DESC,
+                  active_stars DESC,
+                  total_downloads DESC,
+                  updated_at DESC
+         LIMIT ?`
+      )
+        .bind(limit)
+        .all(),
+      env.DB.prepare(
+        `SELECT COUNT(DISTINCT session_hash) AS unique_listeners FROM music_map_track_listeners`
+      ).first(),
+    ]);
+
+    const rawRows = (rowsRes && rowsRes.results) || [];
+    tracks = rawRows.map((r, idx) => {
+      const stars = Number(r.active_stars || 0);
+      const downloads = Number(r.total_downloads || 0);
+      const uniqueListeners = Number(r.unique_listeners || 0);
+      const manualPlays = Number(r.manual_plays || 0);
+      const autoplayPlays = Number(r.autoplay_plays || 0);
+      const plays = Number(r.total_plays || 0);
+      const listenedSec = Math.round(Number(r.total_listen_sec || 0) * 100) / 100;
+      const score = computePopularityScore({
+        stars,
+        downloads,
+        uniqueListeners,
+        manualPlays,
+        autoplayPlays,
+      });
+      summary.plays += plays;
+      summary.manual_plays += manualPlays;
+      summary.autoplay_plays += autoplayPlays;
+      summary.listened_sec += listenedSec;
+      summary.stars += stars;
+      summary.downloads += downloads;
+      return {
+        rank: idx + 1,
+        track_id: r.track_id,
+        track_title: r.track_title,
+        era: r.era || "",
+        popularity_score: score,
+        all_time_popularity_score: score,
+        plays,
+        manual_plays: manualPlays,
+        autoplay_plays: autoplayPlays,
+        unique_listeners: uniqueListeners,
+        listened_sec: listenedSec,
+        stars,
+        downloads,
+        mp3_downloads: Number(r.mp3_downloads || 0),
+        flac_downloads: Number(r.flac_downloads || 0),
+        active_stars: stars,
+        total_downloads: downloads,
+        total_plays: plays,
+        total_listen_sec: listenedSec,
+        last_starred_at: r.last_starred_at || null,
+        last_downloaded_at: r.last_downloaded_at || null,
+        last_played_at: r.last_played_at || null,
+        updated_at: r.updated_at || null,
+        url: buildDeepLink(env.MUSIC_MAP_BASE_URL, r.track_id),
+      };
+    });
+    summary.active_tracks = tracks.length;
+    summary.listened_sec = Math.round(summary.listened_sec * 100) / 100;
+    summary.unique_listeners = Number((uniqueRow && uniqueRow.unique_listeners) || 0);
+  } else {
+    const sinceIso = rangeToSinceIso(rangeKey);
+    const [rowsRes, uniqueWinRow] = await Promise.all([
+      env.DB.prepare(
+        `WITH win_events AS (
+           SELECT
+             track_id,
+             SUM(CASE WHEN event_type = 'download' THEN 1 ELSE 0 END) AS win_downloads,
+             SUM(CASE WHEN event_type = 'download' AND format IN ('mp3', 'mp3_320') THEN 1 ELSE 0 END) AS win_mp3_downloads,
+             SUM(CASE WHEN event_type = 'download' AND format = 'flac' THEN 1 ELSE 0 END) AS win_flac_downloads,
+             SUM(CASE WHEN event_type = 'play' THEN 1 ELSE 0 END) AS win_plays,
+             SUM(CASE WHEN event_type = 'play' AND source != 'autoplay' THEN 1 ELSE 0 END) AS win_manual_plays,
+             SUM(CASE WHEN event_type = 'play' AND source = 'autoplay' THEN 1 ELSE 0 END) AS win_autoplay_plays,
+             COUNT(DISTINCT CASE WHEN event_type = 'play' THEN session_hash END) AS win_unique_listeners,
+             ROUND(COALESCE(SUM(CASE WHEN event_type = 'play' THEN listened_sec ELSE 0 END), 0), 2) AS win_listen_sec
+           FROM music_map_events
+           WHERE created_at >= ?
+           GROUP BY track_id
+         ),
+         win_stars AS (
+           SELECT track_id, COUNT(*) AS win_stars
+           FROM music_map_track_stars
+           WHERE starred_at >= ?
+           GROUP BY track_id
+         )
+         SELECT
+           t.track_id,
+           t.track_title,
+           t.era,
+           t.active_stars,
+           t.total_downloads,
+           t.mp3_downloads,
+           t.flac_downloads,
+           t.total_plays,
+           t.manual_plays AS all_manual_plays,
+           t.autoplay_plays AS all_autoplay_plays,
+           t.unique_listeners AS all_unique_listeners,
+           t.total_listen_sec,
+           t.last_starred_at,
+           t.last_downloaded_at,
+           t.last_played_at,
+           t.updated_at,
+           COALESCE(ws.win_stars, 0) AS win_stars,
+           COALESCE(we.win_downloads, 0) AS win_downloads,
+           COALESCE(we.win_mp3_downloads, 0) AS win_mp3_downloads,
+           COALESCE(we.win_flac_downloads, 0) AS win_flac_downloads,
+           COALESCE(we.win_plays, 0) AS win_plays,
+           COALESCE(we.win_manual_plays, 0) AS win_manual_plays,
+           COALESCE(we.win_autoplay_plays, 0) AS win_autoplay_plays,
+           COALESCE(we.win_unique_listeners, 0) AS win_unique_listeners,
+           COALESCE(we.win_listen_sec, 0) AS win_listen_sec
+         FROM music_map_track_totals t
+         LEFT JOIN win_events we ON we.track_id = t.track_id
+         LEFT JOIN win_stars ws ON ws.track_id = t.track_id
+         WHERE (COALESCE(ws.win_stars, 0) > 0 OR COALESCE(we.win_downloads, 0) > 0 OR COALESCE(we.win_plays, 0) > 0)
+         ORDER BY (COALESCE(ws.win_stars, 0) * 5.0 + COALESCE(we.win_downloads, 0) * 4.0 + COALESCE(we.win_unique_listeners, 0) * 2.0 + COALESCE(we.win_manual_plays, 0) * 1.5 + COALESCE(we.win_autoplay_plays, 0) * 0.5) DESC,
+                  COALESCE(we.win_plays, 0) DESC,
+                  COALESCE(ws.win_stars, 0) DESC,
+                  COALESCE(we.win_downloads, 0) DESC,
+                  t.updated_at DESC
+         LIMIT ?`
+      )
+        .bind(sinceIso, sinceIso, limit)
+        .all(),
+      env.DB.prepare(
+        `SELECT COUNT(DISTINCT session_hash) AS unique_listeners
+         FROM music_map_events
+         WHERE event_type = 'play' AND created_at >= ?`
+      )
+        .bind(sinceIso)
+        .first(),
+    ]);
+
+    const rawRows = (rowsRes && rowsRes.results) || [];
+    tracks = rawRows.map((r, idx) => {
+      const stars = Number(r.win_stars || 0);
+      const downloads = Number(r.win_downloads || 0);
+      const uniqueListeners = Number(r.win_unique_listeners || 0);
+      const manualPlays = Number(r.win_manual_plays || 0);
+      const autoplayPlays = Number(r.win_autoplay_plays || 0);
+      const plays = Number(r.win_plays || 0);
+      const listenedSec = Math.round(Number(r.win_listen_sec || 0) * 100) / 100;
+      const score = computePopularityScore({
+        stars,
+        downloads,
+        uniqueListeners,
+        manualPlays,
+        autoplayPlays,
+      });
+      const allScore = computePopularityScore({
+        stars: Number(r.active_stars || 0),
+        downloads: Number(r.total_downloads || 0),
+        uniqueListeners: Number(r.all_unique_listeners || 0),
+        manualPlays: Number(r.all_manual_plays || 0),
+        autoplayPlays: Number(r.all_autoplay_plays || 0),
+      });
+      summary.plays += plays;
+      summary.manual_plays += manualPlays;
+      summary.autoplay_plays += autoplayPlays;
+      summary.listened_sec += listenedSec;
+      summary.stars += stars;
+      summary.downloads += downloads;
+      return {
+        rank: idx + 1,
+        track_id: r.track_id,
+        track_title: r.track_title,
+        era: r.era || "",
+        popularity_score: score,
+        all_time_popularity_score: allScore,
+        plays,
+        manual_plays: manualPlays,
+        autoplay_plays: autoplayPlays,
+        unique_listeners: uniqueListeners,
+        listened_sec: listenedSec,
+        stars,
+        downloads,
+        mp3_downloads: Number(r.win_mp3_downloads || 0),
+        flac_downloads: Number(r.win_flac_downloads || 0),
+        active_stars: Number(r.active_stars || 0),
+        total_downloads: Number(r.total_downloads || 0),
+        total_plays: Number(r.total_plays || 0),
+        total_listen_sec: Math.round(Number(r.total_listen_sec || 0) * 100) / 100,
+        last_starred_at: r.last_starred_at || null,
+        last_downloaded_at: r.last_downloaded_at || null,
+        last_played_at: r.last_played_at || null,
+        updated_at: r.updated_at || null,
+        url: buildDeepLink(env.MUSIC_MAP_BASE_URL, r.track_id),
+      };
+    });
+    summary.active_tracks = tracks.length;
+    summary.listened_sec = Math.round(summary.listened_sec * 100) / 100;
+    summary.unique_listeners = Number((uniqueWinRow && uniqueWinRow.unique_listeners) || 0);
+  }
+
+  const payload = {
+    ok: true,
+    generated_at: generatedAt,
+    range: rangeKey,
+    formula: "active_stars*5 + total_downloads*4 + unique_listeners*2 + manual_plays*1.5 + autoplay_plays*0.5",
+    summary,
+    tracks,
+  };
+
+  if (popularCache.size >= 32) {
+    const oldestKey = popularCache.keys().next().value;
+    if (oldestKey !== undefined) popularCache.delete(oldestKey);
+  }
+  popularCache.set(cacheKey, { cachedAtMs: nowMs, payload });
+
+  return jsonResponse(payload, 200, corsHeaders, {
+    "Cache-Control": bypassCache ? "no-store" : "public, max-age=15, stale-while-revalidate=45",
+  });
+}
+
 async function handleGetHotlist(url, env, corsHeaders) {
-  const rangeKey = (url.searchParams.get("range") || "all").toLowerCase();
-  const rawLimit = parseInt(url.searchParams.get("limit") || "25", 10);
-  const limit = Math.max(1, Math.min(50, Number.isFinite(rawLimit) ? rawLimit : 25));
+  const rangeKey = normalizeRangeKey(url.searchParams.get("range"));
+  const rawLimit = parseInt(url.searchParams.get("limit") || "40", 10);
+  const limit = Math.max(1, Math.min(100, Number.isFinite(rawLimit) ? rawLimit : 40));
   const sinceIso = rangeToSinceIso(rangeKey);
   const generatedAt = new Date().toISOString().replace(/\.\d{3}Z$/, "Z");
 
-  const [aggTotals, windowAgg, uniqueRow, topRows, recentRows] = await Promise.all([
+  const [aggTotals, windowAgg, uniqueRow, uniqueListenersRow, topRows, recentRows] = await Promise.all([
     env.DB.prepare(
       `SELECT
          COALESCE(SUM(active_stars), 0) AS active_stars,
@@ -918,14 +1451,23 @@ async function handleGetHotlist(url, env, corsHeaders) {
          COALESCE(SUM(total_downloads), 0) AS total_downloads,
          COALESCE(SUM(mp3_downloads), 0) AS mp3_downloads,
          COALESCE(SUM(flac_downloads), 0) AS flac_downloads,
-         COALESCE(SUM(total_requests), 0) AS total_requests
+         COALESCE(SUM(total_requests), 0) AS total_requests,
+         COALESCE(SUM(total_plays), 0) AS total_plays,
+         COALESCE(SUM(manual_plays), 0) AS manual_plays,
+         COALESCE(SUM(autoplay_plays), 0) AS autoplay_plays,
+         ROUND(COALESCE(SUM(total_listen_sec), 0), 2) AS total_listen_sec
        FROM music_map_track_totals`
     ).first(),
     env.DB.prepare(
       `SELECT
          (SELECT COUNT(*) FROM music_map_track_stars WHERE starred_at >= ?) AS window_stars,
          COALESCE(SUM(CASE WHEN event_type = 'download' THEN 1 ELSE 0 END), 0) AS window_downloads,
-         COALESCE(SUM(CASE WHEN event_type = 'request' THEN 1 ELSE 0 END), 0) AS window_requests
+         COALESCE(SUM(CASE WHEN event_type = 'request' THEN 1 ELSE 0 END), 0) AS window_requests,
+         COALESCE(SUM(CASE WHEN event_type = 'play' THEN 1 ELSE 0 END), 0) AS window_plays,
+         COALESCE(SUM(CASE WHEN event_type = 'play' AND source != 'autoplay' THEN 1 ELSE 0 END), 0) AS window_manual_plays,
+         COALESCE(SUM(CASE WHEN event_type = 'play' AND source = 'autoplay' THEN 1 ELSE 0 END), 0) AS window_autoplay_plays,
+         COUNT(DISTINCT CASE WHEN event_type = 'play' THEN session_hash END) AS window_unique_listeners,
+         ROUND(COALESCE(SUM(CASE WHEN event_type = 'play' THEN listened_sec ELSE 0 END), 0), 2) AS window_listen_sec
        FROM music_map_events
        WHERE created_at >= ?`
     )
@@ -935,7 +1477,29 @@ async function handleGetHotlist(url, env, corsHeaders) {
       `SELECT COUNT(DISTINCT session_hash) AS unique_visitors FROM music_map_events`
     ).first(),
     env.DB.prepare(
-      `SELECT
+      `SELECT COUNT(DISTINCT session_hash) AS unique_listeners FROM music_map_track_listeners`
+    ).first(),
+    env.DB.prepare(
+      `WITH win_events AS (
+         SELECT
+           track_id,
+           SUM(CASE WHEN event_type = 'download' THEN 1 ELSE 0 END) AS window_downloads,
+           SUM(CASE WHEN event_type = 'play' THEN 1 ELSE 0 END) AS window_plays,
+           SUM(CASE WHEN event_type = 'play' AND source != 'autoplay' THEN 1 ELSE 0 END) AS window_manual_plays,
+           SUM(CASE WHEN event_type = 'play' AND source = 'autoplay' THEN 1 ELSE 0 END) AS window_autoplay_plays,
+           COUNT(DISTINCT CASE WHEN event_type = 'play' THEN session_hash END) AS window_unique_listeners,
+           ROUND(COALESCE(SUM(CASE WHEN event_type = 'play' THEN listened_sec ELSE 0 END), 0), 2) AS window_listen_sec
+         FROM music_map_events
+         WHERE created_at >= ?
+         GROUP BY track_id
+       ),
+       win_stars AS (
+         SELECT track_id, COUNT(*) AS window_stars
+         FROM music_map_track_stars
+         WHERE starred_at >= ?
+         GROUP BY track_id
+       )
+       SELECT
          t.track_id,
          t.track_title,
          t.era,
@@ -944,46 +1508,102 @@ async function handleGetHotlist(url, env, corsHeaders) {
          t.mp3_downloads,
          t.flac_downloads,
          t.total_requests,
+         t.total_plays,
+         t.manual_plays,
+         t.autoplay_plays,
+         t.unique_listeners,
+         t.total_listen_sec,
          t.last_starred_at,
          t.last_downloaded_at,
+         t.last_played_at,
          t.updated_at,
-         COALESCE((SELECT COUNT(*) FROM music_map_track_stars s WHERE s.track_id = t.track_id AND s.starred_at >= ?), 0) AS window_stars,
-         COALESCE((SELECT COUNT(*) FROM music_map_events e WHERE e.track_id = t.track_id AND e.event_type = 'download' AND e.created_at >= ?), 0) AS window_downloads
+         COALESCE(ws.window_stars, 0) AS window_stars,
+         COALESCE(we.window_downloads, 0) AS window_downloads,
+         COALESCE(we.window_plays, 0) AS window_plays,
+         COALESCE(we.window_manual_plays, 0) AS window_manual_plays,
+         COALESCE(we.window_autoplay_plays, 0) AS window_autoplay_plays,
+         COALESCE(we.window_unique_listeners, 0) AS window_unique_listeners,
+         COALESCE(we.window_listen_sec, 0) AS window_listen_sec
        FROM music_map_track_totals t
-       WHERE (t.active_stars > 0 OR t.total_downloads > 0 OR t.total_requests > 0)
-       ORDER BY (t.active_stars * 2 + t.total_downloads + t.total_requests) DESC,
+       LEFT JOIN win_events we ON we.track_id = t.track_id
+       LEFT JOIN win_stars ws ON ws.track_id = t.track_id
+       WHERE (t.active_stars > 0 OR t.total_downloads > 0 OR t.total_requests > 0 OR t.total_plays > 0)
+       ORDER BY (t.active_stars * 5.0 + t.total_downloads * 4.0 + t.unique_listeners * 2.0 + t.manual_plays * 1.5 + t.autoplay_plays * 0.5 + t.total_requests * 2.0) DESC,
                 t.active_stars DESC,
                 t.total_downloads DESC,
+                t.total_plays DESC,
                 t.updated_at DESC
        LIMIT ?`
     )
       .bind(sinceIso, sinceIso, limit)
       .all(),
     env.DB.prepare(
-      `SELECT id, event_type, track_id, track_title, era, format, source, country, created_at
+      `SELECT id, event_type, track_id, track_title, era, format, source, listened_sec, country, created_at
        FROM music_map_events
-       WHERE event_type IN ('star', 'download', 'request')
+       WHERE event_type IN ('star', 'download', 'request', 'play')
        ORDER BY id DESC
-       LIMIT 30`
+       LIMIT 40`
     ).all(),
   ]);
 
-  const topTracks = ((topRows && topRows.results) || []).map((r) => ({
-    track_id: r.track_id,
-    track_title: r.track_title,
-    era: r.era || "",
-    active_stars: Number(r.active_stars || 0),
-    total_downloads: Number(r.total_downloads || 0),
-    mp3_downloads: Number(r.mp3_downloads || 0),
-    flac_downloads: Number(r.flac_downloads || 0),
-    total_requests: Number(r.total_requests || 0),
-    window_stars: Number(r.window_stars || 0),
-    window_downloads: Number(r.window_downloads || 0),
-    last_starred_at: r.last_starred_at || null,
-    last_downloaded_at: r.last_downloaded_at || null,
-    updated_at: r.updated_at || null,
-    url: buildDeepLink(env.MUSIC_MAP_BASE_URL, r.track_id),
-  }));
+  const topTracks = ((topRows && topRows.results) || []).map((r) => {
+    const activeStars = Number(r.active_stars || 0);
+    const totalDownloads = Number(r.total_downloads || 0);
+    const totalPlays = Number(r.total_plays || 0);
+    const manualPlays = Number(r.manual_plays || 0);
+    const autoplayPlays = Number(r.autoplay_plays || 0);
+    const uniqueListeners = Number(r.unique_listeners || 0);
+    const totalListenSec = Math.round(Number(r.total_listen_sec || 0) * 100) / 100;
+    const winStars = Number(r.window_stars || 0);
+    const winDownloads = Number(r.window_downloads || 0);
+    const winPlays = Number(r.window_plays || 0);
+    const winManualPlays = Number(r.window_manual_plays || 0);
+    const winAutoplayPlays = Number(r.window_autoplay_plays || 0);
+    const winUniqueListeners = Number(r.window_unique_listeners || 0);
+    const winListenSec = Math.round(Number(r.window_listen_sec || 0) * 100) / 100;
+
+    return {
+      track_id: r.track_id,
+      track_title: r.track_title,
+      era: r.era || "",
+      popularity_score: computePopularityScore({
+        stars: activeStars,
+        downloads: totalDownloads,
+        uniqueListeners,
+        manualPlays,
+        autoplayPlays,
+      }),
+      window_popularity_score: computePopularityScore({
+        stars: winStars,
+        downloads: winDownloads,
+        uniqueListeners: winUniqueListeners,
+        manualPlays: winManualPlays,
+        autoplayPlays: winAutoplayPlays,
+      }),
+      active_stars: activeStars,
+      total_downloads: totalDownloads,
+      mp3_downloads: Number(r.mp3_downloads || 0),
+      flac_downloads: Number(r.flac_downloads || 0),
+      total_requests: Number(r.total_requests || 0),
+      total_plays: totalPlays,
+      manual_plays: manualPlays,
+      autoplay_plays: autoplayPlays,
+      unique_listeners: uniqueListeners,
+      total_listen_sec: totalListenSec,
+      window_stars: winStars,
+      window_downloads: winDownloads,
+      window_plays: winPlays,
+      window_manual_plays: winManualPlays,
+      window_autoplay_plays: winAutoplayPlays,
+      window_unique_listeners: winUniqueListeners,
+      window_listen_sec: winListenSec,
+      last_starred_at: r.last_starred_at || null,
+      last_downloaded_at: r.last_downloaded_at || null,
+      last_played_at: r.last_played_at || null,
+      updated_at: r.updated_at || null,
+      url: buildDeepLink(env.MUSIC_MAP_BASE_URL, r.track_id),
+    };
+  });
 
   const recentEvents = ((recentRows && recentRows.results) || []).map((e) => ({
     id: Number(e.id),
@@ -994,6 +1614,7 @@ async function handleGetHotlist(url, env, corsHeaders) {
     format: e.format || "",
     format_label: e.event_type === "download" ? formatHumanLabel(e.format) : "",
     source: e.source || "",
+    listened_sec: Math.round(Number(e.listened_sec || 0) * 100) / 100,
     country: e.country || "",
     created_at: e.created_at,
     url: buildDeepLink(env.MUSIC_MAP_BASE_URL, e.track_id),
@@ -1011,10 +1632,20 @@ async function handleGetHotlist(url, env, corsHeaders) {
         mp3_downloads: Number((aggTotals && aggTotals.mp3_downloads) || 0),
         flac_downloads: Number((aggTotals && aggTotals.flac_downloads) || 0),
         total_requests: Number((aggTotals && aggTotals.total_requests) || 0),
+        total_plays: Number((aggTotals && aggTotals.total_plays) || 0),
+        manual_plays: Number((aggTotals && aggTotals.manual_plays) || 0),
+        autoplay_plays: Number((aggTotals && aggTotals.autoplay_plays) || 0),
+        total_listen_sec: Math.round(Number((aggTotals && aggTotals.total_listen_sec) || 0) * 100) / 100,
         unique_visitors: Number((uniqueRow && uniqueRow.unique_visitors) || 0),
+        unique_listeners: Number((uniqueListenersRow && uniqueListenersRow.unique_listeners) || 0),
         window_stars: Number((windowAgg && windowAgg.window_stars) || 0),
         window_downloads: Number((windowAgg && windowAgg.window_downloads) || 0),
         window_requests: Number((windowAgg && windowAgg.window_requests) || 0),
+        window_plays: Number((windowAgg && windowAgg.window_plays) || 0),
+        window_manual_plays: Number((windowAgg && windowAgg.window_manual_plays) || 0),
+        window_autoplay_plays: Number((windowAgg && windowAgg.window_autoplay_plays) || 0),
+        window_unique_listeners: Number((windowAgg && windowAgg.window_unique_listeners) || 0),
+        window_listen_sec: Math.round(Number((windowAgg && windowAgg.window_listen_sec) || 0) * 100) / 100,
       },
       top_tracks: topTracks,
       recent_events: recentEvents,
@@ -1068,6 +1699,10 @@ export default {
 
     if (url.pathname === "/api/events" && request.method === "POST") {
       return handlePostEvent(request, env, ctx, corsHeaders);
+    }
+
+    if (url.pathname === "/api/popular" && request.method === "GET") {
+      return handleGetPopular(request, url, env, corsHeaders);
     }
 
     if (url.pathname === "/api/hotlist" && request.method === "GET") {

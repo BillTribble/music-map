@@ -1752,6 +1752,9 @@
 
   function select(tid, opts = {}) {
     if (!tid || !byId.has(tid)) {
+      if (typeof window !== "undefined" && window.BTMM_EVENTS && typeof window.BTMM_EVENTS.notifyTrackIntent === "function") {
+        window.BTMM_EVENTS.notifyTrackIntent(null, { source: "manual" });
+      }
       selectedId = null;
       formOpenForId = null;
       waveHoverFrac = null;
@@ -1771,6 +1774,9 @@
       optimisticSeekSec = null;
     }
     selectedId = tid;
+    if (typeof window !== "undefined" && window.BTMM_EVENTS && typeof window.BTMM_EVENTS.notifyTrackIntent === "function") {
+      window.BTMM_EVENTS.notifyTrackIntent(tid, { source: opts && opts.fromAutoPlay ? "autoplay" : "manual" });
+    }
     render();
     if (!opts.silent && hooks && hooks.onSelectionChange) hooks.onSelectionChange(tid);
   }
