@@ -132,12 +132,19 @@
 
   const PSYCHEDAILIES_NOTE = "Made in one day, with help from friends on Endlesss.";
 
-  const FORCE_SKETCH_IDS = new Set(["archive_2013_18_97", "sketches_2024_25_24"]);
+  const FORCE_SKETCH_IDS = new Set([
+    "archive_2013_18_15",
+    "archive_2013_18_97",
+    "sketches_2024_25_24",
+    "sketches_2026_3",
+  ]);
   const FORCE_SKETCH_TITLES = new Set([
+    "anjuna",
     "massive dune patch",
     "granular perc fun",
     "granular perc fun gamelanish",
     "granular perc (gamelanish)",
+    "mya moody banger",
   ]);
 
   function isPsychedailiesTrack(t) {

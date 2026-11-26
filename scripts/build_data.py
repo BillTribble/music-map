@@ -156,14 +156,18 @@ def resolve_present_1997_2004_era(tid: str, cur_era: str, cur_year: int | None, 
     return cur_era, int(cur_year or 2016), int(cur_slot or 0)
 
 FORCE_SKETCH_IDS = {
+    "archive_2013_18_15",  # Anjuna (post-023995: sketch despite >= 75s)
     "archive_2013_18_97",  # Massive Dune Patch (post-023356: sketch despite >= 75s)
     "sketches_2024_25_24",  # Granular Perc Fun Gamelanish (post-023452: sketch despite >= 75s)
+    "sketches_2026_3",  # Mya Moody Banger (post-023995: sketch despite >= 75s)
 }
 FORCE_SKETCH_TITLES = {
+    "anjuna",
     "massive dune patch",
     "granular perc fun",
     "granular perc fun gamelanish",
     "granular perc (gamelanish)",
+    "mya moody banger",
 }
 
 FINE_HARMONY_KEYS = [
@@ -1643,6 +1647,9 @@ def main() -> None:
             merged["era"] = eid
             for pk in PRIVATE_TRACK_KEYS:
                 merged.pop(pk, None)
+            if str(merged.get("id") or "") in FORCE_SKETCH_IDS or str(merged.get("title") or "").strip().lower() in FORCE_SKETCH_TITLES:
+                merged["is_sketch"] = True
+                merged["wip_eligible"] = False
             merged_tracks.append(merged)
             tracks_by_era[eid].append(merged)
 

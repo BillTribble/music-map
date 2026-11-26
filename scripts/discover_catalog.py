@@ -554,14 +554,21 @@ def build_manifest(raw_items: list[dict], ffprobe_bin: str | None = None, check_
             or "/ai afrohouse" in w_low
             or "ai_test_kitchen" in w_low
         )
-        # User rules (post-022787, post-023035, post-023356, post-023452): 100% of GenAI tracks and full-length (>= 75s) tracks have is_sketch = False unless explicitly overridden
+        # User rules (post-022787, post-023035, post-023356, post-023452, post-023995): 100% of GenAI tracks and full-length (>= 75s) tracks have is_sketch = False unless explicitly overridden
         is_forced_sketch = (
-            tid in {"archive_2013_18_97", "sketches_2024_25_24"}
+            tid in {
+                "archive_2013_18_15",
+                "archive_2013_18_97",
+                "sketches_2024_25_24",
+                "sketches_2026_3",
+            }
             or title.strip().lower() in {
+                "anjuna",
                 "massive dune patch",
                 "granular perc fun",
                 "granular perc fun gamelanish",
                 "granular perc (gamelanish)",
+                "mya moody banger",
             }
         )
         is_psychedailies = str(era or "").strip().lower() == "psychedailies"

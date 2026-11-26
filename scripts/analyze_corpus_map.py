@@ -1435,12 +1435,19 @@ def enrich_track_tiers(t: dict, rel_repo: str = "BillTribble/music-map") -> None
         year = int(rel_match["year"])
     full_dur = t.get("full_duration_sec")
     is_forced_sketch = (
-        tid in {"archive_2013_18_97", "sketches_2024_25_24"}
+        tid in {
+            "archive_2013_18_15",
+            "archive_2013_18_97",
+            "sketches_2024_25_24",
+            "sketches_2026_3",
+        }
         or str(t.get("title") or "").strip().lower() in {
+            "anjuna",
             "massive dune patch",
             "granular perc fun",
             "granular perc fun gamelanish",
             "granular perc (gamelanish)",
+            "mya moody banger",
         }
     )
     is_psychedailies = str(era or "").strip().lower() == "psychedailies" or str(tid).startswith("psychedailies_")
