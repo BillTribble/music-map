@@ -80,6 +80,7 @@
 [data-theme="dark"] .map-hud-pill,
 [data-theme="dark"] .star-empty-msg,
 [data-theme="dark"] .map-hover-pill,
+[data-theme="dark"] .chart-hover-pill,
 [data-theme="dark"] .settings-pop {
   background: color-mix(in srgb, var(--md-sys-color-surface-container) 88%, transparent);
   backdrop-filter: blur(18px);

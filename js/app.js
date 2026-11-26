@@ -170,20 +170,44 @@
   }
 
   // ---- Navigation & URL Hash ----
-  function currentItems() {
-    return state.granularity === "phases" ? phases : eras;
+  function baseItems(gran = state.granularity) {
+    return gran === "phases" ? phases : eras;
+  }
+
+  function currentItems(tab = state.tab, gran = state.granularity) {
+    const base = baseItems(gran);
+    const C = window.ME_CHARTS;
+    if (!C || typeof C.hasViewItemData !== "function") return base;
+    const filtered = base.filter((it) => C.hasViewItemData(it, tab, state));
+    return filtered.length ? filtered : base;
   }
 
   function getPinnedIdx() {
     const items = currentItems();
-    const raw = state.granularity === "phases" ? state.pinnedPhaseIdx : state.pinnedEraIdx;
-    return Math.max(0, Math.min(items.length - 1, raw));
+    if (!items.length) return 0;
+    const base = baseItems();
+    const raw = Math.max(0, Math.min(base.length - 1, state.granularity === "phases" ? state.pinnedPhaseIdx : state.pinnedEraIdx));
+    const exact = items.indexOf(base[raw]);
+    if (exact >= 0) return exact;
+    const after = items.findIndex((it) => base.indexOf(it) >= raw);
+    return after >= 0 ? after : items.length - 1;
   }
 
-  function setPinnedIdx(idx) {
-    const clamped = Math.max(0, Math.min(currentItems().length - 1, idx));
-    if (state.granularity === "phases") state.pinnedPhaseIdx = clamped;
-    else state.pinnedEraIdx = clamped;
+  function setPinnedIdx(idx, explicitId) {
+    const items = currentItems();
+    const base = baseItems();
+    let chosen = null;
+    if (explicitId) {
+      chosen = base.find((it) => it.id === explicitId) || items.find((it) => it.id === explicitId) || null;
+    }
+    if (!chosen && items.length) {
+      const clamped = Math.max(0, Math.min(items.length - 1, Number.isFinite(idx) ? idx : 0));
+      chosen = items[clamped] || null;
+    }
+    const rawIdx = chosen ? base.indexOf(chosen) : -1;
+    const resolvedRaw = rawIdx >= 0 ? rawIdx : Math.max(0, Math.min(base.length - 1, Number.isFinite(idx) ? idx : 0));
+    if (state.granularity === "phases") state.pinnedPhaseIdx = resolvedRaw;
+    else state.pinnedEraIdx = resolvedRaw;
     state.hoverIdx = null;
   }
 
@@ -232,9 +256,11 @@
     const granEl = document.getElementById("analysis-granularity");
     if (granEl) {
       const eraAct = state.granularity === "eras";
+      const nEras = currentItems(state.tab, "eras").length;
+      const nPhases = currentItems(state.tab, "phases").length;
       granEl.innerHTML = `
-        <button type="button" class="m3-pill-tab ${eraAct ? "is-active" : ""}" data-granularity="eras" aria-pressed="${eraAct}">${eras.length} eras</button>
-        <button type="button" class="m3-pill-tab ${!eraAct ? "is-active" : ""}" data-granularity="phases" aria-pressed="${!eraAct}">${phases.length} phases</button>`;
+        <button type="button" class="m3-pill-tab ${eraAct ? "is-active" : ""}" data-granularity="eras" aria-pressed="${eraAct}">${nEras} eras</button>
+        <button type="button" class="m3-pill-tab ${!eraAct ? "is-active" : ""}" data-granularity="phases" aria-pressed="${!eraAct}">${nPhases} phases</button>`;
     }
   }
 
@@ -416,8 +442,15 @@
     updateTimelineFrame();
   }
 
+  function hideChartHoverPill() {
+    if (typeof document === "undefined") return;
+    const pill = document.getElementById("chart-hover-pill");
+    if (pill) pill.hidden = true;
+  }
+
   // ---- Main Render Coordinator ----
   function renderView() {
+    hideChartHoverPill();
     buildSideNav();
     renderModeSwitchers();
 
@@ -448,7 +481,7 @@
       stripEl.innerHTML = items.map((it, i) => {
         const hit = !q || it.label.toLowerCase().includes(q) || (it.tracks || []).some((t) => t.title.toLowerCase().includes(q));
         return `
-          <button type="button" data-era-idx="${i}" class="era-pill ${i === selIdx ? "is-active" : ""}" style="${hit ? "" : "opacity:0.32"}">
+          <button type="button" data-era-idx="${i}" data-era-id="${esc(it.id)}" class="era-pill ${i === selIdx ? "is-active" : ""}" style="${hit ? "" : "opacity:0.32"}">
             <span class="era-pill-name">${esc(it.label)}</span>
             <span class="era-pill-sub">${esc(it.sublabel)} · E${Math.round((it.macro_harmony && it.macro_harmony.mik_energy_med) || 0)}</span>
           </button>`;
@@ -652,7 +685,7 @@
 
       const eraBtn = ev.target.closest("[data-era-idx]");
       if (eraBtn) {
-        setPinnedIdx(Number(eraBtn.getAttribute("data-era-idx")));
+        setPinnedIdx(Number(eraBtn.getAttribute("data-era-idx")), eraBtn.getAttribute("data-era-id"));
         renderView();
         return;
       }
@@ -789,12 +822,47 @@
       }
     });
 
+    const stageWrap = document.getElementById("view-stage");
+    if (stageWrap) {
+      const showColHover = (ev) => {
+        if (ev.pointerType === "touch") return;
+        const col = ev.target && typeof ev.target.closest === "function" ? ev.target.closest(".chart-hit-col") : null;
+        if (!col) { hideChartHoverPill(); return; }
+        const pill = document.getElementById("chart-hover-pill");
+        if (!pill) return;
+        const title = col.getAttribute("data-tip-title") || "";
+        const sub = col.getAttribute("data-tip-sub") || "";
+        const detail = col.getAttribute("data-tip-detail") || "";
+        if (!title) { pill.hidden = true; return; }
+        pill.innerHTML = `<strong>${esc(title)}</strong> <span class="chart-tip-sub">${esc(sub)}${detail ? ` · ${esc(detail)}` : ""}</span>`;
+        pill.hidden = false;
+        const r = col.getBoundingClientRect();
+        const svgEl = col.ownerSVGElement;
+        const svgTop = svgEl ? svgEl.getBoundingClientRect().top : r.top;
+        const pw = pill.offsetWidth || 180;
+        const ph = pill.offsetHeight || 28;
+        const half = pw / 2 + 12;
+        const cx = Math.max(half, Math.min(window.innerWidth - half, r.left + r.width / 2));
+        const topY = svgTop - ph - 6 >= 60 ? svgTop - 4 : Math.min(window.innerHeight - 16, r.top + 32);
+        pill.style.left = `${cx.toFixed(1)}px`;
+        pill.style.top = `${topY.toFixed(1)}px`;
+      };
+      stageWrap.addEventListener("pointerover", showColHover);
+      stageWrap.addEventListener("pointermove", showColHover);
+      stageWrap.addEventListener("pointerleave", hideChartHoverPill);
+    }
+    window.addEventListener("scroll", hideChartHoverPill, { passive: true });
+
     let resizeTimer = 0;
     window.addEventListener("resize", () => {
+      hideChartHoverPill();
       if (window.innerWidth > 840 && state.mobileNavOpen) state.mobileNavOpen = false;
       buildSideNav();
       if (resizeTimer) clearTimeout(resizeTimer);
-      resizeTimer = setTimeout(() => { window.ME_NODEMAP.relayout(false); }, 120);
+      resizeTimer = setTimeout(() => {
+        window.ME_NODEMAP.relayout(false);
+        if (!isMapTab()) renderView();
+      }, 120);
     });
   }
 
@@ -950,7 +1018,7 @@
 
     if (typeof window !== "undefined") {
       window.__APP_LOADED__ = true;
-      window.__APP_TEST__ = { state, DATA, VIEWS, MODE_LABELS, setTab, renderView, applyTheme };
+      window.__APP_TEST__ = { state, DATA, VIEWS, MODE_LABELS, setTab, renderView, applyTheme, currentItems, getPinnedIdx, setPinnedIdx };
     }
   }
 

@@ -74,8 +74,12 @@
 
   function measureStageWidth(id, fallback = 860) {
     const el = typeof document !== "undefined" ? document.getElementById(id) : null;
-    if (!el || !el.clientWidth || el.clientWidth < 120) return fallback;
-    return Math.floor(el.clientWidth);
+    if (el && el.clientWidth && el.clientWidth >= 120) return Math.floor(el.clientWidth);
+    const vs = typeof document !== "undefined" ? document.getElementById("view-stage") : null;
+    if (vs && vs.clientWidth && vs.clientWidth >= 240 && fallback >= 800) {
+      return Math.max(320, Math.floor(vs.clientWidth - 80));
+    }
+    return fallback;
   }
 
   function svgLinePath(points) {
@@ -98,6 +102,52 @@
     }).join("")}</div>`;
   }
 
+  function hasMidiProjectData(it) {
+    return Boolean(it && !it.archive_only && ((it.projects || 0) > 0 || (it.midi_pitched_notes || 0) > 0));
+  }
+
+  function hasViewItemData(it, tab, state) {
+    if (!it) return false;
+    if (tab === "workflow") {
+      return !it.archive_only && (it.midi_pitched_notes || 0) > 0;
+    }
+    if (tab === "chord-quality") {
+      return Boolean(it.fine_harmony && (it.fine_harmony.n_chords || 0) > 0);
+    }
+    if (tab === "root-motion") {
+      return Boolean(it.root_motion && (it.root_motion.n_moves || 0) > 0);
+    }
+    if (tab === "voicing-spread") {
+      const vr = it.voicing_register;
+      return Boolean(vr && vr.span_p50 !== null && vr.span_p50 !== undefined);
+    }
+    if (tab === "modal-heatmap") {
+      if (state && state.heatmapSource === "midi_12") {
+        const m12 = it.scale_degrees && it.scale_degrees.midi_12;
+        return Boolean(Array.isArray(m12) && m12.some((v) => v > 0));
+      }
+      return true;
+    }
+    if (tab === "ji-gamelan") {
+      const mt = it.microtonal;
+      return hasMidiProjectData(it) && Boolean(
+        (mt && (mt.ji_retune_projects || 0) > 0) ||
+        (mt && (mt.gamelan_projects || 0) > 0) ||
+        (mt && mt.tuning_offset_p50 !== null && mt.tuning_offset_p50 !== undefined)
+      );
+    }
+    if (tab === "melody") {
+      return hasMidiProjectData(it) && [it.lead_step_pct, it.lead_gapfill_pct, it.lead_midi_p50, it.audio_midi_p50].some((v) => v !== null && v !== undefined);
+    }
+    if (tab === "audio") {
+      return hasMidiProjectData(it) && [it.audio_legato_pct, it.midi_legato_pct, it.audio_vib_cents].some((v) => v !== null && v !== undefined);
+    }
+    if (tab === "palette") {
+      return !it.archive_only && Boolean((it.top_inst && it.top_inst.length > 0) || (it.top_fx && it.top_fx.length > 0));
+    }
+    return true;
+  }
+
   function phaseDividerLayer(items, state, padL, plotW, padT, plotH) {
     if (state.granularity !== "eras" || !items.length) return "";
     const colW = plotW / items.length;
@@ -105,6 +155,7 @@
     const groups = [];
     items.forEach((it, idx) => {
       const pTag = it.phaseTag || "";
+      if (!pTag) return;
       const last = groups[groups.length - 1];
       if (!last || last.tag !== pTag) groups.push({ tag: pTag, start: idx, end: idx });
       else last.end = idx;
@@ -133,23 +184,27 @@
     return out;
   }
 
-  function xAxisAndHitLayer(items, state, padL, plotW, padT, plotH, H, selIdx) {
+  function xAxisAndHitLayer(items, state, padL, plotW, padT, plotH, H, selIdx, tipFn) {
+    if (!items.length) return "";
     const colW = plotW / items.length;
     const xC = (i) => padL + colW * (i + 0.5);
-    const selX = padL + colW * selIdx;
+    const safeSel = Math.max(0, Math.min(items.length - 1, selIdx));
+    const selX = padL + colW * safeSel;
     let out = `<rect x="${(selX + 2).toFixed(1)}" y="${padT}" width="${Math.max(4, colW - 4).toFixed(1)}" height="${plotH}" rx="4" fill="var(--primary)" fill-opacity="0.11" stroke="var(--primary)" stroke-opacity="${state.hoverIdx !== null ? 0.45 : 0.78}" stroke-width="1.2" />`;
     const narrow = colW < 76;
     items.forEach((d, i) => {
       const cx = xC(i);
-      const isSel = i === selIdx;
+      const isSel = i === safeSel;
       const lbl = state.granularity === "phases" ? d.shortLabel : d.shortLabel;
+      const detail = typeof tipFn === "function" ? String(tipFn(d, i) || "") : "";
+      const titleTxt = detail ? `${d.label} (${d.sublabel}) — ${detail}` : `${d.label} (${d.sublabel})`;
       if (narrow) {
         const yAng = padT + plotH + 14;
         out += `<text class="chart-xlab" x="${(cx + 3).toFixed(1)}" y="${yAng.toFixed(1)}" text-anchor="end" transform="rotate(-32 ${(cx + 3).toFixed(1)} ${yAng.toFixed(1)})" font-size="10" font-weight="${isSel ? "700" : "500"}" fill="${isSel ? "var(--fg)" : "var(--fg-muted)"}">${esc(lbl)}</text>`;
       } else {
         out += `<text class="chart-xlab" x="${cx.toFixed(1)}" y="${H - 8}" text-anchor="middle" font-size="11" font-weight="${isSel ? "700" : "500"}" fill="${isSel ? "var(--fg)" : "var(--fg-muted)"}">${esc(lbl)}</text>`;
       }
-      out += `<rect data-era-idx="${i}" x="${(padL + colW * i).toFixed(1)}" y="${padT}" width="${colW.toFixed(1)}" height="${plotH + 34}" fill="transparent" style="cursor:pointer"><title>${esc(d.label)} (${esc(d.sublabel)})</title></rect>`;
+      out += `<rect class="chart-hit-col" data-era-idx="${i}" data-era-id="${esc(d.id)}" data-tip-title="${esc(d.label)}" data-tip-sub="${esc(d.sublabel)}" data-tip-detail="${esc(detail)}" x="${(padL + colW * i).toFixed(1)}" y="${padT}" width="${colW.toFixed(1)}" height="${plotH + 34}" rx="4" fill="transparent" style="cursor:pointer"><title>${esc(titleTxt)}</title></rect>`;
     });
     return out;
   }
@@ -485,7 +540,7 @@
       <div class="view-head"><div class="view-title-group"><h2 class="view-title">Chord &amp; dyad spectrum</h2><p class="view-insight">${esc(insight)}</p></div><div class="sub-controls">${subBtns}</div></div>
       ${legendHtml(CHORD_STACK_GROUPS)}
       <div class="grid-2">
-        <div class="subpanel"><div class="subpanel-title"><span>Stacked chord &amp; dyad taxonomy</span><span class="muted">Dashed bars: audio-only / pre-MIDI</span></div><div id="cq-stage-wrap" class="svg-stage"><svg viewBox="0 0 ${W} ${H}" width="${W}" height="${H}">${svg}</svg></div></div>
+        <div class="subpanel"><div class="subpanel-title"><span>Stacked chord &amp; dyad taxonomy</span></div><div id="cq-stage-wrap" class="svg-stage"><svg viewBox="0 0 ${W} ${H}" width="${W}" height="${H}">${svg}</svg></div></div>
         <div class="subpanel"><div class="subpanel-title"><span>15 harmonic flavors — ${esc(d.label)}</span><span class="badge">${fhActive.n_chords || 0} events</span></div><div class="flavor-list">${rowsHtml}</div></div>
       </div>`;
   }
@@ -579,16 +634,16 @@
       return `background:color-mix(in srgb, ${cVar} ${pct}%, var(--bg-elev));color:var(--fg);font-weight:${norm > 0.45 ? 700 : 500}`;
     }
 
-    const headCols = items.map((it, i) => `<th data-era-idx="${i}" class="${i === selIdx ? "col-active" : ""}">${esc(it.shortLabel)}</th>`).join("");
+    const headCols = items.map((it, i) => `<th data-era-idx="${i}" data-era-id="${esc(it.id)}" class="${i === selIdx ? "col-active" : ""}">${esc(it.shortLabel)}</th>`).join("");
     const bodyRows = indices.map((degIdx) => {
       const info = DEGREE_INFO[degIdx];
       const cells = items.map((it, i) => {
         const vec = it.scale_degrees && it.scale_degrees[state.heatmapSource];
-        if (!vec) return `<td data-era-idx="${i}" class="hm-cell" style="${cellStyle(null, info.role)}">—</td>`;
+        if (!vec) return `<td data-era-idx="${i}" data-era-id="${esc(it.id)}" class="hm-cell" style="${cellStyle(null, info.role)}">—</td>`;
         const tot = vec.reduce((a, b) => a + b, 0);
         const v = tot > 2 ? vec[degIdx] / 100 : vec[degIdx];
         const act = i === selIdx ? ";outline:2px solid var(--primary)" : "";
-        return `<td data-era-idx="${i}" class="hm-cell" style="${cellStyle(v, info.role)}${act}">${(v * 100).toFixed(1)}%</td>`;
+        return `<td data-era-idx="${i}" data-era-id="${esc(it.id)}" class="hm-cell" style="${cellStyle(v, info.role)}${act}">${(v * 100).toFixed(1)}%</td>`;
       }).join("");
       return `<tr><td class="hm-deg">${esc(info.name)}</td>${cells}</tr>`;
     }).join("");
@@ -703,6 +758,7 @@
 
   window.ME_CHARTS = {
     esc, num, midiName, measureStageWidth, svgLinePath, legendHtml,
+    hasMidiProjectData, hasViewItemData,
     phaseDividerLayer, gridAxesLayer, xAxisAndHitLayer,
     extractCompareProfile, buildRadarAndMacroSvg, buildCofSvg, FINE_CHORD_META,
   };

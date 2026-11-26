@@ -8,6 +8,12 @@
   flex-direction: column;
   gap: 16px;
 }
+.analysis-shell:has(+ .player-card:not([hidden])) {
+  padding-bottom: 120px;
+}
+.analysis-shell:has(+ .player-card:not([hidden]):not(.is-collapsed):not(.mp-collapsed)) {
+  padding-bottom: 348px;
+}
 .analysis-shell[hidden] { display: none; }
 
 .analysis-top-row {
@@ -120,6 +126,35 @@
 
 .svg-stage { width: 100%; overflow-x: auto; }
 .svg-stage svg { display: block; width: 100%; height: auto; max-width: 100%; }
+rect.chart-hit-col { transition: fill-opacity 120ms var(--ease-std); }
+rect.chart-hit-col:hover { fill: var(--primary); fill-opacity: 0.07; }
+
+.chart-hover-pill {
+  position: fixed;
+  left: 0;
+  top: 0;
+  z-index: var(--z-popover);
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+  pointer-events: none;
+  padding: 6px 12px;
+  border-radius: 999px;
+  background: var(--md-sys-color-surface-container-high);
+  color: var(--md-sys-color-on-surface);
+  font-family: var(--font-sans);
+  font-size: 12px;
+  font-weight: 500;
+  white-space: nowrap;
+  max-width: calc(100vw - 24px);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  box-shadow: 0 6px 18px color-mix(in srgb, var(--md-sys-color-shadow) 24%, transparent);
+  transform: translate(-50%, -100%);
+}
+.chart-hover-pill[hidden] { display: none; }
+.chart-hover-pill strong { font-weight: 600; color: var(--md-sys-color-on-surface); }
+.chart-hover-pill .chart-tip-sub { color: var(--md-sys-color-on-surface-variant); }
 
 .legend-row {
   display: flex;

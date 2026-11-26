@@ -65,7 +65,7 @@
 
   function renderWorkflow(items, d, selIdx, state) {
     const C = window.ME_CHARTS;
-    const insight = "From pre-2013 audio archives through MIDI-heavy 2013–18 production, pivoting to multi-track audio assemblies in 2018–22 and hybrid studio balance in 2024–26.";
+    const insight = "MIDI-heavy 2013–18 production pivoted to multi-track audio assemblies in 2018–22 and hybrid studio balance across 2024–26 Ableton projects.";
     const W = Math.max(460, C.measureStageWidth("wf-stage-wrap", 960));
     const H = items.length > 8 ? 316 : 300, padL = 48, padR = 46, padT = state.granularity === "eras" ? 26 : 16, padB = items.length > 8 ? 54 : 28;
     const plotW = W - padL - padR, plotH = H - padT - padB;
@@ -87,7 +87,11 @@
       sharePts.push(sh === null ? null : { x: cx, y: padT + plotH * (1 - sh / 100) });
     });
     svg += `<path d="${C.svgLinePath(sharePts)}" fill="none" stroke="var(--c3)" stroke-width="2.4" />`;
-    svg += C.xAxisAndHitLayer(items, state, padL, plotW, padT, plotH, H, selIdx);
+    svg += C.xAxisAndHitLayer(items, state, padL, plotW, padT, plotH, H, selIdx, (it) => {
+      const sh = audioSharePct(it);
+      const shTxt = sh !== null ? ` · ${sh}% audio share` : "";
+      return `${(it.midi_pitched_notes || 0).toLocaleString()} MIDI · ${(it.audio_notes || 0).toLocaleString()} audio${shTxt}`;
+    });
 
     return `
       <div class="view-head"><div class="view-title-group"><h2 class="view-title">Workflow: MIDI vs audio</h2><p class="view-insight">${C.esc(insight)}</p></div></div>
@@ -201,7 +205,7 @@
       const fallback = it.archive_only ? `<span class="gear-pill">Pre-2013 Audio Archive</span>` : "";
       const modes = (it.top_modes_midi && it.top_modes_midi.length ? it.top_modes_midi : it.top_modes_audio || []).slice(0, 2).join(" / ") || "n/a";
       return `
-        <button type="button" data-era-idx="${i}" class="palette-card ${i === selIdx ? "is-active" : ""}">
+        <button type="button" data-era-idx="${i}" data-era-id="${C.esc(it.id)}" class="palette-card ${i === selIdx ? "is-active" : ""}">
           <div>
             <div style="display:flex;justify-content:space-between;gap:6px;margin-bottom:8px">
               <strong>${C.esc(it.label)}</strong>
