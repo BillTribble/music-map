@@ -1,8 +1,8 @@
 {
   "summary": {
-    "total_tracks": 558,
+    "total_tracks": 556,
     "drum_tracks": 407,
-    "drumless_tracks": 151,
+    "drumless_tracks": 149,
     "drop_tracks": 245,
     "clusters": {
       "Generative AI · Afro, house & cumbia": {
@@ -16,7 +16,7 @@
         "drops": 16
       },
       "Ambient & soundscapes": {
-        "total": 61,
+        "total": 59,
         "drums": 0,
         "drops": 0
       },
@@ -2199,28 +2199,6 @@
       "has_drop": false,
       "old_preview_start_sec": 9.57,
       "preview_start_sec": 9.57
-    },
-    "archive_2013_18_77": {
-      "id": "archive_2013_18_77",
-      "title": "Jamstik -ambient",
-      "cluster_label": "Ambient & soundscapes",
-      "is_ai": false,
-      "has_drums": false,
-      "drum_score": 0.0,
-      "has_drop": false,
-      "old_preview_start_sec": 28.61,
-      "preview_start_sec": 28.61
-    },
-    "archive_2013_18_78": {
-      "id": "archive_2013_18_78",
-      "title": "Jamstik -crystal Bell",
-      "cluster_label": "Ambient & soundscapes",
-      "is_ai": false,
-      "has_drums": false,
-      "drum_score": 0.0,
-      "has_drop": false,
-      "old_preview_start_sec": 54.61,
-      "preview_start_sec": 54.61
     },
     "archive_2013_18_79": {
       "id": "archive_2013_18_79",

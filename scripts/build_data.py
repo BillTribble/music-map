@@ -1014,7 +1014,7 @@ DEFAULT_EXCLUDED_IDS = {
     # MusicFX AI test — excluded by owner (post-023266)
     "archive_2018_23_45",
     "archive_2018_23_46",
-    # Owner track removals (post-023520, post-023524, post-023576, post-023651, post-023691, post-023696, post-023750)
+    # Owner track removals (post-023520, post-023524, post-023576, post-023651, post-023691, post-023696, post-023750, post-023978)
     "present_electro_7",
     "hd_2005_42",
     "archive_2013_18_146",
@@ -1023,6 +1023,8 @@ DEFAULT_EXCLUDED_IDS = {
     "archive_2018_23_66",
     "archive_2013_18_37",
     "archive_2013_18_76",
+    "archive_2013_18_77",
+    "archive_2013_18_78",
     "archive_2013_18_103",
     "hd_2005_33",
     "sketches_2024_25_32",
@@ -1261,7 +1263,8 @@ def is_excluded_by_folder_rule(path_str: str) -> bool:
         or low_p.endswith("/arps test.mp3")
         or "chord-ideas (1)-- best" in low_p
         or "counterpoint-part-2" in low_p
-        or "jamstik -a7 d7 c7" in low_p
+        or "jamstik" in low_p
+        or "jamstick" in low_p
         or "minor chord rave riff" in low_p
         or "not 2 l8" in low_p
         or "war machine/war machine 04" in low_p

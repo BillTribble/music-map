@@ -702,7 +702,7 @@ DEFAULT_EXCLUDED_IDS = {
     # MusicFX AI test — excluded by owner (post-023266)
     "archive_2018_23_45",
     "archive_2018_23_46",
-    # Owner track removals (post-023520, post-023524, post-023576, post-023651, post-023691, post-023696, post-023750)
+    # Owner track removals (post-023520, post-023524, post-023576, post-023651, post-023691, post-023696, post-023750, post-023978)
     "present_electro_7",
     "hd_2005_42",
     "archive_2013_18_146",
@@ -711,6 +711,8 @@ DEFAULT_EXCLUDED_IDS = {
     "archive_2018_23_66",
     "archive_2013_18_37",
     "archive_2013_18_76",
+    "archive_2013_18_77",
+    "archive_2013_18_78",
     "archive_2013_18_103",
     "hd_2005_33",
     "sketches_2024_25_32",
@@ -739,7 +741,7 @@ PIANO_SYNTH_RE = re.compile(
     re.IGNORECASE,
 )
 GUITAR_INST_RE = re.compile(
-    r"\b(guitar|jamstik|acoustic|strum|campfire|ukulele|3chord)\b",
+    r"\b(guitar|acoustic|strum|campfire|ukulele|3chord)\b",
     re.IGNORECASE,
 )
 
@@ -919,11 +921,6 @@ def compute_folder_genre_priors(t: dict) -> tuple[dict[str, float], dict[str, ob
         p["downtempo_lush"], p["ambient"], rule = 62.0, 80.0, "folder:orchestral_chill"
     elif "guitar sketches" in lp or "guitar loop for kinbana" in lp or "simple mics setup" in lp:
         p["guitar_demos"], rule = 95.0, "folder:guitar_demos"
-    elif "jamstik" in lp or "jamstik" in title:
-        if "ambient" in title or "crystal bell" in title or perc_share < 0.05:
-            p["ambient"], rule = 88.0, "title:jamstik_ambient"
-        else:
-            p["guitar_demos"], rule = 95.0, "title:jamstik_guitar"
     elif any(k in lp for k in ("/my own band/", "/psykers/", "/yon/", "cae - idles cover", "06 skullz - endlesss band")):
         p["rock"], p["ambient_rock"], rule = 90.0, 38.0, "folder:band_rock"
     elif "/random bill bands/" in lp:
@@ -1034,7 +1031,7 @@ def recalibrate_and_score_track(
     is_piano_or_chip = bool(flags["is_piano_or_chip"])
     is_explicit_ambient = rule in (
         "folder:spirit_guides_ambient", "folder:present_ambient", "folder:dark_ambient_ep",
-        "title:jamstik_ambient", "folder:spudboy_drone", "title:deepspace_guitar", "folder:orchestral_chill",
+        "folder:spudboy_drone", "title:deepspace_guitar", "folder:orchestral_chill",
     )
 
     # 2. Un-crush compressed wall-of-sound tracks (e.g. Your a Genius, demo G 02, Make It Thru)
@@ -1514,7 +1511,8 @@ def is_excluded_by_folder_rule(path_str: str) -> bool:
         or low_p.endswith("/arps test.mp3")
         or "chord-ideas (1)-- best" in low_p
         or "counterpoint-part-2" in low_p
-        or "jamstik -a7 d7 c7" in low_p
+        or "jamstik" in low_p
+        or "jamstick" in low_p
         or "minor chord rave riff" in low_p
         or "not 2 l8" in low_p
         or "war machine/war machine 04" in low_p
