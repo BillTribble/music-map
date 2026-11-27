@@ -2286,13 +2286,13 @@ function sanitizePulsePresetPayload(raw) {
     mode,
     lineStrength: clampRound(src.lineStrength, 0, 3, 1.65),
     dotSpeed: clampRound(src.dotSpeed, 0, 4, 0.3),
-    reverseMix: clampRound(src.reverseMix, 0, 1, 0.3),
+    reverseMix: clampRound(src.reverseMix, 0, 1, 0.45),
     colorCount: clampRound(src.colorCount, 1, 6, 2),
     targetPulseSpeed: clampRound(src.targetPulseSpeed, 0, 4, 0.2),
     pulseGlow: clampRound(src.pulseGlow, 0, 4, 0.85),
     dotSize: clampRound(src.dotSize, 0.35, 3, 0.85),
-    dotSizePulseAmt: clampRound(src.dotSizePulseAmt, 0, 1, 0.35),
-    dotSizePulseFreq: clampRound(src.dotSizePulseFreq, 0.05, 8, 0.6),
+    dotSizePulseAmt: clampRound(src.dotSizePulseAmt, 0, 1, 0.5),
+    dotSizePulseFreq: clampRound(src.dotSizePulseFreq, 0.05, 8, 0.65),
     dotSpacing: clampRound(src.dotSpacing, 0.4, 3, 0.9),
   };
 }

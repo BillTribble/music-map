@@ -88,9 +88,11 @@
   let pulseFlowSec = 0;
   let pulseTargetSec = 0;
   let pulseSizeModPhase = 0;
+  let pulseRevWavePhase = 0;
   let pulseWaveOriginFlowSec = 0;
   let pulseAlpha = 0;
   let lastRingSig = "";
+  const REV_WAVE_FREQ_RATIO = 1.35;
   const pulseState = {
     fromId: null,
     toId: null,
@@ -99,6 +101,8 @@
   };
   let lastPulseRenderTelemetry = {
     mode: "line_dots",
+    kFwd: 0,
+    kRev: 0,
     forwardDots: [],
     reverseDots: [],
   };
@@ -115,13 +119,13 @@
     mode: "line_dots",
     lineStrength: 1.65,
     dotSpeed: 0.3,
-    reverseMix: 0.3,
+    reverseMix: 0.45,
     colorCount: 2,
     targetPulseSpeed: 0.2,
     pulseGlow: 0.85,
     dotSize: 0.85,
-    dotSizePulseAmt: 0.35,
-    dotSizePulseFreq: 0.6,
+    dotSizePulseAmt: 0.5,
+    dotSizePulseFreq: 0.65,
     dotSpacing: 0.9,
   });
   let pulseTuning = { ...DEFAULT_PULSE_TUNING };
@@ -155,7 +159,7 @@
       mode: VALID_PULSE_MODES.has(rawMode) ? rawMode : fbMode,
       lineStrength: clampRound(src.lineStrength, 0.2, 2.0, base.lineStrength),
       dotSpeed: clampRound(src.dotSpeed, 0, 3, base.dotSpeed),
-      reverseMix: clampRound(src.reverseMix, 0, 0.5, base.reverseMix),
+      reverseMix: clampRound(src.reverseMix, 0, 1, base.reverseMix),
       colorCount: clampRound(src.colorCount, 1, 5, base.colorCount),
       targetPulseSpeed: clampRound(src.targetPulseSpeed, 0, 3, base.targetPulseSpeed),
       pulseGlow: clampRound(src.pulseGlow, 0, 2.5, base.pulseGlow),
@@ -982,9 +986,9 @@
       const by = Number.isFinite(tn.py) ? tn.py : tn.y * zoom.k + zoom.y;
       if (bx < Math.min(340, vw * 0.34) && by > vh * 0.28) continue;
       const chord = Math.hypot(bx - ax, by - ay);
-      if (chord < 68 || chord > 260) continue;
+      if (chord < 82 || chord > 260) continue;
       const distCenter = Math.hypot((ax + bx) * 0.5 - targetX, (ay + by) * 0.5 - targetY);
-      const chordPenalty = Math.abs(chord - 118) * 0.65;
+      const chordPenalty = Math.abs(chord - 148) * 0.55;
       const horizLabelPenalty = Math.abs(by - ay) < 34 ? 95 : 0;
       const score = distCenter + chordPenalty + horizLabelPenalty;
       if (score < bestScore) {
@@ -1054,6 +1058,7 @@
         pulseFlowSec += dt * pulseTuning.dotSpeed;
         pulseTargetSec += dt * pulseTuning.targetPulseSpeed;
         pulseSizeModPhase = (pulseSizeModPhase + dt * pulseTuning.dotSizePulseFreq * Math.PI * 2) % (Math.PI * 2000);
+        pulseRevWavePhase = (pulseRevWavePhase + dt * pulseTuning.dotSizePulseFreq * REV_WAVE_FREQ_RATIO * Math.PI * 2) % (Math.PI * 2000);
       }
       return;
     }
@@ -1070,11 +1075,12 @@
       pulseFlowSec += dt * 0.65 * pulseTuning.dotSpeed;
       pulseTargetSec += dt * 0.65 * pulseTuning.targetPulseSpeed;
       pulseSizeModPhase = (pulseSizeModPhase + dt * 0.65 * pulseTuning.dotSizePulseFreq * Math.PI * 2) % (Math.PI * 2000);
+      pulseRevWavePhase = (pulseRevWavePhase + dt * 0.65 * pulseTuning.dotSizePulseFreq * REV_WAVE_FREQ_RATIO * Math.PI * 2) % (Math.PI * 2000);
     }
     if (pulseAlpha <= 0.004) {
       pulseAlpha = 0;
       pulseLastNow = 0;
-      lastPulseRenderTelemetry = { mode: pulseTuning.mode, forwardDots: [], reverseDots: [] };
+      lastPulseRenderTelemetry = { mode: pulseTuning.mode, kFwd: 0, kRev: 0, forwardDots: [], reverseDots: [] };
     }
   }
 
@@ -1177,29 +1183,38 @@
 
     const curR = nodeScreenRadius(fromNode.t) + 1.3;
     const nextR = nodeScreenRadius(toNode.t);
-    const numWaves = totalLen >= 340 ? 2 : 1;
-    const wavePeriodSec = Math.max(0.95, Math.min(1.65, totalLen / 165));
+    const sStart = curR + 3.2;
+    const sEnd = totalLen - (nextR + 3.6);
+    const usableLen = Math.max(0, sEnd - sStart);
+    const baseDotStep = Math.max(8.8, Math.min(12.4, 9.6 * Math.pow(Math.max(1, zoom.k), 0.14)));
+    const dotStep = Math.max(5.2, Math.min(24.0, baseDotStep * pulseTuning.dotSpacing));
+    const approxDots = Math.max(4, usableLen / dotStep);
+    const effSpan = Math.max(usableLen, totalLen * 0.85);
+    // Primary forward size pulses (0 -> 1): broad swells propagating with dot flow
+    const kFwd = Math.max(1.25, Math.min(2.6, effSpan / 88));
+    // Smaller opposite-direction size waves (1 -> 0): higher spatial wavenumber (kRev > kFwd),
+    // Nyquist-guarded (>= 4.4 dots/wave) so discrete beads hand off crests smoothly at any spacing.
+    const nyquistMaxK = Math.max(2.15, approxDots / 4.4);
+    const targetKRev = Math.max(kFwd * 2.05, Math.min(4.3, effSpan / 43));
+    const kRev = Math.max(kFwd * 1.55, Math.min(targetKRev, nyquistMaxK));
+
     const sheenWaves = totalLen >= 260 ? 2 : 1;
     const sheenPeriodSec = Math.max(0.54, Math.min(1.05, totalLen / 165));
+    const kRevSheen = sheenWaves >= 2 ? 4.2 : 3.2;
     const elapsedFlow = Math.max(0, pulseFlowSec - pulseWaveOriginFlowSec);
     const reduced = isReducedMotionPreferred() && !pulsePanelOpen;
     const stationaryDots = pulseTuning.dotSpeed <= 0.001;
 
-    function waveBoostAt(u) {
+    function fwdSizeWaveAt(u) {
       if (reduced) return 0.35;
-      let best = 0;
-      for (let w = 0; w < numWaves; w++) {
-        const front = stationaryDots
-          ? fract(0.35 + w / numWaves)
-          : fract(elapsedFlow / wavePeriodSec + w / numWaves);
-        let du = u - front;
-        if (du > 0.5) du -= 1;
-        else if (du < -0.5) du += 1;
-        const sigma = du > 0 ? 0.055 : 0.135;
-        const pkt = Math.exp(-(du * du) / (2 * sigma * sigma));
-        if (pkt > best) best = pkt;
-      }
-      return best;
+      const s = 0.5 + 0.5 * Math.sin(Math.PI * 2 * kFwd * u - pulseSizeModPhase);
+      return s * s;
+    }
+
+    function revSizeWaveAt(u) {
+      if (reduced) return 0.35;
+      const s = 0.5 + 0.5 * Math.sin(Math.PI * 2 * kRev * u + pulseRevWavePhase);
+      return Math.pow(s, 2.75);
     }
 
     function sheenWaveAt(u) {
@@ -1219,46 +1234,23 @@
       return Math.min(1, sum);
     }
 
-    const revWavePeriodSec = wavePeriodSec * 1.12;
-    function revWaveBoostAt(u) {
-      if (reduced) return 0.35;
-      let best = 0;
-      for (let w = 0; w < numWaves; w++) {
-        const front = stationaryDots
-          ? fract(0.68 + w / numWaves)
-          : 1 - fract(elapsedFlow / revWavePeriodSec + 0.42 + w / numWaves);
-        let du = u - front;
-        if (du > 0.5) du -= 1;
-        else if (du < -0.5) du += 1;
-        const sigma = du < 0 ? 0.055 : 0.135;
-        const pkt = Math.exp(-(du * du) / (2 * sigma * sigma));
-        if (pkt > best) best = pkt;
-      }
-      return best;
-    }
-
-    const revSheenPeriodSec = sheenPeriodSec * 1.14;
+    const revSheenPhase = stationaryDots
+      ? pulseRevWavePhase
+      : (elapsedFlow / (sheenPeriodSec * 0.72)) * Math.PI * 2 + pulseRevWavePhase * 0.35;
     function revSheenWaveAt(u) {
-      if (reduced || stationaryDots) {
-        const dStatic = u - 0.34;
-        return 0.32 + 0.52 * Math.exp(-(dStatic * dStatic) / (2 * 0.22 * 0.22));
-      }
-      let sum = 0;
-      for (let w = 0; w < sheenWaves; w++) {
-        const front = 1 - fract(elapsedFlow / revSheenPeriodSec + 0.46 + w / sheenWaves);
-        for (let k = -1; k <= 1; k++) {
-          const du = u - front + k;
-          const sigma = du < 0 ? 0.072 : 0.225;
-          sum += Math.exp(-(du * du) / (2 * sigma * sigma));
-        }
-      }
-      return Math.min(1, sum);
+      if (reduced) return 0.32;
+      const s = 0.5 + 0.5 * Math.sin(Math.PI * 2 * kRevSheen * u + revSheenPhase);
+      return Math.pow(s, 2.85);
     }
 
-    const activeWaveArrival = pulseTuning.mode === "line_sheen" ? sheenWaveAt(0.96) : waveBoostAt(0.96);
-    const arrivalBoost = stationaryDots ? 0.25 : activeWaveArrival;
-    const activeRevArrival = pulseTuning.mode === "line_sheen" ? revSheenWaveAt(0.04) : revWaveBoostAt(0.04);
-    const revArrivalBoost = (stationaryDots ? 0.25 : activeRevArrival) * Math.min(1, pulseTuning.reverseMix / 0.5);
+    const activeWaveArrival = pulseTuning.mode === "line_sheen"
+      ? (stationaryDots ? 0.25 : sheenWaveAt(0.96))
+      : pulseTuning.dotSizePulseAmt * fwdSizeWaveAt(0.96);
+    const arrivalBoost = reduced ? 0.25 : activeWaveArrival;
+    const activeRevArrival = pulseTuning.mode === "line_sheen"
+      ? revSheenWaveAt(0.04)
+      : revSizeWaveAt(0.04);
+    const revArrivalBoost = (reduced ? 0.25 : activeRevArrival) * pulseTuning.reverseMix;
     const tRate = pulseTuning.targetPulseSpeed;
     const targetBreath = reduced || tRate <= 0.001
       ? 0.35
@@ -1280,13 +1272,19 @@
       totalLen,
       curR,
       nextR,
+      sStart,
+      sEnd,
+      usableLen,
+      dotStep,
+      kFwd,
+      kRev,
       arrivalBoost,
       revArrivalBoost,
       targetBreath,
       targetCombinedPulse,
       uAtArcLen,
-      waveBoostAt,
-      revWaveBoostAt,
+      fwdSizeWaveAt,
+      revSizeWaveAt,
       sheenWaveAt,
       revSheenWaveAt,
     };
@@ -1348,7 +1346,7 @@
     const phaseShift = -pulseFlowSec * (isSheenMode ? 0.34 : 0.18);
     const glowRadiusScale = 0.68 + 0.32 * glow;
     const glowAlphaScale = Math.min(2.35, glow);
-    const revSheenWeight = Math.min(1, pulseTuning.reverseMix / 0.5);
+    const revSheenWeight = pulseTuning.reverseMix;
 
     ctx.save();
     ctx.setLineDash([]);
@@ -1408,7 +1406,7 @@
         const [gx1, gy1] = evalQuad(ax, ay, geom.cx, geom.cy, bx, by, u1);
         const mistGrad = ctx.createLinearGradient(gx0, gy0, gx1, gy1);
         if (isSheenMode) {
-          const STOPS = 16;
+          const STOPS = 28;
           const peakMistAlpha = Math.min(0.50, (isLight ? 0.14 : 0.22) * glowAlphaScale) * master;
           for (let i = 0; i <= STOPS; i++) {
             const tStop = i / STOPS;
@@ -1416,14 +1414,14 @@
             const wFwd = sheenWaveAt(u);
             const wRev = revSheenWeight > 0.004 ? revSheenWaveAt(u) * revSheenWeight : 0;
             const w = wRev > 0
-              ? Math.min(1, Math.max(wFwd * (1 - 0.16 * revSheenWeight), wRev * 0.94) + 0.20 * wFwd * wRev)
+              ? Math.min(1, wFwd * (1 - 0.14 * revSheenWeight) + 0.68 * wRev)
               : wFwd;
             const rgbFwd = sampleGeminiCyclic(u * 0.82 + phaseShift, isLight);
             const rgb = wRev > 0
               ? mixRgb(
                   rgbFwd,
                   sampleGeminiCyclic((1 - u) * 0.82 + 0.5 - phaseShift * 0.88, isLight),
-                  (wRev * 0.94) / (wFwd + wRev * 0.94 + 1e-4)
+                  (wRev * 0.72) / (wFwd + wRev * 0.72 + 1e-4)
                 )
               : rgbFwd;
             mistGrad.addColorStop(tStop, rgbaStr(rgb, peakMistAlpha * (0.14 + 0.86 * w * w)));
@@ -1495,10 +1493,16 @@
       totalLen,
       curR,
       nextR,
+      sStart,
+      sEnd,
+      usableLen,
+      dotStep,
+      kFwd,
+      kRev,
       targetCombinedPulse,
       uAtArcLen,
-      waveBoostAt,
-      revWaveBoostAt,
+      fwdSizeWaveAt,
+      revSizeWaveAt,
       sheenWaveAt,
       revSheenWaveAt,
     } = geom;
@@ -1556,26 +1560,28 @@
 
     if (isSheenMode) {
       // 2a. Flowing line mode ("line_sheen"): zero discrete dots — pure continuous normal-weight
-      // constellation line with smooth forward + optional bidirectional counter-sheen wave.
+      // constellation line with broad forward sheen + smaller opposite-direction sheen/thickness ripples.
       const sSheenStart = Math.min(totalLen * 0.46, curR + 1.0);
       const sSheenEnd = Math.max(totalLen * 0.54, totalLen - (nextR + 1.0));
-      const revWeight = Math.min(1, revMix / 0.5);
+      const revWeight = revMix;
       if (sSheenEnd > sSheenStart + 1.5) {
         const u0 = uAtArcLen(sSheenStart);
         const u1 = uAtArcLen(sSheenEnd);
         const [p0x, p0y] = evalQuad(ax, ay, cx, cy, bx, by, u0);
         const [p1x, p1y] = evalQuad(ax, ay, cx, cy, bx, by, u1);
         const sheenGrad = ctx.createLinearGradient(p0x, p0y, p1x, p1y);
-        const STOPS = 16;
+        const crestGrad = ctx.createLinearGradient(p0x, p0y, p1x, p1y);
+        const STOPS = 28;
         const strengthGain = Math.min(1.35, 0.45 + 0.55 * lineStrength);
         const floorAlpha = 0.16 * Math.min(1.5, lineStrength);
         for (let i = 0; i <= STOPS; i++) {
           const tStop = i / STOPS;
           const u = u0 + (u1 - u0) * tStop;
           const wFwd = sheenWaveAt(u);
-          const wRev = revWeight > 0.004 ? revSheenWaveAt(u) * revWeight : 0;
+          const wRevRaw = revSheenWaveAt(u);
+          const wRev = revWeight > 0.004 ? wRevRaw * revWeight : 0;
           const w = wRev > 0
-            ? Math.min(1, Math.max(wFwd * (1 - 0.18 * revWeight), wRev * 0.94) + 0.22 * wFwd * wRev)
+            ? Math.min(1.12, wFwd * (1 - 0.14 * revWeight) + 0.68 * wRev)
             : wFwd;
           let rgb = sampleGeminiCyclic(u * 0.82 + phaseShift, isLight);
           if (wRev > 0) {
@@ -1583,15 +1589,24 @@
             if (pulseTuning.colorCount <= 1.05) {
               rgbRev = mixRgb(rgbRev, isLight ? [59, 130, 246] : [196, 181, 253], 0.28);
             }
-            rgb = mixRgb(rgb, rgbRev, (wRev * 0.94) / (wFwd + wRev * 0.94 + 1e-4));
+            rgb = mixRgb(rgb, rgbRev, (wRev * 0.72) / (wFwd + wRev * 0.72 + 1e-4));
           }
           if (!isLight && glow > 0.05 && w > 0.68) {
             const crestHighlight = ((w - 0.68) / 0.32) * Math.min(0.42, 0.24 * glow);
             rgb = mixRgb(rgb, [246, 248, 255], crestHighlight);
           }
-          const stopAlpha = Math.min(1, floorAlpha + (isLight ? 0.84 : 0.88) * strengthGain * Math.pow(w, 0.9)) * master;
+          const stopAlpha = Math.min(1, floorAlpha + (isLight ? 0.84 : 0.88) * strengthGain * Math.pow(Math.min(1, w), 0.9)) * master;
           sheenGrad.addColorStop(tStop, rgbaStr(rgb, stopAlpha));
+          const swellEnv = Math.min(1, 0.52 * Math.pow(wFwd, 2.2) + 0.48 * revWeight * Math.pow(wRevRaw, 2.4));
+          crestGrad.addColorStop(tStop, rgbaStr(rgb, Math.min(0.78, (isLight ? 0.38 : 0.48) * strengthGain * swellEnv) * master));
         }
+        tracePulseSpanPath(geom, u0, u1);
+        ctx.lineCap = "round";
+        ctx.strokeStyle = crestGrad;
+        ctx.lineWidth = 2.05 + 0.85 * Math.min(2.0, lineStrength);
+        ctx.globalAlpha = 1;
+        ctx.stroke();
+
         tracePulseSpanPath(geom, u0, u1);
         ctx.lineCap = "round";
         ctx.strokeStyle = sheenGrad;
@@ -1599,45 +1614,43 @@
         ctx.globalAlpha = 1;
         ctx.stroke();
       }
-      lastPulseRenderTelemetry = { mode: "line_sheen", forwardDots: [], reverseDots: [] };
+      lastPulseRenderTelemetry = { mode: "line_sheen", kFwd, kRev, forwardDots: [], reverseDots: [] };
       ctx.restore();
       return;
     }
 
-    // 2b. Line + dots mode ("line_dots"): luminous beads riding along the continuous hairline wire
-    // with per-dot phase-continuous size breathing and optional reverse-pulsing interlinking beads.
-    const sStart = curR + 3.2;
-    const sEnd = totalLen - (nextR + 3.6);
-    const usableLen = sEnd - sStart;
-    const baseDotStep = Math.max(8.8, Math.min(12.4, 9.6 * Math.pow(Math.max(1, zoom.k), 0.14)));
-    const dotStep = Math.max(5.2, Math.min(24.0, baseDotStep * pulseTuning.dotSpacing));
+    // 2b. Line + dots mode ("line_dots"): SINGLE continuous stream of forward-moving dots
+    // (playingNode -> nextNode, 100% du/dt >= 0) carrying superposed forward size pulses (0 -> 1)
+    // plus smaller higher-wavenumber size waves rippling in the opposite direction (1 -> 0).
     const marchBaseSpeed = 44;
+    const baseUnitR = 1.64 * pulseTuning.dotSize;
     const forwardDots = [];
-    const reverseDots = [];
 
-    function computeBeadSize(u, endEnv, waveBoost, beadId, streamPhaseOffset, sizeScale) {
-      const baseR = (1.45 + 1.65 * waveBoost) * (0.58 + 0.42 * endEnv) * pulseTuning.dotSize * sizeScale;
-      if (sizePulseAmt <= 0.002 || reduced) {
-        return { dotR: baseR, swellBoost: 0 };
+    function evaluateDotWaveSuperposition(u, endEnv) {
+      const endScale = 0.56 + 0.44 * endEnv;
+      const baseR = baseUnitR * endScale;
+      if (reduced) {
+        return { dotR: baseR, baseR, wFwd: 0.35, wRev: 0.35, effWave: 0.35, revGlow: 0 };
       }
-      const beadPhase = pulseSizeModPhase - u * Math.PI * 2.6 + beadId * 1.15 + streamPhaseOffset;
-      const sizeOsc = Math.sin(beadPhase);
-      const sizeModScale = sizeOsc >= 0
-        ? 1 + 0.90 * sizePulseAmt * sizeOsc
-        : 1 + 0.58 * sizePulseAmt * sizeOsc;
-      const swellBoost = sizePulseAmt * Math.max(0, sizeOsc);
-      return {
-        dotR: Math.max(0.45, baseR * sizeModScale),
-        swellBoost,
-      };
+      const wFwd = fwdSizeWaveAt(u);
+      const wRev = revSizeWaveAt(u);
+      const fwdDelta = sizePulseAmt * (1.36 * wFwd - 0.20);
+      const revDelta = revMix * (0.74 * wRev - 0.08);
+      const sizeMult = Math.max(0.42, 1 + fwdDelta + revDelta);
+      const dotR = Math.max(0.45, baseR * sizeMult);
+
+      const fwdGlow = sizePulseAmt * wFwd;
+      const revGlow = revMix * wRev;
+      const steadyBase = 0.34 * Math.max(0, 1 - 0.62 * Math.max(sizePulseAmt, revMix));
+      const effWave = Math.min(1.18, steadyBase + 0.92 * fwdGlow + 0.66 * revGlow);
+      return { dotR, baseR, wFwd, wRev, effWave, revGlow };
     }
 
-    function paintBead(px, py, dotR, rgb, waveBoost, swellBoost, endEnv, alphaScale) {
-      const effWave = Math.min(1.2, waveBoost + 0.32 * swellBoost);
+    function paintBead(px, py, dotR, rgb, effWave, endEnv) {
       if (glow > 0.005 && (effWave > 0.10 || glow > 0.55)) {
         const glowR = dotR * (isLight ? 2.6 : 3.2) * (0.56 + 0.46 * glow);
         const glowDrive = 0.24 * Math.max(0, glow - 0.35) + 0.82 * effWave * glow;
-        const peakGlow = Math.min(0.94, (isLight ? 0.28 : 0.42) * glowDrive) * endEnv * alphaScale * master;
+        const peakGlow = Math.min(0.94, (isLight ? 0.28 : 0.42) * glowDrive) * endEnv * master;
         if (peakGlow > 0.01) {
           const bloom = ctx.createRadialGradient(px, py, dotR * 0.24, px, py, glowR);
           bloom.addColorStop(0, rgbaStr(rgb, peakGlow));
@@ -1654,7 +1667,7 @@
       ctx.beginPath();
       ctx.arc(px, py, dotR, 0, Math.PI * 2);
       ctx.fillStyle = rgbaStr(rgb, 1);
-      ctx.globalAlpha = Math.min(1, ((isLight ? 0.56 : 0.52) + (isLight ? 0.42 : 0.46) * effWave)) * endEnv * alphaScale * master;
+      ctx.globalAlpha = Math.min(1, ((isLight ? 0.56 : 0.52) + (isLight ? 0.42 : 0.46) * effWave)) * endEnv * master;
       ctx.fill();
 
       if (!isLight && glow > 0.05 && effWave > 0.62) {
@@ -1662,7 +1675,7 @@
         ctx.beginPath();
         ctx.arc(px, py, Math.max(0.65, dotR * 0.44), 0, Math.PI * 2);
         ctx.fillStyle = "rgb(255, 255, 255)";
-        ctx.globalAlpha = 0.88 * coreStrength * endEnv * alphaScale * master;
+        ctx.globalAlpha = 0.88 * coreStrength * endEnv * master;
         ctx.fill();
       }
     }
@@ -1675,7 +1688,7 @@
           : fract(fwdDist / dotStep) * dotStep;
       const fadeSpan = Math.min(10, usableLen * 0.22);
 
-      // Forward stream (playingNode -> nextNode, u: 0 -> 1)
+      // Single continuous forward stream (playingNode -> nextNode, u: 0 -> 1)
       for (let s = sStart + phaseOffset; s <= sEnd; s += dotStep) {
         const u = uAtArcLen(s);
         const [px, py] = evalQuad(ax, ay, cx, cy, bx, by, u);
@@ -1689,84 +1702,66 @@
         const beadId = reduced || stationaryDots
           ? Math.round((s - sStart) / dotStep)
           : Math.round(((s - sStart) - fwdDist) / dotStep);
-        const waveBoost = waveBoostAt(u);
-        const rgb = sampleGeminiCyclic(u * 0.88 + phaseShift, isLight);
-        const { dotR, swellBoost } = computeBeadSize(u, endEnv, waveBoost, beadId, 0, 1.0);
-        paintBead(px, py, dotR, rgb, waveBoost, swellBoost, endEnv, 1.0);
-        forwardDots.push({ id: beadId, u: Math.round(u * 10000) / 10000, x: px, y: py, r: dotR });
-      }
-
-      // Reverse interlinking stream (nextNode -> playingNode, u: 1 -> 0)
-      if (revMix > 0.002) {
-        const revCoverage = Math.min(1, revMix / 0.5);
-        const revStep = Math.max(5.8, Math.min(26.0, dotStep * 1.12));
-        const revSpeed = marchBaseSpeed * 0.88;
-        const revDist = pulseFlowSec * revSpeed + revStep * 0.37;
-        const revOffset =
-          reduced || stationaryDots
-            ? revStep * 0.37
-            : fract(revDist / revStep) * revStep;
-
-        for (let s = sEnd - revOffset; s >= sStart; s -= revStep) {
-          const revBeadId = reduced || stationaryDots
-            ? Math.round((sEnd - s) / revStep)
-            : Math.round(((sEnd - s) - revDist) / revStep);
-          const slotRank = fract(revBeadId * 0.61803398875 + 0.19);
-          const slotWeight = smoothstep(slotRank * 0.84, slotRank * 0.84 + 0.16, revCoverage);
-          if (slotWeight <= 0.02) continue;
-
-          const u = uAtArcLen(s);
-          const [px, py] = evalQuad(ax, ay, cx, cy, bx, by, u);
-          if (px < -28 || px > vw + 28 || py < -28 || py > vh + 28) continue;
-
-          const inFade = fadeSpan > 0.5 ? smoothstep(0, fadeSpan, sEnd - s) : 1;
-          const outFade = fadeSpan > 0.5 ? smoothstep(0, fadeSpan, s - sStart) : 1;
-          const endEnv = inFade * outFade * slotWeight;
-          if (endEnv <= 0.02) continue;
-
-          const revBoost = revWaveBoostAt(u);
-          let revRgb = sampleGeminiCyclic((1 - u) * 0.88 + 0.5 - phaseShift * 0.85, isLight);
+        const { dotR, baseR, wFwd, wRev, effWave, revGlow } = evaluateDotWaveSuperposition(u, endEnv);
+        let rgb = sampleGeminiCyclic(u * 0.88 + phaseShift, isLight);
+        if (revGlow > 0.02) {
+          let revAccent = sampleGeminiCyclic((1 - u) * 0.82 + 0.46 - phaseShift * 0.65, isLight);
           if (pulseTuning.colorCount <= 1.05) {
-            revRgb = mixRgb(revRgb, isLight ? [59, 130, 246] : [196, 181, 253], 0.28);
+            revAccent = mixRgb(revAccent, isLight ? [59, 130, 246] : [196, 181, 253], 0.26);
           }
-          const { dotR, swellBoost } = computeBeadSize(u, endEnv, revBoost, revBeadId, 2.094, 0.94);
-          paintBead(px, py, dotR, revRgb, revBoost, swellBoost, endEnv, 0.94);
-          reverseDots.push({ id: revBeadId, u: Math.round(u * 10000) / 10000, x: px, y: py, r: dotR, weight: slotWeight });
+          rgb = mixRgb(rgb, revAccent, Math.min(0.36, 0.30 * revGlow));
         }
+        paintBead(px, py, dotR, rgb, effWave, endEnv);
+        forwardDots.push({
+          id: beadId,
+          u: Math.round(u * 10000) / 10000,
+          s: Math.round(s * 1000) / 1000,
+          x: px,
+          y: py,
+          r: dotR,
+          baseR,
+          endEnv: Math.round(endEnv * 10000) / 10000,
+          fwdWave: Math.round(wFwd * 10000) / 10000,
+          revWave: Math.round(wRev * 10000) / 10000,
+        });
       }
     } else if (totalLen > curR + nextR + 1.5) {
-      // Ultra-close neighbor bridge: sequential pulsing micro-dots between adjacent rims
+      // Ultra-close neighbor bridge: single-stream micro-dots with superposed forward & reverse size waves
       const uMidA = Math.min(0.46, (curR + 1.6) / totalLen);
       const uMidB = Math.max(0.54, 1 - (nextR + 1.8) / totalLen);
       const microUs = [uMidA, uMidB];
       for (let m = 0; m < microUs.length; m++) {
         const u = microUs[m];
         const [px, py] = evalQuad(ax, ay, cx, cy, bx, by, u);
-        const fwdW =
-          reduced || stationaryDots
-            ? 0.6
-            : 0.5 + 0.5 * Math.sin(pulseFlowSec * 6.2 - m * 1.35);
-        const revW =
-          reduced || stationaryDots
-            ? 0.5
-            : 0.5 + 0.5 * Math.sin(pulseFlowSec * 5.6 + m * 1.35 + 1.1);
-        const revRatio = Math.min(1, revMix / 0.5);
-        const w = fwdW * (1 - 0.35 * revRatio) + revW * (0.35 * revRatio);
+        const { dotR, baseR, wFwd, wRev, effWave } = evaluateDotWaveSuperposition(u, 1);
         const rgb = sampleGeminiCyclic(u * 0.8 + phaseShift, isLight);
-        const { dotR } = computeBeadSize(u, 1, w, m, 0, 1.0);
+        const microR = dotR * 0.72;
         ctx.beginPath();
-        ctx.arc(px, py, dotR * 0.72, 0, Math.PI * 2);
+        ctx.arc(px, py, microR, 0, Math.PI * 2);
         ctx.fillStyle = rgbaStr(rgb, 1);
-        ctx.globalAlpha = (0.48 + 0.45 * w) * master;
+        ctx.globalAlpha = Math.min(1, 0.48 + 0.45 * effWave) * master;
         ctx.fill();
-        forwardDots.push({ id: m, u: Math.round(u * 10000) / 10000, x: px, y: py, r: dotR * 0.72 });
+        forwardDots.push({
+          id: m,
+          u: Math.round(u * 10000) / 10000,
+          s: Math.round(u * totalLen * 1000) / 1000,
+          x: px,
+          y: py,
+          r: microR,
+          baseR: baseR * 0.72,
+          endEnv: 1,
+          fwdWave: Math.round(wFwd * 10000) / 10000,
+          revWave: Math.round(wRev * 10000) / 10000,
+        });
       }
     }
 
     lastPulseRenderTelemetry = {
       mode: "line_dots",
+      kFwd,
+      kRev,
       forwardDots,
-      reverseDots,
+      reverseDots: [],
     };
     ctx.restore();
   }
@@ -2485,9 +2480,7 @@
       return val <= 0.005 ? "Still" : `${val.toFixed(2)}×`;
     }
     if (key === "reverseMix") {
-      if (val <= 0.005) return "One-way";
-      if (val >= 0.495) return "50% · Two-way";
-      return `${Math.round(val * 100)}%`;
+      return val <= 0.005 ? "Off" : `${Math.round(val * 100)}%`;
     }
     if (key === "dotSizePulseAmt") {
       return val <= 0.005 ? "0%" : `${Math.round(val * 100)}%`;
@@ -2777,7 +2770,7 @@
     const sliderDefs = [
       { id: "pt-line-strength", key: "lineStrength", label: "Line strength", min: 0.2, max: 2.0, step: 0.05, primary: true },
       { id: "pt-dot-speed", key: "dotSpeed", label: "Dot speed", sheenLabel: "Flow speed", min: 0, max: 3, step: 0.05, primary: true },
-      { id: "pt-reverse-mix", key: "reverseMix", label: "Reverse flow", min: 0, max: 0.5, step: 0.05, primary: true },
+      { id: "pt-reverse-mix", key: "reverseMix", label: "Reverse wave", min: 0, max: 1, step: 0.05, primary: true },
       { id: "pt-color-count", key: "colorCount", label: "Amount of colors", min: 1, max: 5, step: 1, primary: true, swatches: true },
       { id: "pt-target-speed", key: "targetPulseSpeed", label: "Receiving track pulse", min: 0, max: 3, step: 0.05, primary: true },
       { id: "pt-pulse-glow", key: "pulseGlow", label: "Pulse glow", min: 0, max: 2.5, step: 0.05, primary: true },
@@ -3068,11 +3061,14 @@
       flowSec: pulseFlowSec,
       targetSec: pulseTargetSec,
       sizeModPhase: pulseSizeModPhase,
+      revWavePhase: pulseRevWavePhase,
       rafActive: Boolean(pulseRaf),
       panelOpen: pulsePanelOpen,
       tuning: { ...pulseTuning },
       renderStats: {
         mode: lastPulseRenderTelemetry.mode,
+        kFwd: lastPulseRenderTelemetry.kFwd || 0,
+        kRev: lastPulseRenderTelemetry.kRev || 0,
         forwardCount: lastPulseRenderTelemetry.forwardDots.length,
         reverseCount: lastPulseRenderTelemetry.reverseDots.length,
         forwardDots: lastPulseRenderTelemetry.forwardDots.map((d) => ({ ...d })),
