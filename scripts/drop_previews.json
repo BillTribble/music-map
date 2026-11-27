@@ -3,22 +3,22 @@
     "total_tracks": 554,
     "drum_tracks": 406,
     "drumless_tracks": 148,
-    "drop_tracks": 245,
+    "drop_tracks": 246,
     "clusters": {
       "Generative AI · Afro, house & cumbia": {
         "total": 70,
         "drums": 69,
         "drops": 49
       },
+      "Ambient & soundscapes": {
+        "total": 59,
+        "drums": 0,
+        "drops": 0
+      },
       "IDM, glitch & industrial": {
         "total": 55,
         "drums": 36,
         "drops": 16
-      },
-      "Ambient & soundscapes": {
-        "total": 60,
-        "drums": 0,
-        "drops": 0
       },
       "Hypnotic, dub & microtonal": {
         "total": 44,
@@ -35,15 +35,15 @@
         "drums": 33,
         "drops": 18
       },
-      "Meditative beats": {
-        "total": 33,
-        "drums": 20,
-        "drops": 10
-      },
       "Generative AI · UK bass & dubstep": {
         "total": 34,
         "drums": 34,
         "drops": 27
+      },
+      "Meditative beats": {
+        "total": 33,
+        "drums": 20,
+        "drops": 10
       },
       "Jungle, DnB & breakcore": {
         "total": 31,
@@ -60,11 +60,6 @@
         "drums": 27,
         "drops": 14
       },
-      "Downtempo & leftfield": {
-        "total": 19,
-        "drums": 13,
-        "drops": 8
-      },
       "Generative AI · Orchestral & choir": {
         "total": 21,
         "drums": 4,
@@ -74,6 +69,11 @@
         "total": 20,
         "drums": 12,
         "drops": 5
+      },
+      "Downtempo & leftfield": {
+        "total": 19,
+        "drums": 13,
+        "drops": 8
       },
       "Indie, post-punk & guitar": {
         "total": 13,
@@ -89,6 +89,11 @@
         "total": 8,
         "drums": 7,
         "drops": 5
+      },
+      "Dark & experimental ambient": {
+        "total": 1,
+        "drums": 0,
+        "drops": 1
       }
     }
   },
@@ -4379,13 +4384,16 @@
     "archive_2018_23_62": {
       "id": "archive_2018_23_62",
       "title": "Spectacular fail",
-      "cluster_label": "Ambient & soundscapes",
+      "cluster_label": "Dark & experimental ambient",
       "is_ai": false,
       "has_drums": false,
       "drum_score": 0.0,
-      "has_drop": false,
       "old_preview_start_sec": 141.92,
-      "preview_start_sec": 141.92
+      "has_drop": true,
+      "drop_sec": 44.25,
+      "preview_start_sec": 30.0,
+      "preview_dur_sec": 24.48,
+      "lead_in_sec": 14.25
     },
     "archive_2018_23_68": {
       "id": "archive_2018_23_68",

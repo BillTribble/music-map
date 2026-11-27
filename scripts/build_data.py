@@ -269,6 +269,16 @@ CURATED_FREE_DOWNLOAD_OVERRIDES = {
         "mp3_size_mb": 6.8,
     },
 }
+DROP_PREVIEW_OVERRIDES = {
+    "archive_2018_23_62": {  # Spectacular fail (post-024518: ~30s RC-505 pre-drop build -> 44.25s sub-bass drop)
+        "has_drop": True,
+        "drop_sec": 44.25,
+        "preview_start_sec": 30.0,
+        "preview_dur_sec": 24.48,
+        "duration_sec": 24.48,
+        "bytes": 343913,
+    },
+}
 
 FINE_HARMONY_KEYS = [
     "dyad_5th",
@@ -1631,6 +1641,8 @@ def build_from_full_analysis(
                 if str(t.get("id") or "") in FORCE_SKETCH_IDS or str(t.get("title") or "").strip().lower() in FORCE_SKETCH_TITLES:
                     t["is_sketch"] = True
                     t["wip_eligible"] = False
+            if tid in DROP_PREVIEW_OVERRIDES:
+                t.update(DROP_PREVIEW_OVERRIDES[tid])
             if tid in STYLE_OVERRIDES:
                 for ov_k, ov_v in STYLE_OVERRIDES[tid].items():
                     t[ov_k] = list(ov_v) if isinstance(ov_v, list) else ov_v
@@ -1818,6 +1830,8 @@ def main() -> None:
                 merged["note"] = TRACK_NOTES[tid]
             if tid in CURATED_FREE_DOWNLOAD_OVERRIDES:
                 merged.update(CURATED_FREE_DOWNLOAD_OVERRIDES[tid])
+            if tid in DROP_PREVIEW_OVERRIDES:
+                merged.update(DROP_PREVIEW_OVERRIDES[tid])
             if tid in STYLE_OVERRIDES:
                 for ov_k, ov_v in STYLE_OVERRIDES[tid].items():
                     merged[ov_k] = list(ov_v) if isinstance(ov_v, list) else ov_v

@@ -57,6 +57,17 @@ DEFAULT_DATA_JS = ROOT / "js" / "data.js"
 DEFAULT_OUT_JSON = ROOT / "scripts" / "drop_previews.json"
 DEFAULT_AUDIO_CACHE = Path(os.environ.get("DROP_AUDIO_CACHE") or (Path(tempfile.gettempdir()) / "drop_audio_cache"))
 
+# Curated drop/preview overrides for bass-looper / ambient-build tracks that bypass the HPSS drum gate
+DROP_PREVIEW_OVERRIDES: dict[str, dict] = {
+    "archive_2018_23_62": {  # Spectacular fail (post-024518: RC-505 pre-drop build at 30.0s -> sub-bass drop at 44.25s)
+        "has_drop": True,
+        "drop_sec": 44.25,
+        "preview_start_sec": 30.0,
+        "preview_dur_sec": 24.48,
+        "lead_in_sec": 14.25,
+    },
+}
+
 SR = 16000
 N_FFT = 1024
 HOP = 320  # 50.0 Hz (20 ms per STFT frame)
@@ -660,7 +671,7 @@ def apply_drop_previews_to_corpus(data: dict, drop_map: dict[str, dict]) -> int:
 
     def _patch_track_obj(tr: dict) -> None:
         tid = str(tr.get("id") or "")
-        entry = drop_map.get(tid)
+        entry = DROP_PREVIEW_OVERRIDES.get(tid) or drop_map.get(tid)
         if entry and entry.get("has_drop"):
             tr["has_drop"] = True
             tr["drop_sec"] = float(entry["drop_sec"])
@@ -733,22 +744,37 @@ def main() -> None:
         has_drums, drum_score = evaluate_drum_gate(t, f)
         prev_before = round(float(t.get("preview_start_sec") or 0.0), 2)
         if not has_drums:
-            out_records[tid] = {
-                "id": tid,
-                "title": t.get("title", tid),
-                "cluster_label": cl,
-                "is_ai": bool(t.get("is_ai")),
-                "has_drums": False,
-                "drum_score": drum_score,
-                "has_drop": False,
-                "old_preview_start_sec": prev_before,
-                "preview_start_sec": prev_before,
-            }
+            ov = DROP_PREVIEW_OVERRIDES.get(tid)
+            if ov and ov.get("has_drop"):
+                drop_count += 1
+                cluster_stats[cl][2] += 1
+                out_records[tid] = {
+                    "id": tid,
+                    "title": t.get("title", tid),
+                    "cluster_label": cl,
+                    "is_ai": bool(t.get("is_ai")),
+                    "has_drums": False,
+                    "drum_score": drum_score,
+                    "old_preview_start_sec": prev_before,
+                    **ov,
+                }
+            else:
+                out_records[tid] = {
+                    "id": tid,
+                    "title": t.get("title", tid),
+                    "cluster_label": cl,
+                    "is_ai": bool(t.get("is_ai")),
+                    "has_drums": False,
+                    "drum_score": drum_score,
+                    "has_drop": False,
+                    "old_preview_start_sec": prev_before,
+                    "preview_start_sec": prev_before,
+                }
             continue
 
         drum_count += 1
         cluster_stats[cl][1] += 1
-        drop_info = detect_drop(t, f)
+        drop_info = DROP_PREVIEW_OVERRIDES.get(tid) or detect_drop(t, f)
         if drop_info:
             drop_count += 1
             cluster_stats[cl][2] += 1

@@ -491,6 +491,16 @@ CURATED_FREE_DOWNLOAD_OVERRIDES = {
         "mp3_size_mb": 6.8,
     },
 }
+DROP_PREVIEW_OVERRIDES = {
+    "archive_2018_23_62": {  # Spectacular fail (post-024518: ~30s RC-505 pre-drop build -> 44.25s sub-bass drop)
+        "has_drop": True,
+        "drop_sec": 44.25,
+        "preview_start_sec": 30.0,
+        "preview_dur_sec": 24.48,
+        "duration_sec": 24.48,
+        "bytes": 343913,
+    },
+}
 
 
 def is_excluded_by_folder_rule(path_str: str) -> bool:
@@ -2355,12 +2365,16 @@ def build_dataset(
       if tid in CURATED_FREE_DOWNLOAD_OVERRIDES:
         upd.update(CURATED_FREE_DOWNLOAD_OVERRIDES[tid])
 
-    drop_entry = drop_previews_by_id.get(tid)
+    drop_entry = DROP_PREVIEW_OVERRIDES.get(tid) or drop_previews_by_id.get(tid)
     if isinstance(drop_entry, dict) and drop_entry.get("has_drop"):
       upd["has_drop"] = True
       upd["drop_sec"] = round(float(drop_entry["drop_sec"]), 2)
       upd["preview_start_sec"] = round(float(drop_entry["preview_start_sec"]), 2)
       upd["preview_dur_sec"] = round(float(drop_entry["preview_dur_sec"]), 2)
+      if "duration_sec" in drop_entry:
+        upd["duration_sec"] = round(float(drop_entry["duration_sec"]), 3)
+      if "bytes" in drop_entry:
+        upd["bytes"] = int(drop_entry["bytes"])
     else:
       t.pop("has_drop", None)
       t.pop("drop_sec", None)
