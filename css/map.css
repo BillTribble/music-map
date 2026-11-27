@@ -324,11 +324,10 @@
 
 .pulse-tune-panel {
   pointer-events: auto;
-  width: min(308px, calc(100vw - 28px));
-  max-height: calc(100dvh - var(--bar-h) - 76px);
-  overflow-y: auto;
-  overflow-x: hidden;
-  padding: 15px 16px 16px;
+  width: min(312px, calc(100vw - 28px));
+  max-height: calc(100dvh - var(--bar-h) - 72px);
+  overflow: hidden;
+  padding: 13px 15px 14px;
   border-radius: 20px;
   background: color-mix(in srgb, var(--md-sys-color-surface-container-high) 94%, transparent);
   backdrop-filter: blur(18px);
@@ -336,10 +335,22 @@
   box-shadow: 0 14px 36px color-mix(in srgb, var(--md-sys-color-shadow) 28%, transparent);
   display: flex;
   flex-direction: column;
-  gap: 12px;
+  gap: 9px;
 }
 .pulse-tune-panel[hidden] {
   display: none;
+}
+.pulse-tune-scroll {
+  flex: 1 1 auto;
+  min-height: 0;
+  overflow-y: auto;
+  overflow-x: hidden;
+  overscroll-behavior: contain;
+  scrollbar-width: thin;
+  padding-right: 1px;
+  display: flex;
+  flex-direction: column;
+  gap: 9px;
 }
 [data-theme="dark"] .pulse-tune-panel,
 [data-theme="dark"] .pulse-tune-trigger {
@@ -421,7 +432,7 @@
 .pulse-tune-mode-row {
   display: flex;
   flex-direction: column;
-  gap: 5px;
+  gap: 4px;
 }
 .pulse-tune-mode-tabs.m3-pill-tabs.gm3-connected-dsp {
   display: grid;
@@ -434,21 +445,21 @@
 }
 .pulse-tune-mode-tabs .m3-pill-tab {
   width: 100%;
-  height: 30px;
+  height: 28px;
   padding: 0 10px;
-  font-size: 12.5px;
+  font-size: 12px;
 }
 
 .pulse-tune-group {
   display: flex;
   flex-direction: column;
-  gap: 9px;
+  gap: 7px;
 }
 .pulse-tune-group[hidden] {
   display: none;
 }
 .pulse-tune-group-sub {
-  padding-top: 8px;
+  padding-top: 7px;
   background: linear-gradient(
     90deg,
     color-mix(in srgb, var(--md-sys-color-outline-variant) 45%, transparent),
@@ -459,7 +470,7 @@
 .pulse-tune-row {
   display: flex;
   flex-direction: column;
-  gap: 5px;
+  gap: 3px;
 }
 .pulse-tune-lbl-row {
   display: flex;
@@ -469,7 +480,7 @@
 }
 .pulse-tune-lbl {
   font-family: var(--font-sans);
-  font-size: 12.5px;
+  font-size: 12px;
   font-weight: 500;
   color: var(--md-sys-color-on-surface);
 }
@@ -491,7 +502,7 @@
 }
 .pulse-tune-val {
   font-family: var(--font-sans);
-  font-size: 12px;
+  font-size: 11.5px;
   font-weight: 600;
   font-variant-numeric: tabular-nums;
   color: var(--md-sys-color-primary);
@@ -499,18 +510,28 @@
 }
 .pulse-tune-row input[type="range"].gm3-slider {
   width: 100%;
+  height: 16px;
   margin: 0;
+}
+.pulse-tune-row input[type="range"].gm3-slider::-webkit-slider-thumb {
+  width: 12px;
+  height: 12px;
+}
+.pulse-tune-row input[type="range"].gm3-slider::-moz-range-thumb {
+  width: 12px;
+  height: 12px;
 }
 
 .pulse-tune-foot {
   display: flex;
   flex-direction: column;
-  gap: 6px;
-  padding-top: 2px;
+  gap: 5px;
+  padding-top: 1px;
+  flex-shrink: 0;
 }
 .pulse-tune-save-btn {
   width: 100%;
-  height: 38px;
+  height: 36px;
   padding: 0 16px;
   border: none;
   border-radius: 9999px;

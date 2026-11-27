@@ -2261,6 +2261,7 @@ function sanitizePulsePresetPayload(raw) {
   if (!raw || typeof raw !== "object" || Array.isArray(raw)) return null;
   const src = raw.preset && typeof raw.preset === "object" && !Array.isArray(raw.preset) ? raw.preset : raw;
   const clampRound = (val, min, max, def) => {
+    if (val === undefined || val === null || val === "" || typeof val === "boolean") return def;
     const n = Number(val);
     if (!Number.isFinite(n)) return def;
     return Math.round(Math.max(min, Math.min(max, n)) * 1000) / 1000;
@@ -2269,24 +2270,30 @@ function sanitizePulsePresetPayload(raw) {
     src.mode !== undefined ||
     src.lineStrength !== undefined ||
     src.dotSpeed !== undefined ||
+    src.reverseMix !== undefined ||
     src.colorCount !== undefined ||
     src.targetPulseSpeed !== undefined ||
     src.pulseGlow !== undefined ||
     src.dotSize !== undefined ||
+    src.dotSizePulseAmt !== undefined ||
+    src.dotSizePulseFreq !== undefined ||
     src.dotSpacing !== undefined;
   if (!hasAny) return null;
   const rawMode = typeof src.mode === "string" ? src.mode.trim() : "";
   const mode = rawMode === "line_sheen" ? "line_sheen" : "line_dots";
   return {
-    version: 2,
+    version: 3,
     mode,
-    lineStrength: clampRound(src.lineStrength, 0, 3, 1),
-    dotSpeed: clampRound(src.dotSpeed, 0, 4, 0.15),
+    lineStrength: clampRound(src.lineStrength, 0, 3, 1.65),
+    dotSpeed: clampRound(src.dotSpeed, 0, 4, 0.3),
+    reverseMix: clampRound(src.reverseMix, 0, 1, 0.3),
     colorCount: clampRound(src.colorCount, 1, 6, 2),
     targetPulseSpeed: clampRound(src.targetPulseSpeed, 0, 4, 0.2),
     pulseGlow: clampRound(src.pulseGlow, 0, 4, 0.85),
     dotSize: clampRound(src.dotSize, 0.35, 3, 0.85),
-    dotSpacing: clampRound(src.dotSpacing, 0.4, 3, 1),
+    dotSizePulseAmt: clampRound(src.dotSizePulseAmt, 0, 1, 0.35),
+    dotSizePulseFreq: clampRound(src.dotSizePulseFreq, 0.05, 8, 0.6),
+    dotSpacing: clampRound(src.dotSpacing, 0.4, 3, 0.9),
   };
 }
 
