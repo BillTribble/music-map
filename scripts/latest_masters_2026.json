@@ -183,7 +183,7 @@
       "bytes": 240317,
       "stream_bytes": 4617866,
       "rms_db": -8.46,
-      "gain_trim": -6.0,
+      "gain_trim": 0.4365,
       "stream_url": "https://github.com/BillTribble/music-map/releases/download/audio-streams-v1/sketches_2026_1_flac.m4a",
       "preview_url": "https://github.com/BillTribble/music-map/releases/download/audio-previews-v1/sketches_2026_1_flac.mp3",
       "preview_release_url": "https://github.com/BillTribble/music-map/releases/download/audio-previews-v1/sketches_2026_1_flac.mp3",
@@ -200,7 +200,10 @@
       "perc_share": 0.149,
       "four_on_floor": 38.1,
       "breakbeat_score": 18.0,
-      "dark_ambient_score": 0.0
+      "dark_ambient_score": 0.0,
+      "lufs": -9.3,
+      "true_peak_db": 1.5,
+      "gain_db": -7.2
     },
     {
       "id": "sketches_2026_2",
@@ -385,7 +388,7 @@
       "bytes": 208949,
       "stream_bytes": 4562950,
       "rms_db": -15.72,
-      "gain_trim": 1.22,
+      "gain_trim": 1.0116,
       "stream_url": "https://github.com/BillTribble/music-map/releases/download/audio-streams-v1/sketches_2026_2_1147.m4a",
       "preview_url": "https://github.com/BillTribble/music-map/releases/download/audio-previews-v1/sketches_2026_2_1147.mp3",
       "preview_release_url": "https://github.com/BillTribble/music-map/releases/download/audio-previews-v1/sketches_2026_2_1147.mp3",
@@ -402,7 +405,10 @@
       "perc_share": 0.148,
       "four_on_floor": 31.4,
       "breakbeat_score": 23.6,
-      "dark_ambient_score": 0.0
+      "dark_ambient_score": 0.0,
+      "lufs": -16.6,
+      "true_peak_db": -0.3,
+      "gain_db": 0.1
     },
     {
       "id": "sketches_2026_22",
@@ -587,7 +593,7 @@
       "bytes": 292249,
       "stream_bytes": 3101028,
       "rms_db": -23.42,
-      "gain_trim": 6.0,
+      "gain_trim": 2.7542,
       "stream_url": "https://github.com/BillTribble/music-map/releases/download/audio-streams-v1/sketches_2026_22.m4a",
       "preview_url": "https://github.com/BillTribble/music-map/releases/download/audio-previews-v1/sketches_2026_22.mp3",
       "preview_release_url": "https://github.com/BillTribble/music-map/releases/download/audio-previews-v1/sketches_2026_22.mp3",
@@ -604,7 +610,10 @@
       "perc_share": 0.288,
       "four_on_floor": 16.6,
       "breakbeat_score": 60.9,
-      "dark_ambient_score": 0.0
+      "dark_ambient_score": 0.0,
+      "lufs": -25.3,
+      "true_peak_db": -8.7,
+      "gain_db": 8.8
     },
     {
       "id": "ecstatic_wave_1",
@@ -789,7 +798,7 @@
       "bytes": 250557,
       "stream_bytes": 11733621,
       "rms_db": -13.4,
-      "gain_trim": -1.1,
+      "gain_trim": 0.7244,
       "stream_url": "https://github.com/BillTribble/music-map/releases/download/audio-streams-v1/ecstatic_wave_1_v33.m4a",
       "preview_url": "https://github.com/BillTribble/music-map/releases/download/audio-previews-v1/ecstatic_wave_1_v33.mp3",
       "preview_release_url": "https://github.com/BillTribble/music-map/releases/download/audio-previews-v1/ecstatic_wave_1_v33.mp3",
@@ -806,7 +815,10 @@
       "perc_share": 0.23,
       "four_on_floor": 85.0,
       "breakbeat_score": 29.9,
-      "dark_ambient_score": 0.0
+      "dark_ambient_score": 0.0,
+      "lufs": -13.7,
+      "true_peak_db": 0.7,
+      "gain_db": -2.8
     },
     {
       "id": "ecstatic_wave_2",
@@ -991,7 +1003,7 @@
       "bytes": 219472,
       "stream_bytes": 3797698,
       "rms_db": -14.03,
-      "gain_trim": -0.47,
+      "gain_trim": 0.7852,
       "stream_url": "https://github.com/BillTribble/music-map/releases/download/audio-streams-v1/ecstatic_wave_2_v07.m4a",
       "preview_url": "https://github.com/BillTribble/music-map/releases/download/audio-previews-v1/ecstatic_wave_2_v07.mp3",
       "preview_release_url": "https://github.com/BillTribble/music-map/releases/download/audio-previews-v1/ecstatic_wave_2_v07.mp3",
@@ -1008,7 +1020,10 @@
       "perc_share": 0.376,
       "four_on_floor": 35.9,
       "breakbeat_score": 67.3,
-      "dark_ambient_score": 0.0
+      "dark_ambient_score": 0.0,
+      "lufs": -14.4,
+      "true_peak_db": 0.3,
+      "gain_db": -2.1
     },
     {
       "id": "remixes_commissions_15",
@@ -1193,7 +1208,7 @@
       "bytes": 282088,
       "stream_bytes": 6898450,
       "rms_db": -9.74,
-      "gain_trim": -4.76,
+      "gain_trim": 0.6839,
       "stream_url": "https://github.com/BillTribble/music-map/releases/download/audio-streams-v1/remixes_commissions_15_v06.m4a",
       "preview_url": "https://github.com/BillTribble/music-map/releases/download/audio-previews-v1/remixes_commissions_15_v06.mp3",
       "preview_release_url": "https://github.com/BillTribble/music-map/releases/download/audio-previews-v1/remixes_commissions_15_v06.mp3",
@@ -1210,7 +1225,10 @@
       "perc_share": 0.695,
       "four_on_floor": 88.4,
       "breakbeat_score": 16.7,
-      "dark_ambient_score": 0.0
+      "dark_ambient_score": 0.0,
+      "lufs": -13.2,
+      "true_peak_db": 1.1,
+      "gain_db": -3.3
     },
     {
       "id": "remixes_commissions_1",
@@ -1395,7 +1413,7 @@
       "bytes": 156995,
       "stream_bytes": 3996124,
       "rms_db": -8.74,
-      "gain_trim": -5.76,
+      "gain_trim": 0.4571,
       "stream_url": "https://github.com/BillTribble/music-map/releases/download/audio-streams-v1/remixes_commissions_1_v10.m4a",
       "preview_url": "https://github.com/BillTribble/music-map/releases/download/audio-previews-v1/remixes_commissions_1_v10.mp3",
       "preview_release_url": "https://github.com/BillTribble/music-map/releases/download/audio-previews-v1/remixes_commissions_1_v10.mp3",
@@ -1412,7 +1430,10 @@
       "perc_share": 0.33,
       "four_on_floor": 68.3,
       "breakbeat_score": 37.3,
-      "dark_ambient_score": 0.0
+      "dark_ambient_score": 0.0,
+      "lufs": -9.7,
+      "true_peak_db": 4.0,
+      "gain_db": -6.8
     }
   ]
 }

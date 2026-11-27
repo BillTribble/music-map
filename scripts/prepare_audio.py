@@ -135,8 +135,10 @@ def _gain_metrics(samples: np.ndarray) -> tuple[float, float]:
     active = rms[rms > peak_rms * 0.12]
     med_rms = float(np.median(active)) if len(active) else float(np.median(rms))
     rms_db = 20.0 * math.log10(max(1e-6, med_rms))
-    gain_trim = max(0.55, min(1.35, math.pow(10.0, (-14.5 - rms_db) / 20.0)))
-    return round(rms_db, 2), round(gain_trim, 3)
+    est_lufs = rms_db - 0.7
+    gain_db = max(-18.0, min(12.0, -16.5 - est_lufs))
+    gain_trim = math.pow(10.0, gain_db / 20.0)
+    return round(rms_db, 2), round(gain_trim, 4)
 
 
 def analyze_source_groove(ffmpeg_bin: str, src_path: Path, bpm: float, fixed_cue: float | None = None) -> dict:

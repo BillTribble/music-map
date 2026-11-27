@@ -561,6 +561,38 @@ def apply_canonical_bpm_override(t: dict, beatgrids_map: dict[str, dict]) -> Non
     t["rhythm_tag"] = "Driven 4/4 house pulse"
 
 
+LOUDNESS_TARGET_LUFS = -16.5
+
+
+def load_track_loudness_map(loudness_json: str | None = None) -> dict[str, dict]:
+  lp = loudness_json or os.path.join(_ROOT, "scripts", "track_loudness.json")
+  if not os.path.exists(lp):
+    return {}
+  try:
+    with open(lp, "r", encoding="utf-8") as fh:
+      obj = json.load(fh)
+    return dict(obj.get("tracks") or {}) if isinstance(obj, dict) else {}
+  except Exception:
+    return {}
+
+
+def apply_canonical_loudness_override(t: dict, loudness_map: dict[str, dict]) -> None:
+  tid = str(t.get("id") or "")
+  ent = loudness_map.get(tid)
+  if not isinstance(ent, dict) or ent.get("lufs") is None:
+    return
+  lufs_r = round(float(ent["lufs"]), 1)
+  tp_r = round(float(ent.get("true_peak_db", -1.0)), 1)
+  raw_db = max(-18.0, min(12.0, LOUDNESS_TARGET_LUFS - lufs_r))
+  if raw_db > 0.0 and math.isfinite(tp_r):
+    raw_db = min(raw_db, max(-6.0, (-1.0 - tp_r) + 6.0))
+  gain_db = round(raw_db, 2)
+  t["lufs"] = lufs_r
+  t["true_peak_db"] = tp_r
+  t["gain_db"] = gain_db
+  t["gain_trim"] = round(math.pow(10.0, gain_db / 20.0), 4)
+
+
 def is_excluded_by_folder_rule(path_str: str) -> bool:
   if not path_str:
     return False
@@ -2084,6 +2116,7 @@ def build_dataset(
     if isinstance(drop_obj, dict) and isinstance(drop_obj.get("tracks"), dict):
       drop_previews_by_id = drop_obj["tracks"]
   beatgrids_by_id = load_beatgrids_map()
+  loudness_by_id = load_track_loudness_map()
 
   data["tracks"] = tracks
   n_tracks = len(tracks)
@@ -2440,6 +2473,7 @@ def build_dataset(
 
     t.update(upd)
     apply_canonical_bpm_override(t, beatgrids_by_id)
+    apply_canonical_loudness_override(t, loudness_by_id)
     t.pop("track_near", None)
     t.pop("ai_cat", None)
     for forbidden in ("local_path", "rel_path", "remote_path", "rel_dropbox_path"):

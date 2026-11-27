@@ -31,6 +31,7 @@
 
   let ctx = null;
   let mixerMasterGain = null;
+  let masterLimiter = null;
   let masterAnalyser = null;
   let analyserBuf = null;
 
@@ -297,11 +298,19 @@
     if (ctx && !mixerMasterGain) {
       mixerMasterGain = ctx.createGain();
       mixerMasterGain.gain.value = enabled ? clamp(volume, 0, 1) : 0;
+      masterLimiter = (typeof window !== "undefined" && window.BTMM_LOUDNESS && typeof window.BTMM_LOUDNESS.createSafetyLimiter === "function")
+        ? window.BTMM_LOUDNESS.createSafetyLimiter(ctx)
+        : null;
       masterAnalyser = ctx.createAnalyser();
       masterAnalyser.fftSize = 2048;
       masterAnalyser.smoothingTimeConstant = 0.5;
       analyserBuf = new Float32Array(masterAnalyser.fftSize);
-      mixerMasterGain.connect(masterAnalyser);
+      if (masterLimiter) {
+        mixerMasterGain.connect(masterLimiter);
+        masterLimiter.connect(masterAnalyser);
+      } else {
+        mixerMasterGain.connect(masterAnalyser);
+      }
       masterAnalyser.connect(ctx.destination);
     }
     if (ctx && ctx.state === "suspended" && typeof ctx.resume === "function") {
@@ -435,28 +444,33 @@
     }
   }
 
-  function getTrackTrim(track) {
-    return track && Number.isFinite(Number(track.gain_trim))
-      ? clamp(Number(track.gain_trim), 0.25, 1.5)
-      : 1.0;
+  function getTrackTrim(track, mode) {
+    if (typeof window !== "undefined" && window.BTMM_LOUDNESS && typeof window.BTMM_LOUDNESS.getTrackLoudnessGain === "function") {
+      return window.BTMM_LOUDNESS.getTrackLoudnessGain(track, { mode: mode || "webaudio" });
+    }
+    if (track && Number.isFinite(Number(track.gain_trim)) && Number(track.gain_trim) > 0) {
+      return clamp(Number(track.gain_trim), 0.125, 3.981);
+    }
+    return 1.0;
   }
 
   function getVoiceBaseVolume(voice) {
     if (!voice || !enabled) return 0;
-    return clamp(volume * getTrackTrim(voice.track), 0, 1);
+    const mode = voice.audioMode === "webaudio" ? "webaudio" : "direct";
+    return clamp(volume * getTrackTrim(voice.track, mode), 0, 1);
   }
 
   function syncVoiceGainAndVolume(voice) {
     if (!voice || voice.disposed || !voice.htmlAudio) return;
     const el = voice.htmlAudio;
     const deck = decks[voice.deckIdx];
-    const trim = getTrackTrim(voice.track);
     const fade = Number.isFinite(voice.fadeFactor) ? clamp(voice.fadeFactor, 0, 1) : 1.0;
     const mush = Number.isFinite(voice.mushFadeFactor) ? clamp(voice.mushFadeFactor, MUSH_MIN_FACTOR, 1) : 1.0;
     const holdSilentForSeek = voice.seekPending !== null && voice.seekPending > 0.02;
 
     if (voice.audioMode === "webaudio" && deck && deck.deckGain) {
-      const targetGain = (!enabled || holdSilentForSeek) ? 0 : clamp(trim * fade * mush, 0, 1.5);
+      const trim = getTrackTrim(voice.track, "webaudio");
+      const targetGain = (!enabled || holdSilentForSeek) ? 0 : clamp(trim * fade * mush, 0, 3.982);
       deck.gainVal = targetGain;
       if (ctx) {
         try {
@@ -470,11 +484,13 @@
       el.volume = 1.0;
       el.muted = !enabled;
     } else {
-      // Direct HTMLAudioElement fallback mode
+      // Direct HTMLAudioElement fallback mode (100% zero-CORS-tainting on Safari/cross-origin)
+      const trim = getTrackTrim(voice.track, "direct");
+      const baseDirectVol = clamp(volume * trim, 0, 1);
       const bassAtten = voice.bassDb < -6 ? (1.0 - 0.18 * clamp(-voice.bassDb / 24, 0, 1)) : 1.0;
       const targetVol = (!enabled || holdSilentForSeek)
         ? 0
-        : clamp(volume * trim * fade * mush * bassAtten, 0, 1);
+        : clamp(baseDirectVol * fade * mush * bassAtten, 0, 1);
       el.volume = targetVol;
       el.muted = !enabled;
     }
@@ -484,7 +500,12 @@
     const v = enabled ? clamp(volume, 0, 1) : 0;
     if (mixerMasterGain && ctx) {
       try {
-        mixerMasterGain.gain.setTargetAtTime(v, ctx.currentTime, 0.02);
+        if (ctx.state === "running") {
+          mixerMasterGain.gain.setTargetAtTime(v, ctx.currentTime, 0.02);
+        } else {
+          mixerMasterGain.gain.setValueAtTime(v, ctx.currentTime);
+          mixerMasterGain.gain.value = v;
+        }
       } catch (_) {
         mixerMasterGain.gain.value = v;
       }
@@ -2703,7 +2724,10 @@
       playbackRate: voice.htmlAudio ? voice.htmlAudio.playbackRate : voice.playbackRate,
       preservesPitch: readPreservesPitch(voice.htmlAudio),
       gain: Number((voice.fadeFactor ?? 1.0).toFixed(4)),
+      trackLufs: voice.track && Number.isFinite(Number(voice.track.lufs)) ? Number(voice.track.lufs) : null,
+      trackLoudnessGain: Number(getTrackTrim(voice.track, voice.audioMode === "webaudio" ? "webaudio" : "direct").toFixed(4)),
       deckGainNodeValue: deck && deck.deckGain ? Number(deck.deckGain.gain.value.toFixed(4)) : null,
+      elementVolume: voice.htmlAudio ? Number(voice.htmlAudio.volume.toFixed(4)) : null,
       bassGainDb: Number((voice.bassDb ?? 0.0).toFixed(2)),
       biquadGainDb: deck && deck.bassFilter ? Number(deck.bassFilter.gain.value.toFixed(2)) : null,
       currentTime: Number(getVoiceCurrentTime(voice).toFixed(3)),
@@ -2804,6 +2828,7 @@
         syncMasterGain();
       },
       getVolume: () => volume,
+      getTrackLoudnessGain: (tr, mode) => getTrackTrim(tr, mode || "webaudio"),
       setOnStateChange(fn) { onStateChangeCb = typeof fn === "function" ? fn : () => {}; },
       setOnAutoAdvance(fn) { onAutoAdvanceCb = typeof fn === "function" ? fn : null; },
       setOnBeat(fn) { onBeatCb = typeof fn === "function" ? fn : () => {}; },

@@ -561,11 +561,19 @@
     return 0;
   }
 
+  function getTrackLoudnessGain(track) {
+    if (typeof window !== "undefined" && window.BTMM_LOUDNESS && typeof window.BTMM_LOUDNESS.getTrackLoudnessGain === "function") {
+      return window.BTMM_LOUDNESS.getTrackLoudnessGain(track, { mode: "direct" });
+    }
+    if (track && Number.isFinite(Number(track.gain_trim)) && Number(track.gain_trim) > 0) {
+      return clamp(Number(track.gain_trim), 0.125, 3.981);
+    }
+    return 1.0;
+  }
+
   function getVoiceBaseVolume(voice) {
     if (!voice || !enabled) return 0;
-    const trim = voice.track && Number.isFinite(Number(voice.track.gain_trim))
-      ? clamp(Number(voice.track.gain_trim), 0.25, 1.5)
-      : 1.0;
+    const trim = getTrackLoudnessGain(voice.track);
     return clamp(volume * trim, 0, 1);
   }
 
@@ -1918,6 +1926,7 @@
       syncMasterGain();
     },
     getVolume: () => volume,
+    getTrackLoudnessGain,
     setOnStateChange(fn) { onStateChangeCb = typeof fn === "function" ? fn : () => {}; },
     setOnAutoAdvance(fn) { onAutoAdvanceCb = typeof fn === "function" ? fn : null; },
     setOnBeat(fn) { onBeatCb = typeof fn === "function" ? fn : () => {}; },

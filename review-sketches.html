@@ -1105,7 +1105,8 @@
     </footer>
   </div>
 
-  <script src="js/data.js?v=20261127d"></script>
+  <script src="js/data.js?v=20261127r"></script>
+  <script src="js/loudness.js?v=20261127r"></script>
   <script>
     (function () {
       "use strict";
@@ -1256,7 +1257,9 @@
           urls: urls,
           explicitDropSec: explicitDrop,
           dropTargetSec: dropTargetSec,
-          gainTrim: Number.isFinite(Number(t.gain_trim)) ? clamp(Number(t.gain_trim), 0.25, 1.5) : 1.0,
+          gainTrim: (window.BTMM_LOUDNESS && typeof window.BTMM_LOUDNESS.getTrackLoudnessGain === "function")
+            ? window.BTMM_LOUDNESS.getTrackLoudnessGain(t, { mode: "direct" })
+            : (Number.isFinite(Number(t.gain_trim)) && Number(t.gain_trim) > 0 ? clamp(Number(t.gain_trim), 0.125, 3.981) : 1.0),
           peaks: Array.isArray(t.peaks) && t.peaks.length >= 16 ? t.peaks : null,
           group: spec.group,
           tags: spec.tags.slice(),
