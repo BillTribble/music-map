@@ -101,3 +101,10 @@ CREATE TABLE IF NOT EXISTS music_map_requests (
 CREATE INDEX IF NOT EXISTS idx_mm_requests_created ON music_map_requests(created_at DESC, id DESC);
 CREATE INDEX IF NOT EXISTS idx_mm_requests_track ON music_map_requests(track_id, created_at DESC);
 
+CREATE TABLE IF NOT EXISTS pulse_presets (
+  id INTEGER PRIMARY KEY CHECK (id = 1),
+  config_json TEXT NOT NULL,
+  updated_at TEXT NOT NULL
+);
+
+

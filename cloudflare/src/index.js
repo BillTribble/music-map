@@ -214,6 +214,13 @@ async function ensureSchema(db) {
     `),
     db.prepare(`CREATE INDEX IF NOT EXISTS idx_mm_requests_created ON music_map_requests(created_at DESC, id DESC)`),
     db.prepare(`CREATE INDEX IF NOT EXISTS idx_mm_requests_track ON music_map_requests(track_id, created_at DESC)`),
+    db.prepare(`
+      CREATE TABLE IF NOT EXISTS pulse_presets (
+        id INTEGER PRIMARY KEY CHECK (id = 1),
+        config_json TEXT NOT NULL,
+        updated_at TEXT NOT NULL
+      )
+    `),
   ]);
 
   // Self-heal any legacy v1/v3 tables missing 'play' CHECK, play rollups, or 'is_owner' partitioning
@@ -2226,6 +2233,159 @@ async function handleAudioRangeStream(request, url, origin, env) {
   });
 }
 
+const pulsePresetRateMap = new Map();
+
+function isPulsePresetOriginAllowed(origin, env) {
+  if (!origin) return true;
+  if (isOriginAllowed(origin, env)) return true;
+  if (/^https?:\/\/(127\.0\.0\.1|localhost)(:\d+)?$/i.test(origin)) return true;
+  return false;
+}
+
+function buildPulsePresetCorsHeaders(origin, env) {
+  const headers = {
+    "Access-Control-Allow-Methods": "GET, POST, OPTIONS",
+    "Access-Control-Allow-Headers": "Content-Type, Authorization",
+    "Access-Control-Max-Age": "86400",
+    Vary: "Origin",
+  };
+  if (origin && isPulsePresetOriginAllowed(origin, env)) {
+    headers["Access-Control-Allow-Origin"] = origin;
+  } else {
+    headers["Access-Control-Allow-Origin"] = "https://billtribble.github.io";
+  }
+  return headers;
+}
+
+function sanitizePulsePresetPayload(raw) {
+  if (!raw || typeof raw !== "object" || Array.isArray(raw)) return null;
+  const src = raw.preset && typeof raw.preset === "object" && !Array.isArray(raw.preset) ? raw.preset : raw;
+  const clampRound = (val, min, max, def) => {
+    const n = Number(val);
+    if (!Number.isFinite(n)) return def;
+    return Math.round(Math.max(min, Math.min(max, n)) * 1000) / 1000;
+  };
+  const hasAny =
+    src.dotSpeed !== undefined ||
+    src.colorCount !== undefined ||
+    src.targetPulseSpeed !== undefined ||
+    src.pulseGlow !== undefined ||
+    src.dotSize !== undefined ||
+    src.dotSpacing !== undefined;
+  if (!hasAny) return null;
+  return {
+    version: 1,
+    dotSpeed: clampRound(src.dotSpeed, 0, 4, 1),
+    colorCount: clampRound(src.colorCount, 1, 6, 4),
+    targetPulseSpeed: clampRound(src.targetPulseSpeed, 0, 4, 1),
+    pulseGlow: clampRound(src.pulseGlow, 0, 4, 1),
+    dotSize: clampRound(src.dotSize, 0.35, 3, 1),
+    dotSpacing: clampRound(src.dotSpacing, 0.4, 3, 1),
+  };
+}
+
+async function handlePulsePreset(request, origin, env) {
+  const cors = buildPulsePresetCorsHeaders(origin, env);
+  if (origin && !isPulsePresetOriginAllowed(origin, env)) {
+    return jsonResponse({ ok: false, error: "Forbidden origin" }, 403, cors);
+  }
+  if (request.method === "OPTIONS") {
+    return new Response(null, { status: 204, headers: cors });
+  }
+  try {
+    await ensureSchema(env.DB);
+  } catch (err) {
+    return jsonResponse(
+      { ok: false, error: "Database initialization error", detail: String(err && err.message ? err.message : err) },
+      500,
+      cors
+    );
+  }
+
+  if (request.method === "GET") {
+    const row = await env.DB.prepare(
+      `SELECT config_json, updated_at FROM pulse_presets WHERE id = 1`
+    ).first();
+    if (!row || !row.config_json) {
+      return jsonResponse({ ok: true, preset: null, updated_at: null }, 200, cors);
+    }
+    let parsed = null;
+    try {
+      parsed = JSON.parse(row.config_json);
+    } catch (_) {
+      parsed = null;
+    }
+    return jsonResponse(
+      {
+        ok: true,
+        preset: parsed,
+        updated_at: row.updated_at || null,
+      },
+      200,
+      cors
+    );
+  }
+
+  if (request.method === "POST") {
+    const ipRaw = request.headers.get("cf-connecting-ip") || "anon";
+    const ipKey = await sha256Hex(`${env.IP_HASH_SALT || "btmm"}:${ipRaw}`, 16);
+    const nowMin = Math.floor(Date.now() / 60000);
+    const bucket = pulsePresetRateMap.get(ipKey);
+    if (bucket && bucket.min === nowMin) {
+      if (bucket.count >= 30) {
+        return jsonResponse({ ok: false, error: "Rate limit exceeded" }, 429, cors);
+      }
+      bucket.count += 1;
+    } else {
+      if (pulsePresetRateMap.size > 512) pulsePresetRateMap.clear();
+      pulsePresetRateMap.set(ipKey, { min: nowMin, count: 1 });
+    }
+
+    let rawText = "";
+    try {
+      rawText = await request.text();
+    } catch (_) {
+      return jsonResponse({ ok: false, error: "Invalid request body" }, 400, cors);
+    }
+    if (!rawText || rawText.length > 4096) {
+      return jsonResponse({ ok: false, error: "Payload empty or too large" }, 400, cors);
+    }
+    let parsed = null;
+    try {
+      parsed = JSON.parse(rawText);
+    } catch (_) {
+      return jsonResponse({ ok: false, error: "Invalid JSON" }, 400, cors);
+    }
+    const preset = sanitizePulsePresetPayload(parsed);
+    if (!preset) {
+      return jsonResponse({ ok: false, error: "Missing valid pulse tuning fields" }, 400, cors);
+    }
+    const updatedAt = new Date().toISOString().replace(/\.\d{3}Z$/, "Z");
+    const configJson = JSON.stringify(preset);
+    await env.DB.prepare(
+      `INSERT INTO pulse_presets (id, config_json, updated_at)
+       VALUES (1, ?, ?)
+       ON CONFLICT(id) DO UPDATE SET
+         config_json = excluded.config_json,
+         updated_at = excluded.updated_at`
+    )
+      .bind(configJson, updatedAt)
+      .run();
+
+    return jsonResponse(
+      {
+        ok: true,
+        preset,
+        updated_at: updatedAt,
+      },
+      200,
+      cors
+    );
+  }
+
+  return jsonResponse({ ok: false, error: "Method not allowed" }, 405, cors);
+}
+
 export default {
   async fetch(request, env, ctx) {
     const url = new URL(request.url);
@@ -2233,6 +2393,10 @@ export default {
 
     if (url.pathname.startsWith("/api/audio/")) {
       return handleAudioRangeStream(request, url, origin, env);
+    }
+
+    if (url.pathname === "/api/pulse-preset") {
+      return handlePulsePreset(request, origin, env);
     }
 
     const corsHeaders = buildCorsHeaders(origin, env);

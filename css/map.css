@@ -249,6 +249,283 @@
 }
 .star-empty-msg[hidden] { display: none; }
 
+/* ---- Stealth Bottom-Left Gemini Pulse Fine-Tuning Trigger & Floating GM3 Panel ---- */
+.pulse-tune-dock {
+  position: absolute;
+  left: 14px;
+  bottom: 14px;
+  z-index: var(--z-popover);
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 8px;
+  pointer-events: none;
+}
+
+.pulse-tune-zone {
+  pointer-events: auto;
+  display: inline-flex;
+  align-items: center;
+  justify-content: flex-start;
+  min-width: 48px;
+  min-height: 44px;
+  padding: 3px 0 0;
+}
+
+.pulse-tune-trigger {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  height: 36px;
+  padding: 0 13px 0 10px;
+  border: none;
+  border-radius: 9999px;
+  background: color-mix(in srgb, var(--md-sys-color-surface-container-high) 92%, transparent);
+  backdrop-filter: blur(16px);
+  -webkit-backdrop-filter: blur(16px);
+  color: var(--md-sys-color-on-surface-variant);
+  font-family: var(--font-sans);
+  font-size: 12px;
+  font-weight: 600;
+  white-space: nowrap;
+  box-shadow: 0 6px 20px color-mix(in srgb, var(--md-sys-color-shadow) 20%, transparent);
+  opacity: 0;
+  transform: translateY(3px);
+  transition:
+    opacity 170ms var(--ease-std),
+    transform 170ms var(--ease-std),
+    background 140ms var(--ease-std),
+    color 140ms var(--ease-std);
+}
+.pulse-tune-trigger .ms {
+  font-size: 17px;
+  color: var(--md-sys-color-primary);
+}
+.pulse-tune-zone:hover .pulse-tune-trigger,
+.pulse-tune-trigger:hover,
+.pulse-tune-trigger:focus-visible,
+.pulse-tune-dock.is-corner-near .pulse-tune-trigger,
+.pulse-tune-dock.is-open .pulse-tune-trigger {
+  opacity: 1;
+  transform: translateY(0);
+}
+.pulse-tune-trigger:hover {
+  background: var(--md-sys-color-surface-container-highest);
+  color: var(--md-sys-color-on-surface);
+}
+.pulse-tune-dock.is-open .pulse-tune-trigger {
+  background: var(--md-sys-color-secondary-container);
+  color: var(--md-sys-color-on-secondary-container);
+}
+.pulse-tune-dock.is-open .pulse-tune-trigger .ms {
+  color: var(--md-sys-color-on-secondary-container);
+  font-variation-settings: 'FILL' 1, 'wght' 500, 'GRAD' 0, 'opsz' 20;
+}
+
+.pulse-tune-panel {
+  pointer-events: auto;
+  width: min(308px, calc(100vw - 28px));
+  max-height: calc(100dvh - var(--bar-h) - 76px);
+  overflow-y: auto;
+  overflow-x: hidden;
+  padding: 15px 16px 16px;
+  border-radius: 20px;
+  background: color-mix(in srgb, var(--md-sys-color-surface-container-high) 94%, transparent);
+  backdrop-filter: blur(18px);
+  -webkit-backdrop-filter: blur(18px);
+  box-shadow: 0 14px 36px color-mix(in srgb, var(--md-sys-color-shadow) 28%, transparent);
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+.pulse-tune-panel[hidden] {
+  display: none;
+}
+[data-theme="dark"] .pulse-tune-panel,
+[data-theme="dark"] .pulse-tune-trigger {
+  background: color-mix(in srgb, var(--md-sys-color-surface-container) 90%, transparent);
+}
+[data-theme="dark"] .pulse-tune-dock.is-open .pulse-tune-trigger {
+  background: var(--md-sys-color-secondary-container);
+}
+
+.pulse-tune-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+}
+.pulse-tune-title-wrap {
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+  min-width: 0;
+}
+.pulse-tune-title-wrap .ms {
+  font-size: 18px;
+  color: var(--md-sys-color-primary);
+  font-variation-settings: 'FILL' 1, 'wght' 500, 'GRAD' 0, 'opsz' 20;
+}
+.pulse-tune-title {
+  margin: 0;
+  font-family: var(--font-display);
+  font-size: 15px;
+  font-weight: 700;
+  letter-spacing: -0.015em;
+  color: var(--md-sys-color-on-surface);
+  white-space: nowrap;
+}
+.pulse-tune-head-actions {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  flex-shrink: 0;
+}
+.pulse-tune-reset-btn {
+  height: 28px;
+  padding: 0 10px;
+  border: none;
+  border-radius: 9999px;
+  background: var(--md-sys-color-surface-container-highest);
+  color: var(--md-sys-color-on-surface-variant);
+  font-family: var(--font-sans);
+  font-size: 11.5px;
+  font-weight: 600;
+  transition: background 140ms var(--ease-std), color 140ms var(--ease-std);
+}
+.pulse-tune-reset-btn:hover {
+  color: var(--md-sys-color-on-surface);
+  filter: brightness(1.06);
+}
+.pulse-tune-close-btn {
+  width: 28px;
+  height: 28px;
+  padding: 0;
+  border: none;
+  border-radius: 9999px;
+  background: transparent;
+  color: var(--md-sys-color-on-surface-variant);
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  transition: background 140ms var(--ease-std), color 140ms var(--ease-std);
+}
+.pulse-tune-close-btn .ms {
+  font-size: 18px;
+}
+.pulse-tune-close-btn:hover {
+  background: var(--md-sys-color-surface-container-highest);
+  color: var(--md-sys-color-on-surface);
+}
+
+.pulse-tune-group {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+.pulse-tune-group-sub {
+  padding-top: 8px;
+  background: linear-gradient(
+    90deg,
+    color-mix(in srgb, var(--md-sys-color-outline-variant) 45%, transparent),
+    transparent
+  ) top / 100% 1px no-repeat;
+}
+
+.pulse-tune-row {
+  display: flex;
+  flex-direction: column;
+  gap: 5px;
+}
+.pulse-tune-lbl-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+}
+.pulse-tune-lbl {
+  font-family: var(--font-sans);
+  font-size: 12.5px;
+  font-weight: 500;
+  color: var(--md-sys-color-on-surface);
+}
+.pulse-tune-meta {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+}
+.pulse-tune-swatches {
+  display: inline-flex;
+  align-items: center;
+  gap: 3px;
+}
+.pulse-tune-swatch {
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+  flex-shrink: 0;
+}
+.pulse-tune-val {
+  font-family: var(--font-sans);
+  font-size: 12px;
+  font-weight: 600;
+  font-variant-numeric: tabular-nums;
+  color: var(--md-sys-color-primary);
+  white-space: nowrap;
+}
+.pulse-tune-row input[type="range"].gm3-slider {
+  width: 100%;
+  margin: 0;
+}
+
+.pulse-tune-foot {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  padding-top: 2px;
+}
+.pulse-tune-save-btn {
+  width: 100%;
+  height: 38px;
+  padding: 0 16px;
+  border: none;
+  border-radius: 9999px;
+  background: var(--md-sys-color-primary);
+  color: var(--md-sys-color-on-primary);
+  font-family: var(--font-sans);
+  font-size: 13px;
+  font-weight: 600;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 7px;
+  transition: transform 120ms var(--ease-std), filter 140ms var(--ease-std), background 160ms var(--ease-std), color 160ms var(--ease-std);
+}
+.pulse-tune-save-btn .ms {
+  font-size: 18px;
+}
+.pulse-tune-save-btn:hover {
+  filter: brightness(1.07);
+}
+.pulse-tune-save-btn:active {
+  transform: scale(0.985);
+}
+.pulse-tune-save-btn.is-saved {
+  background: var(--md-sys-color-tertiary-container);
+  color: var(--md-sys-color-on-tertiary-container);
+}
+.pulse-tune-status {
+  min-height: 15px;
+  font-family: var(--font-sans);
+  font-size: 11px;
+  font-weight: 500;
+  color: var(--md-sys-color-on-surface-variant);
+  text-align: center;
+}
+.pulse-tune-status[hidden] {
+  display: none;
+}
+
 /* ---- Persistent Collapsible Floating Player Card (Workspace-Level Across ALL Views) ---- */
 .player-card {
   position: fixed;
@@ -994,6 +1271,10 @@
     left: 10px;
     right: 10px;
   }
+  .pulse-tune-dock {
+    left: 10px;
+    bottom: max(10px, env(safe-area-inset-bottom));
+  }
   .player-card {
     left: 10px;
     right: 10px;
@@ -1039,7 +1320,9 @@
   .mp-mini-skip-btn,
   .mp-mini-star-btn,
   .mp-wave-restart-btn,
-  .mp-ctrl-btn {
+  .mp-ctrl-btn,
+  .pulse-tune-trigger,
+  .pulse-tune-save-btn {
     transition-duration: 0.01ms !important;
     transition-delay: 0ms !important;
   }

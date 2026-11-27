@@ -85,28 +85,88 @@
   let pulseRaf = 0;
   let pulseLastNow = 0;
   let pulseTimeSec = 0;
-  let pulseWaveOriginSec = 0;
+  let pulseFlowSec = 0;
+  let pulseTargetSec = 0;
+  let pulseWaveOriginFlowSec = 0;
   let pulseAlpha = 0;
   let lastRingSig = "";
   const pulseState = {
     fromId: null,
     toId: null,
     live: false,
+    preview: false,
   };
+  let previewFromCacheId = null;
+  let pulsePanelOpen = false;
+  let pulseTuneUi = null;
   let palette = {};
 
+  const PULSE_PRESET_KEY_PRIMARY = "btmm.pulsePreset.v1";
+  const PULSE_PRESET_KEY_ALT = "btmm.pulseTuning.v1";
+  const DEFAULT_PULSE_PRESET_API = "https://music-map-events.billtribble.workers.dev/api/pulse-preset";
+  const DEFAULT_PULSE_TUNING = Object.freeze({
+    dotSpeed: 1.0,
+    colorCount: 4,
+    targetPulseSpeed: 1.0,
+    pulseGlow: 1.0,
+    dotSize: 1.0,
+    dotSpacing: 1.0,
+  });
+  let pulseTuning = { ...DEFAULT_PULSE_TUNING };
+
   const GEMINI_STOPS_DARK = [
-    [139, 92, 246],  // #8B5CF6 electric Gemini violet
-    [66, 133, 244],  // #4285F4 Gemini blue
-    [38, 198, 218],  // #26C6DA aqua cyan
-    [232, 113, 168], // #E871A8 warm Gemini rose-magenta
+    [139, 92, 246],  // electric Gemini violet
+    [66, 133, 244],  // Gemini blue
+    [38, 198, 218],  // aqua cyan
+    [232, 113, 168], // warm Gemini rose-magenta
+    [251, 188, 5],   // luminous Gemini gold
   ];
   const GEMINI_STOPS_LIGHT = [
-    [109, 40, 217],  // #6D28D9 royal Gemini violet
-    [37, 99, 235],   // #2563EB vivid cobalt blue
-    [8, 145, 178],   // #0891B2 crisp teal cyan
-    [219, 39, 119],  // #DB2777 vivid rose-magenta
+    [109, 40, 217],  // royal Gemini violet
+    [37, 99, 235],   // vivid cobalt blue
+    [8, 145, 178],   // crisp teal cyan
+    [219, 39, 119],  // vivid rose-magenta
+    [217, 119, 6],   // warm amber gold
   ];
+
+  function sanitizePulseTuning(raw, base = DEFAULT_PULSE_TUNING) {
+    const src = raw && typeof raw === "object" ? (raw.preset && typeof raw.preset === "object" ? raw.preset : raw) : {};
+    const clampRound = (val, min, max, fb) => {
+      const n = Number(val);
+      if (!Number.isFinite(n)) return fb;
+      return Math.round(Math.max(min, Math.min(max, n)) * 1000) / 1000;
+    };
+    return {
+      dotSpeed: clampRound(src.dotSpeed, 0, 3, base.dotSpeed),
+      colorCount: clampRound(src.colorCount, 1, 5, base.colorCount),
+      targetPulseSpeed: clampRound(src.targetPulseSpeed, 0, 3, base.targetPulseSpeed),
+      pulseGlow: clampRound(src.pulseGlow, 0, 2.5, base.pulseGlow),
+      dotSize: clampRound(src.dotSize, 0.5, 2, base.dotSize),
+      dotSpacing: clampRound(src.dotSpacing, 0.6, 1.8, base.dotSpacing),
+    };
+  }
+
+  function loadStoredPulseTuning() {
+    if (typeof localStorage === "undefined") return;
+    try {
+      const raw = localStorage.getItem(PULSE_PRESET_KEY_PRIMARY) || localStorage.getItem(PULSE_PRESET_KEY_ALT);
+      if (!raw) return;
+      const parsed = JSON.parse(raw);
+      pulseTuning = sanitizePulseTuning(parsed, DEFAULT_PULSE_TUNING);
+    } catch (_) {}
+  }
+
+  function resolvePulsePresetEndpoint() {
+    if (typeof window !== "undefined") {
+      if (typeof window.BTMM_PULSE_PRESET_URL === "string" && window.BTMM_PULSE_PRESET_URL.trim()) {
+        return window.BTMM_PULSE_PRESET_URL.trim();
+      }
+      if (typeof window.BTMM_EVENTS_API_URL === "string" && window.BTMM_EVENTS_API_URL.trim()) {
+        return `${window.BTMM_EVENTS_API_URL.trim().replace(/\/+$/, "")}/api/pulse-preset`;
+      }
+    }
+    return DEFAULT_PULSE_PRESET_API;
+  }
 
   function samplePalette() {
     if (typeof document === "undefined" || typeof getComputedStyle !== "function") return;
@@ -781,9 +841,9 @@
     return t * t * (3 - 2 * t);
   }
 
-  function sampleGeminiCyclic(t, isLight) {
-    const stops = isLight ? GEMINI_STOPS_LIGHT : GEMINI_STOPS_DARK;
-    const n = stops.length;
+  function sampleStopsSubset(stops, count, t) {
+    const n = Math.max(1, Math.min(stops.length, count));
+    if (n <= 1) return [stops[0][0], stops[0][1], stops[0][2]];
     const pos = fract(t) * n;
     const idx = Math.floor(pos) % n;
     const f = pos - Math.floor(pos);
@@ -797,14 +857,114 @@
     ];
   }
 
+  function sampleGeminiCyclic(t, isLight) {
+    const stops = isLight ? GEMINI_STOPS_LIGHT : GEMINI_STOPS_DARK;
+    const maxStops = stops.length;
+    const c = Math.max(1, Math.min(maxStops, Number(pulseTuning.colorCount) || 4));
+    const lowN = Math.floor(c);
+    const rem = c - lowN;
+    if (rem <= 0.001 || lowN >= maxStops) {
+      return sampleStopsSubset(stops, lowN, t);
+    }
+    const cA = sampleStopsSubset(stops, lowN, t);
+    const cB = sampleStopsSubset(stops, lowN + 1, t);
+    return [
+      Math.round(cA[0] + (cB[0] - cA[0]) * rem),
+      Math.round(cA[1] + (cB[1] - cA[1]) * rem),
+      Math.round(cA[2] + (cB[2] - cA[2]) * rem),
+    ];
+  }
+
   function rgbaStr(rgb, alpha) {
     return `rgba(${rgb[0]}, ${rgb[1]}, ${rgb[2]}, ${Math.max(0, Math.min(1, alpha)).toFixed(3)})`;
   }
 
+  function resolvePreviewPulsePair() {
+    const tryFrom = (fid) => {
+      if (!fid) return null;
+      const fn = nodeById.get(fid);
+      if (!fn || !isNodeRenderedOnMap(fn) || !isMatch(fn.t)) return null;
+      const tid = resolveUpcomingTargetId(fid, null);
+      if (!tid || tid === fid) return null;
+      const tn = nodeById.get(tid);
+      if (!tn || !isNodeRenderedOnMap(tn)) return null;
+      const ax = Number.isFinite(fn.px) ? fn.px : fn.x * zoom.k + zoom.x;
+      const ay = Number.isFinite(fn.py) ? fn.py : fn.y * zoom.k + zoom.y;
+      const bx = Number.isFinite(tn.px) ? tn.px : tn.x * zoom.k + zoom.x;
+      const by = Number.isFinite(tn.py) ? tn.py : tn.y * zoom.k + zoom.y;
+      if (ax < 36 || ax > vw - 36 || ay < 52 || ay > vh - 36) return null;
+      if (bx < 36 || bx > vw - 36 || by < 52 || by > vh - 36) return null;
+      if (Math.hypot(bx - ax, by - ay) < 22) return null;
+      return [fid, tid];
+    };
+
+    if (selectedId) {
+      const selPair = tryFrom(selectedId);
+      if (selPair) return selPair;
+    }
+    if (previewFromCacheId) {
+      const cachedPair = tryFrom(previewFromCacheId);
+      if (cachedPair) return cachedPair;
+    }
+
+    const targetX = vw * 0.56;
+    const targetY = vh * 0.42;
+    let bestPair = null;
+    let bestScore = Infinity;
+    for (let i = 0; i < nodes.length; i++) {
+      const n = nodes[i];
+      if (!isNodeRenderedOnMap(n) || !isMatch(n.t)) continue;
+      const ax = Number.isFinite(n.px) ? n.px : n.x * zoom.k + zoom.x;
+      const ay = Number.isFinite(n.py) ? n.py : n.y * zoom.k + zoom.y;
+      // Keep preview cleanly outside the bottom-left tuning panel & right-hand player card
+      if (ax < Math.min(340, vw * 0.34) && ay > vh * 0.42) continue;
+      if (ax < 48 || ax > vw - 60 || ay < 64 || ay > vh - 64) continue;
+      const pair = tryFrom(n.id);
+      if (!pair) continue;
+      const tn = nodeById.get(pair[1]);
+      const bx = Number.isFinite(tn.px) ? tn.px : tn.x * zoom.k + zoom.x;
+      const by = Number.isFinite(tn.py) ? tn.py : tn.y * zoom.k + zoom.y;
+      if (bx < Math.min(330, vw * 0.32) && by > vh * 0.45) continue;
+      const chord = Math.hypot(bx - ax, by - ay);
+      if (chord < 38 || chord > 290) continue;
+      const distCenter = Math.hypot((ax + bx) * 0.5 - targetX, (ay + by) * 0.5 - targetY);
+      const chordPenalty = Math.abs(chord - 115) * 0.55;
+      const score = distCenter + chordPenalty;
+      if (score < bestScore) {
+        bestScore = score;
+        bestPair = pair;
+      }
+    }
+    if (bestPair) {
+      previewFromCacheId = bestPair[0];
+      return bestPair;
+    }
+    for (let i = 0; i < nodes.length; i++) {
+      const pair = tryFrom(nodes[i].id);
+      if (pair) {
+        previewFromCacheId = pair[0];
+        return pair;
+      }
+    }
+    return null;
+  }
+
   function stepPulseState(playId, pendId) {
-    const reduced = isReducedMotionPreferred();
-    const nextId = playId ? resolveUpcomingTargetId(playId, pendId) : null;
-    const fromNode = playId ? nodeById.get(playId) : null;
+    const reduced = isReducedMotionPreferred() && !pulsePanelOpen;
+    let activeFromId = playId || null;
+    let nextId = activeFromId ? resolveUpcomingTargetId(activeFromId, pendId) : null;
+    let isPreview = false;
+
+    if (!activeFromId && pulsePanelOpen) {
+      const prevPair = resolvePreviewPulsePair();
+      if (prevPair) {
+        activeFromId = prevPair[0];
+        nextId = prevPair[1];
+        isPreview = true;
+      }
+    }
+
+    const fromNode = activeFromId ? nodeById.get(activeFromId) : null;
     const toNode = nextId ? nodeById.get(nextId) : null;
     const liveValid = Boolean(
       fromNode &&
@@ -823,21 +983,25 @@
 
     if (liveValid) {
       if (pulseState.fromId !== fromNode.id) {
-        pulseWaveOriginSec = pulseTimeSec;
+        pulseWaveOriginFlowSec = pulseFlowSec;
       }
       pulseState.fromId = fromNode.id;
       pulseState.toId = toNode.id;
       pulseState.live = true;
+      pulseState.preview = isPreview;
       if (reduced) {
         pulseAlpha = 1;
       } else {
         pulseAlpha = Math.min(1, Math.max(pulseAlpha + dt / 0.24, 0.06));
         pulseTimeSec += dt;
+        pulseFlowSec += dt * pulseTuning.dotSpeed;
+        pulseTargetSec += dt * pulseTuning.targetPulseSpeed;
       }
       return;
     }
 
     pulseState.live = false;
+    pulseState.preview = false;
     const fadeFrom = pulseState.fromId ? nodeById.get(pulseState.fromId) : null;
     const fadeTo = pulseState.toId ? nodeById.get(pulseState.toId) : null;
     if (!fadeFrom || !fadeTo || !isNodeRenderedOnMap(fadeFrom) || !isNodeRenderedOnMap(fadeTo) || reduced) {
@@ -845,6 +1009,8 @@
     } else if (pulseAlpha > 0) {
       pulseAlpha = Math.max(0, pulseAlpha - dt / 0.28);
       pulseTimeSec += dt * 0.65;
+      pulseFlowSec += dt * 0.65 * pulseTuning.dotSpeed;
+      pulseTargetSec += dt * 0.65 * pulseTuning.targetPulseSpeed;
     }
     if (pulseAlpha <= 0.004) {
       pulseAlpha = 0;
@@ -858,7 +1024,7 @@
       mapWrap.hidden ||
       (typeof document !== "undefined" && document.hidden)
     );
-    const reduced = isReducedMotionPreferred();
+    const reduced = isReducedMotionPreferred() && !pulsePanelOpen;
     const wantAnim = !mapHidden && !reduced && (pulseState.live || pulseAlpha > 0.004);
     if (!wantAnim) {
       if (pulseRaf && typeof cancelAnimationFrame === "function") {
@@ -951,13 +1117,17 @@
     const nextR = nodeScreenRadius(toNode.t);
     const numWaves = totalLen >= 340 ? 2 : 1;
     const wavePeriodSec = Math.max(0.95, Math.min(1.65, totalLen / 165));
-    const elapsedWave = Math.max(0, pulseTimeSec - pulseWaveOriginSec);
+    const elapsedFlow = Math.max(0, pulseFlowSec - pulseWaveOriginFlowSec);
+    const reduced = isReducedMotionPreferred() && !pulsePanelOpen;
+    const stationaryDots = pulseTuning.dotSpeed <= 0.001;
 
     function waveBoostAt(u) {
-      if (isReducedMotionPreferred()) return 0.35;
+      if (reduced) return 0.35;
       let best = 0;
       for (let w = 0; w < numWaves; w++) {
-        const front = fract(elapsedWave / wavePeriodSec + w / numWaves);
+        const front = stationaryDots
+          ? fract(0.35 + w / numWaves)
+          : fract(elapsedFlow / wavePeriodSec + w / numWaves);
         let du = u - front;
         if (du > 0.5) du -= 1;
         else if (du < -0.5) du += 1;
@@ -968,7 +1138,14 @@
       return best;
     }
 
-    const arrivalBoost = waveBoostAt(0.96);
+    const arrivalBoost = stationaryDots ? 0.25 : waveBoostAt(0.96);
+    const tRate = pulseTuning.targetPulseSpeed;
+    const targetBreath = reduced || tRate <= 0.001
+      ? 0.35
+      : 0.5 - 0.5 * Math.cos(pulseTargetSec * Math.PI * 2 * 0.85);
+    const targetCombinedPulse = tRate <= 0.001
+      ? 0.35
+      : Math.min(1.25, 0.76 * targetBreath + 0.34 * arrivalBoost);
 
     return {
       fromNode,
@@ -983,6 +1160,8 @@
       curR,
       nextR,
       arrivalBoost,
+      targetBreath,
+      targetCombinedPulse,
       uAtArcLen,
       waveBoostAt,
     };
@@ -990,20 +1169,27 @@
 
   function drawNextPulseUnderlay(geom, isLight) {
     if (!geom || !ctx) return;
-    const { ax, ay, bx, by, cx, cy, totalLen, curR, nextR, arrivalBoost, uAtArcLen } = geom;
+    const glow = pulseTuning.pulseGlow;
+    if (glow <= 0.005) return;
+
+    const { ax, ay, bx, by, cx, cy, totalLen, curR, nextR, targetCombinedPulse, uAtArcLen } = geom;
     const master = pulseAlpha;
-    const phaseShift = -pulseTimeSec * 0.18;
+    const phaseShift = -pulseFlowSec * 0.18;
+    const glowRadiusScale = 0.68 + 0.32 * glow;
+    const glowAlphaScale = Math.min(2.35, glow);
 
     ctx.save();
     ctx.setLineDash([]);
 
-    // 1. Subtle Gemini violet-blue emitter aura underneath the currently playing node
-    if (ax >= -36 && ax <= vw + 36 && ay >= -36 && ay <= vh + 36) {
-      const emitR = curR + 10.5;
+    // 1. Subtle Gemini emitter aura underneath the currently playing (or preview source) node
+    if (ax >= -48 && ax <= vw + 48 && ay >= -48 && ay <= vh + 48) {
+      const emitR = curR + 10.5 * glowRadiusScale;
+      const emitInner = sampleGeminiCyclic(0.05 + phaseShift, isLight);
+      const emitOuter = sampleGeminiCyclic(0.28 + phaseShift, isLight);
       const emitGrad = ctx.createRadialGradient(ax, ay, curR * 0.4, ax, ay, emitR);
-      emitGrad.addColorStop(0, rgbaStr(sampleGeminiCyclic(0.05 + phaseShift, isLight), (isLight ? 0.20 : 0.28) * master));
-      emitGrad.addColorStop(0.58, rgbaStr(sampleGeminiCyclic(0.28 + phaseShift, isLight), (isLight ? 0.10 : 0.14) * master));
-      emitGrad.addColorStop(1, "rgba(66, 133, 244, 0)");
+      emitGrad.addColorStop(0, rgbaStr(emitInner, Math.min(0.85, (isLight ? 0.20 : 0.28) * glowAlphaScale) * master));
+      emitGrad.addColorStop(0.58, rgbaStr(emitOuter, Math.min(0.55, (isLight ? 0.10 : 0.14) * glowAlphaScale) * master));
+      emitGrad.addColorStop(1, rgbaStr(emitOuter, 0));
       ctx.beginPath();
       ctx.arc(ax, ay, emitR, 0, Math.PI * 2);
       ctx.fillStyle = emitGrad;
@@ -1012,12 +1198,20 @@
     }
 
     // 2. Soft breathing Gemini destination aura underneath the upcoming Next node
-    if (bx >= -42 && bx <= vw + 42 && by >= -42 && by <= vh + 42) {
-      const destAuraR = nextR + 12 + 4.2 * arrivalBoost;
+    if (bx >= -56 && bx <= vw + 56 && by >= -56 && by <= vh + 56) {
+      const destAuraR = nextR + (10.8 + 5.4 * targetCombinedPulse) * glowRadiusScale;
+      const destInner = sampleGeminiCyclic(0.62 + phaseShift, isLight);
+      const destOuter = sampleGeminiCyclic(0.86 + phaseShift, isLight);
       const destGrad = ctx.createRadialGradient(bx, by, nextR * 0.4, bx, by, destAuraR);
-      destGrad.addColorStop(0, rgbaStr(sampleGeminiCyclic(0.62 + phaseShift, isLight), ((isLight ? 0.20 : 0.26) + 0.15 * arrivalBoost) * master));
-      destGrad.addColorStop(0.55, rgbaStr(sampleGeminiCyclic(0.86 + phaseShift, isLight), ((isLight ? 0.10 : 0.14) + 0.10 * arrivalBoost) * master));
-      destGrad.addColorStop(1, "rgba(232, 113, 168, 0)");
+      destGrad.addColorStop(
+        0,
+        rgbaStr(destInner, Math.min(0.9, ((isLight ? 0.20 : 0.26) + 0.16 * targetCombinedPulse) * glowAlphaScale) * master)
+      );
+      destGrad.addColorStop(
+        0.55,
+        rgbaStr(destOuter, Math.min(0.62, ((isLight ? 0.10 : 0.14) + 0.11 * targetCombinedPulse) * glowAlphaScale) * master)
+      );
+      destGrad.addColorStop(1, rgbaStr(destOuter, 0));
       ctx.beginPath();
       ctx.arc(bx, by, destAuraR, 0, Math.PI * 2);
       ctx.fillStyle = destGrad;
@@ -1047,8 +1241,8 @@
       }
       ctx.lineCap = "round";
       ctx.strokeStyle = lineGrad;
-      ctx.lineWidth = 6.5;
-      ctx.globalAlpha = (isLight ? 0.07 : 0.11) * master;
+      ctx.lineWidth = 4.6 + 2.2 * glow;
+      ctx.globalAlpha = Math.min(0.42, (isLight ? 0.07 : 0.11) * glowAlphaScale) * master;
       ctx.stroke();
     }
 
@@ -1057,17 +1251,20 @@
 
   function drawNextPulseOverlay(geom, isLight) {
     if (!geom || !ctx) return;
-    const { ax, ay, bx, by, cx, cy, totalLen, curR, nextR, arrivalBoost, uAtArcLen, waveBoostAt } = geom;
+    const { ax, ay, bx, by, cx, cy, totalLen, curR, nextR, targetCombinedPulse, uAtArcLen, waveBoostAt } = geom;
     const master = pulseAlpha;
-    const phaseShift = -pulseTimeSec * 0.18;
+    const phaseShift = -pulseFlowSec * 0.18;
+    const glow = pulseTuning.pulseGlow;
+    const tRate = pulseTuning.targetPulseSpeed;
+    const reduced = isReducedMotionPreferred() && !pulsePanelOpen;
 
     ctx.save();
     ctx.setLineDash([]);
 
-    // 1. Shimmering Gemini gradient halo ring around the upcoming Next node
-    if (bx >= -32 && bx <= vw + 32 && by >= -32 && by <= vh + 32) {
-      const haloR = nextR + 4.4 + 1.45 * arrivalBoost;
-      const rot = pulseTimeSec * 1.35;
+    // 1. Shimmering Gemini gradient halo ring + breathing pulse ripple around the upcoming Next node
+    if (bx >= -42 && bx <= vw + 42 && by >= -42 && by <= vh + 42) {
+      const haloR = nextR + 3.9 + 2.15 * targetCombinedPulse;
+      const rot = reduced || tRate <= 0.001 ? 0.45 : pulseTargetSec * 1.45;
       const gx = Math.cos(rot) * haloR;
       const gy = Math.sin(rot) * haloR;
       const ringGrad = ctx.createLinearGradient(bx - gx, by - gy, bx + gx, by + gy);
@@ -1076,11 +1273,29 @@
       ringGrad.addColorStop(0.70, rgbaStr(sampleGeminiCyclic(0.60, isLight), 1));
       ringGrad.addColorStop(1, rgbaStr(sampleGeminiCyclic(0.90, isLight), 1));
 
+      if (!reduced && tRate > 0.001) {
+        const ripplePhase = fract(pulseTargetSec * 0.85);
+        const rippleR = nextR + 4.2 + ripplePhase * (7.2 + 2.4 * Math.min(1.8, glow));
+        const rippleAlpha =
+          Math.pow(1 - ripplePhase, 1.65) *
+          (isLight ? 0.42 : 0.52) *
+          (0.52 + 0.48 * Math.min(1.6, glow)) *
+          master;
+        if (rippleAlpha > 0.015) {
+          ctx.beginPath();
+          ctx.arc(bx, by, rippleR, 0, Math.PI * 2);
+          ctx.strokeStyle = ringGrad;
+          ctx.lineWidth = Math.max(0.75, 1.35 * (1 - 0.42 * ripplePhase));
+          ctx.globalAlpha = rippleAlpha;
+          ctx.stroke();
+        }
+      }
+
       ctx.beginPath();
       ctx.arc(bx, by, haloR, 0, Math.PI * 2);
       ctx.strokeStyle = ringGrad;
-      ctx.lineWidth = 1.85 + 0.45 * arrivalBoost;
-      ctx.globalAlpha = ((isLight ? 0.82 : 0.88) + 0.12 * arrivalBoost) * master;
+      ctx.lineWidth = 1.75 + 0.62 * targetCombinedPulse;
+      ctx.globalAlpha = Math.min(1, (isLight ? 0.80 : 0.86) + 0.14 * targetCombinedPulse) * master;
       ctx.stroke();
     }
 
@@ -1088,18 +1303,21 @@
     const sStart = curR + 5.2;
     const sEnd = totalLen - (nextR + 5.6);
     const usableLen = sEnd - sStart;
-    const dotStep = Math.max(8.8, Math.min(12.4, 9.6 * Math.pow(Math.max(1, zoom.k), 0.14)));
-    const marchSpeed = 44;
-    const reduced = isReducedMotionPreferred();
+    const baseDotStep = Math.max(8.8, Math.min(12.4, 9.6 * Math.pow(Math.max(1, zoom.k), 0.14)));
+    const dotStep = Math.max(5.2, Math.min(24.0, baseDotStep * pulseTuning.dotSpacing));
+    const marchBaseSpeed = 44;
 
     if (usableLen >= 6.5) {
-      const phaseOffset = reduced ? (dotStep * 0.5) : ((pulseTimeSec * marchSpeed) % dotStep);
+      const phaseOffset =
+        reduced || pulseTuning.dotSpeed <= 0.001
+          ? dotStep * 0.5
+          : (pulseFlowSec * marchBaseSpeed) % dotStep;
       const fadeSpan = Math.min(13, usableLen * 0.25);
 
       for (let s = sStart + phaseOffset; s <= sEnd; s += dotStep) {
         const u = uAtArcLen(s);
         const [px, py] = evalQuad(ax, ay, cx, cy, bx, by, u);
-        if (px < -24 || px > vw + 24 || py < -24 || py > vh + 24) continue;
+        if (px < -28 || px > vw + 28 || py < -28 || py > vh + 28) continue;
 
         const inFade = fadeSpan > 0.5 ? smoothstep(0, fadeSpan, s - sStart) : 1;
         const outFade = fadeSpan > 0.5 ? smoothstep(0, fadeSpan, sEnd - s) : 1;
@@ -1108,21 +1326,24 @@
 
         const waveBoost = waveBoostAt(u);
         const rgb = sampleGeminiCyclic(u * 0.88 + phaseShift, isLight);
-        const dotR = (1.45 + 1.65 * waveBoost) * (0.58 + 0.42 * endEnv);
+        const dotR = (1.45 + 1.65 * waveBoost) * (0.58 + 0.42 * endEnv) * pulseTuning.dotSize;
 
-        // Feather-soft radial aurora bloom (decays smoothly to 0 alpha — zero hard soap-bubble rim!)
-        if (waveBoost > 0.16) {
-          const glowR = dotR * (isLight ? 2.6 : 3.2);
-          const bloom = ctx.createRadialGradient(px, py, dotR * 0.25, px, py, glowR);
-          const peakGlow = (isLight ? 0.28 : 0.42) * waveBoost * endEnv * master;
-          bloom.addColorStop(0, rgbaStr(rgb, peakGlow));
-          bloom.addColorStop(0.48, rgbaStr(rgb, peakGlow * 0.36));
-          bloom.addColorStop(1, rgbaStr(rgb, 0));
-          ctx.beginPath();
-          ctx.arc(px, py, glowR, 0, Math.PI * 2);
-          ctx.fillStyle = bloom;
-          ctx.globalAlpha = 1;
-          ctx.fill();
+        // Feather-soft radial aurora bloom (scaled continuously by pulseGlow; skipped completely at 0)
+        if (glow > 0.005 && (waveBoost > 0.12 || glow > 0.55)) {
+          const glowR = dotR * (isLight ? 2.6 : 3.2) * (0.56 + 0.46 * glow);
+          const glowDrive = 0.24 * Math.max(0, glow - 0.35) + 0.82 * waveBoost * glow;
+          const peakGlow = Math.min(0.94, (isLight ? 0.28 : 0.42) * glowDrive) * endEnv * master;
+          if (peakGlow > 0.01) {
+            const bloom = ctx.createRadialGradient(px, py, dotR * 0.24, px, py, glowR);
+            bloom.addColorStop(0, rgbaStr(rgb, peakGlow));
+            bloom.addColorStop(0.48, rgbaStr(rgb, peakGlow * 0.36));
+            bloom.addColorStop(1, rgbaStr(rgb, 0));
+            ctx.beginPath();
+            ctx.arc(px, py, glowR, 0, Math.PI * 2);
+            ctx.fillStyle = bloom;
+            ctx.globalAlpha = 1;
+            ctx.fill();
+          }
         }
 
         ctx.beginPath();
@@ -1131,11 +1352,11 @@
         ctx.globalAlpha = ((isLight ? 0.56 : 0.52) + (isLight ? 0.42 : 0.46) * waveBoost) * endEnv * master;
         ctx.fill();
 
-        if (!isLight && waveBoost > 0.62) {
-          const coreStrength = (waveBoost - 0.62) / 0.38;
+        if (!isLight && glow > 0.05 && waveBoost > 0.62) {
+          const coreStrength = ((waveBoost - 0.62) / 0.38) * Math.min(1, glow);
           ctx.beginPath();
           ctx.arc(px, py, Math.max(0.65, dotR * 0.44), 0, Math.PI * 2);
-          ctx.fillStyle = "#FFFFFF";
+          ctx.fillStyle = "rgb(255, 255, 255)";
           ctx.globalAlpha = 0.88 * coreStrength * endEnv * master;
           ctx.fill();
         }
@@ -1148,10 +1369,13 @@
       for (let m = 0; m < microUs.length; m++) {
         const u = microUs[m];
         const [px, py] = evalQuad(ax, ay, cx, cy, bx, by, u);
-        const w = reduced ? 0.6 : (0.5 + 0.5 * Math.sin(pulseTimeSec * 6.2 - m * 1.35));
+        const w =
+          reduced || pulseTuning.dotSpeed <= 0.001
+            ? 0.6
+            : 0.5 + 0.5 * Math.sin(pulseFlowSec * 6.2 - m * 1.35);
         const rgb = sampleGeminiCyclic(u * 0.8 + phaseShift, isLight);
         ctx.beginPath();
-        ctx.arc(px, py, 1.35 + 0.85 * w, 0, Math.PI * 2);
+        ctx.arc(px, py, (1.35 + 0.85 * w) * pulseTuning.dotSize, 0, Math.PI * 2);
         ctx.fillStyle = rgbaStr(rgb, 1);
         ctx.globalAlpha = (0.48 + 0.45 * w) * master;
         ctx.fill();
@@ -1543,7 +1767,13 @@
       },
       onFullPaint: () => paint(),
       onHoverMove: (ev, [px, py]) => {
-        if (mapWrap.hidden || !ev.target || !mapWrap.contains(ev.target) || ev.target.closest("#map-floating-hud")) {
+        if (
+          mapWrap.hidden ||
+          !ev.target ||
+          !mapWrap.contains(ev.target) ||
+          ev.target.closest("#map-floating-hud") ||
+          ev.target.closest("#pulse-tune-dock")
+        ) {
           if (hoverId !== null) {
             hoverId = null;
             mapWrap.classList.remove("has-hover");
@@ -1846,6 +2076,436 @@
     return tracks[0] ? tracks[0].id : null;
   }
 
+  let pulseCornerMoveHandler = null;
+  let pulseDocLeaveHandler = null;
+  let pulseDocKeyHandler = null;
+  let pulseSaveInFlight = false;
+
+  function syncRangeTrackPct(input) {
+    if (!input || !input.style) return;
+    const min = parseFloat(input.min || "0");
+    const max = parseFloat(input.max || "100");
+    const val = parseFloat(input.value || "0");
+    const pct = max > min ? ((val - min) / (max - min)) * 100 : 0;
+    input.style.setProperty("--pct", `${Math.max(0, Math.min(100, pct)).toFixed(2)}%`);
+  }
+
+  function formatPulseSliderValue(key, val) {
+    if (key === "colorCount") {
+      const n = Math.round(val);
+      return n === 1 ? "1 color" : `${n} colors`;
+    }
+    if (key === "dotSpeed") {
+      return val <= 0.005 ? "Still" : `${val.toFixed(2)}×`;
+    }
+    if (key === "targetPulseSpeed" || key === "pulseGlow") {
+      return val <= 0.005 ? "Off" : `${val.toFixed(2)}×`;
+    }
+    return `${val.toFixed(2)}×`;
+  }
+
+  function clearSavedButtonFeedback() {
+    if (!pulseTuneUi) return;
+    if (pulseTuneUi.saveTimer) {
+      clearTimeout(pulseTuneUi.saveTimer);
+      pulseTuneUi.saveTimer = 0;
+    }
+    pulseTuneUi.saveBtn.classList.remove("is-saved");
+    pulseTuneUi.saveIcon.textContent = "cloud_upload";
+    pulseTuneUi.saveLbl.textContent = "Save settings";
+    pulseTuneUi.statusEl.hidden = true;
+    pulseTuneUi.statusEl.textContent = "";
+  }
+
+  function syncPulseTuningUi() {
+    if (!pulseTuneUi) return;
+    const isLight = typeof document !== "undefined" && document.documentElement.getAttribute("data-theme") === "light";
+    const stops = isLight ? GEMINI_STOPS_LIGHT : GEMINI_STOPS_DARK;
+    pulseTuneUi.controls.forEach(({ key, input, valEl }) => {
+      const cur = pulseTuning[key];
+      input.value = String(cur);
+      syncRangeTrackPct(input);
+      valEl.textContent = formatPulseSliderValue(key, cur);
+    });
+    if (pulseTuneUi.swatchWrap) {
+      const activeCount = Math.max(1, Math.min(stops.length, Math.round(pulseTuning.colorCount)));
+      pulseTuneUi.swatchWrap.innerHTML = "";
+      for (let i = 0; i < activeCount; i++) {
+        const dot = document.createElement("span");
+        dot.className = "pulse-tune-swatch";
+        const rgb = stops[i];
+        dot.style.background = `rgb(${rgb[0]}, ${rgb[1]}, ${rgb[2]})`;
+        pulseTuneUi.swatchWrap.appendChild(dot);
+      }
+    }
+  }
+
+  function setPulsePanelOpen(nextOpen) {
+    pulsePanelOpen = Boolean(nextOpen);
+    if (pulseTuneUi) {
+      pulseTuneUi.dock.classList.toggle("is-open", pulsePanelOpen);
+      pulseTuneUi.panel.hidden = !pulsePanelOpen;
+      pulseTuneUi.trigger.setAttribute("aria-expanded", String(pulsePanelOpen));
+      if (pulsePanelOpen) {
+        syncPulseTuningUi();
+      }
+    }
+    pulseLastNow = 0;
+    paintCanvas();
+  }
+
+  function setPulseTuning(patch, opts = {}) {
+    pulseTuning = sanitizePulseTuning({ ...pulseTuning, ...(patch || {}) }, pulseTuning);
+    if (!opts.keepSaveBadge) clearSavedButtonFeedback();
+    syncPulseTuningUi();
+    paintCanvas();
+    return { ...pulseTuning };
+  }
+
+  function resetPulseTuning() {
+    pulseTuning = { ...DEFAULT_PULSE_TUNING };
+    clearSavedButtonFeedback();
+    syncPulseTuningUi();
+    paintCanvas();
+    return { ...pulseTuning };
+  }
+
+  async function savePulseTuning() {
+    if (pulseSaveInFlight) return { ok: false, inFlight: true };
+    pulseSaveInFlight = true;
+    const payload = {
+      version: 1,
+      dotSpeed: pulseTuning.dotSpeed,
+      colorCount: pulseTuning.colorCount,
+      targetPulseSpeed: pulseTuning.targetPulseSpeed,
+      pulseGlow: pulseTuning.pulseGlow,
+      dotSize: pulseTuning.dotSize,
+      dotSpacing: pulseTuning.dotSpacing,
+      savedAt: new Date().toISOString().replace(/\.\d{3}Z$/, "Z"),
+    };
+    const serialized = JSON.stringify(payload);
+
+    try {
+      try {
+        if (typeof localStorage !== "undefined") {
+          localStorage.setItem(PULSE_PRESET_KEY_PRIMARY, serialized);
+          localStorage.setItem(PULSE_PRESET_KEY_ALT, serialized);
+        }
+      } catch (_) {}
+
+      let copied = false;
+      try {
+        if (typeof navigator !== "undefined" && navigator.clipboard && typeof navigator.clipboard.writeText === "function") {
+          await navigator.clipboard.writeText(serialized);
+          copied = true;
+        }
+      } catch (_) {}
+
+      if (pulseTuneUi) {
+        pulseTuneUi.saveBtn.setAttribute("aria-busy", "true");
+        pulseTuneUi.saveLbl.textContent = "Saving…";
+      }
+
+      let remoteOk = false;
+      let remoteData = null;
+      try {
+        const endpoint = resolvePulsePresetEndpoint();
+        const resp = await fetch(endpoint, {
+          method: "POST",
+          mode: "cors",
+          credentials: "omit",
+          headers: { "Content-Type": "application/json" },
+          body: serialized,
+        });
+        if (resp.ok) {
+          remoteData = await resp.json().catch(() => null);
+          remoteOk = Boolean(remoteData && remoteData.ok);
+        }
+      } catch (_) {
+        remoteOk = false;
+      }
+
+      if (pulseTuneUi) {
+        pulseTuneUi.saveBtn.removeAttribute("aria-busy");
+        pulseTuneUi.saveBtn.classList.add("is-saved");
+        pulseTuneUi.saveIcon.textContent = "check_circle";
+        pulseTuneUi.saveLbl.textContent = "Saved — ready to pick up";
+        pulseTuneUi.statusEl.hidden = false;
+        pulseTuneUi.statusEl.textContent = remoteOk
+          ? "Saved! Preset synced"
+          : copied
+            ? "Saved locally & copied JSON"
+            : "Saved locally on this browser";
+        if (pulseTuneUi.saveTimer) clearTimeout(pulseTuneUi.saveTimer);
+        pulseTuneUi.saveTimer = setTimeout(() => {
+          if (!pulseTuneUi) return;
+          pulseTuneUi.saveTimer = 0;
+        }, 4500);
+      }
+
+      return {
+        ok: true,
+        remoteSynced: remoteOk,
+        copied,
+        preset: payload,
+        remote: remoteData,
+      };
+    } finally {
+      pulseSaveInFlight = false;
+      if (pulseTuneUi) pulseTuneUi.saveBtn.removeAttribute("aria-busy");
+    }
+  }
+
+  function mountPulseTuningUi() {
+    if (!mapWrap || typeof document === "undefined") return;
+    if (pulseCornerMoveHandler && typeof window !== "undefined") {
+      window.removeEventListener("pointermove", pulseCornerMoveHandler);
+      pulseCornerMoveHandler = null;
+    }
+    if (pulseDocLeaveHandler) {
+      document.removeEventListener("mouseleave", pulseDocLeaveHandler);
+      pulseDocLeaveHandler = null;
+    }
+    if (pulseDocKeyHandler && typeof window !== "undefined") {
+      window.removeEventListener("keydown", pulseDocKeyHandler);
+      pulseDocKeyHandler = null;
+    }
+    const prev = document.getElementById("pulse-tune-dock");
+    if (prev) prev.remove();
+
+    const dock = document.createElement("div");
+    dock.id = "pulse-tune-dock";
+    dock.className = "pulse-tune-dock";
+
+    const panel = document.createElement("div");
+    panel.id = "pulse-tune-panel";
+    panel.className = "pulse-tune-panel";
+    panel.setAttribute("role", "dialog");
+    panel.setAttribute("aria-label", "Pulse animation tuning");
+    panel.hidden = true;
+
+    const head = document.createElement("div");
+    head.className = "pulse-tune-head";
+
+    const titleWrap = document.createElement("div");
+    titleWrap.className = "pulse-tune-title-wrap";
+    const titleIcon = document.createElement("span");
+    titleIcon.className = "ms";
+    titleIcon.setAttribute("aria-hidden", "true");
+    titleIcon.textContent = "auto_awesome";
+    const titleEl = document.createElement("h3");
+    titleEl.className = "pulse-tune-title";
+    titleEl.textContent = "Pulse tuning";
+    titleWrap.append(titleIcon, titleEl);
+
+    const headActions = document.createElement("div");
+    headActions.className = "pulse-tune-head-actions";
+    const resetBtn = document.createElement("button");
+    resetBtn.id = "pulse-tune-reset";
+    resetBtn.type = "button";
+    resetBtn.className = "pulse-tune-reset-btn";
+    resetBtn.textContent = "Reset";
+    const closeBtn = document.createElement("button");
+    closeBtn.id = "pulse-tune-close";
+    closeBtn.type = "button";
+    closeBtn.className = "pulse-tune-close-btn";
+    closeBtn.setAttribute("aria-label", "Close pulse tuning");
+    const closeIcon = document.createElement("span");
+    closeIcon.className = "ms";
+    closeIcon.setAttribute("aria-hidden", "true");
+    closeIcon.textContent = "close";
+    closeBtn.appendChild(closeIcon);
+    headActions.append(resetBtn, closeBtn);
+    head.append(titleWrap, headActions);
+
+    const primaryGroup = document.createElement("div");
+    primaryGroup.className = "pulse-tune-group";
+
+    const bonusGroup = document.createElement("div");
+    bonusGroup.className = "pulse-tune-group pulse-tune-group-sub";
+
+    const sliderDefs = [
+      { id: "pt-dot-speed", key: "dotSpeed", label: "Dot speed", min: 0, max: 3, step: 0.05, primary: true },
+      { id: "pt-color-count", key: "colorCount", label: "Amount of colors", min: 1, max: 5, step: 1, primary: true, swatches: true },
+      { id: "pt-target-speed", key: "targetPulseSpeed", label: "Receiving track pulse", min: 0, max: 3, step: 0.05, primary: true },
+      { id: "pt-pulse-glow", key: "pulseGlow", label: "Pulse glow", min: 0, max: 2.5, step: 0.05, primary: true },
+      { id: "pt-dot-size", key: "dotSize", label: "Dot size", min: 0.5, max: 2, step: 0.05, primary: false },
+      { id: "pt-dot-spacing", key: "dotSpacing", label: "Dot spacing", min: 0.6, max: 1.8, step: 0.05, primary: false },
+    ];
+
+    const controls = [];
+    let swatchWrap = null;
+
+    sliderDefs.forEach((def) => {
+      const row = document.createElement("div");
+      row.className = "pulse-tune-row";
+
+      const lblRow = document.createElement("div");
+      lblRow.className = "pulse-tune-lbl-row";
+
+      const lbl = document.createElement("label");
+      lbl.className = "pulse-tune-lbl";
+      lbl.setAttribute("for", def.id);
+      lbl.textContent = def.label;
+
+      const meta = document.createElement("div");
+      meta.className = "pulse-tune-meta";
+      if (def.swatches) {
+        swatchWrap = document.createElement("span");
+        swatchWrap.className = "pulse-tune-swatches";
+        swatchWrap.setAttribute("aria-hidden", "true");
+        meta.appendChild(swatchWrap);
+      }
+      const valEl = document.createElement("span");
+      valEl.id = `${def.id}-val`;
+      valEl.className = "pulse-tune-val";
+      meta.appendChild(valEl);
+
+      lblRow.append(lbl, meta);
+
+      const input = document.createElement("input");
+      input.id = def.id;
+      input.className = "gm3-slider";
+      input.type = "range";
+      input.min = String(def.min);
+      input.max = String(def.max);
+      input.step = String(def.step);
+      input.value = String(pulseTuning[def.key]);
+      input.setAttribute("aria-label", def.label);
+      input.addEventListener("input", () => {
+        setPulseTuning({ [def.key]: parseFloat(input.value) });
+      });
+
+      row.append(lblRow, input);
+      (def.primary ? primaryGroup : bonusGroup).appendChild(row);
+      controls.push({ key: def.key, input, valEl });
+    });
+
+    const foot = document.createElement("div");
+    foot.className = "pulse-tune-foot";
+    const saveBtn = document.createElement("button");
+    saveBtn.id = "pulse-tune-save";
+    saveBtn.type = "button";
+    saveBtn.className = "pulse-tune-save-btn";
+    const saveIcon = document.createElement("span");
+    saveIcon.className = "ms";
+    saveIcon.setAttribute("aria-hidden", "true");
+    saveIcon.textContent = "cloud_upload";
+    const saveLbl = document.createElement("span");
+    saveLbl.id = "pulse-tune-save-lbl";
+    saveLbl.textContent = "Save settings";
+    saveBtn.append(saveIcon, saveLbl);
+
+    const statusEl = document.createElement("div");
+    statusEl.id = "pulse-tune-status";
+    statusEl.className = "pulse-tune-status";
+    statusEl.setAttribute("role", "status");
+    statusEl.setAttribute("aria-live", "polite");
+    statusEl.hidden = true;
+
+    foot.append(saveBtn, statusEl);
+    panel.append(head, primaryGroup, bonusGroup, foot);
+
+    const zone = document.createElement("div");
+    zone.id = "pulse-tune-zone";
+    zone.className = "pulse-tune-zone";
+
+    const trigger = document.createElement("button");
+    trigger.id = "pulse-tune-trigger";
+    trigger.type = "button";
+    trigger.className = "pulse-tune-trigger";
+    trigger.setAttribute("aria-label", "Pulse animation controls");
+    trigger.setAttribute("aria-expanded", "false");
+    trigger.setAttribute("aria-controls", "pulse-tune-panel");
+    const trigIcon = document.createElement("span");
+    trigIcon.className = "ms";
+    trigIcon.setAttribute("aria-hidden", "true");
+    trigIcon.textContent = "auto_awesome";
+    const trigLbl = document.createElement("span");
+    trigLbl.textContent = "Pulse tuning";
+    trigger.append(trigIcon, trigLbl);
+    zone.appendChild(trigger);
+
+    dock.append(panel, zone);
+    mapWrap.appendChild(dock);
+
+    ["pointerdown", "pointerup", "click", "dblclick", "wheel"].forEach((evtName) => {
+      dock.addEventListener(evtName, (ev) => {
+        ev.stopPropagation();
+      });
+    });
+    dock.addEventListener("keydown", (ev) => {
+      if (ev.key === "Escape" && pulsePanelOpen) {
+        ev.stopPropagation();
+        setPulsePanelOpen(false);
+        trigger.focus();
+        return;
+      }
+      ev.stopPropagation();
+    });
+
+    trigger.addEventListener("click", () => {
+      setPulsePanelOpen(!pulsePanelOpen);
+    });
+    closeBtn.addEventListener("click", () => {
+      setPulsePanelOpen(false);
+    });
+    resetBtn.addEventListener("click", () => {
+      resetPulseTuning();
+    });
+    saveBtn.addEventListener("click", () => {
+      savePulseTuning();
+    });
+
+    if (typeof window !== "undefined") {
+      pulseCornerMoveHandler = (ev) => {
+        if (ev.pointerType === "touch" || !mapWrap || mapWrap.hidden) {
+          dock.classList.remove("is-corner-near");
+          return;
+        }
+        const mRect = mapWrap.getBoundingClientRect();
+        const inScreenBottomLeft = ev.clientX <= Math.max(148, mRect.left + 88) && ev.clientY >= window.innerHeight - 86;
+        const inMapBottomLeft =
+          ev.clientX >= mRect.left - 8 &&
+          ev.clientX <= mRect.left + 148 &&
+          ev.clientY >= mRect.bottom - 76 &&
+          ev.clientY <= mRect.bottom + 8;
+        dock.classList.toggle("is-corner-near", Boolean(inScreenBottomLeft || inMapBottomLeft));
+      };
+      pulseDocLeaveHandler = () => {
+        dock.classList.remove("is-corner-near");
+      };
+      pulseDocKeyHandler = (ev) => {
+        if (ev.key === "Escape" && pulsePanelOpen) {
+          ev.preventDefault();
+          ev.stopPropagation();
+          setPulsePanelOpen(false);
+          if (trigger && typeof trigger.focus === "function") {
+            trigger.focus();
+          }
+        }
+      };
+      window.addEventListener("pointermove", pulseCornerMoveHandler, { passive: true });
+      document.addEventListener("mouseleave", pulseDocLeaveHandler);
+      window.addEventListener("keydown", pulseDocKeyHandler);
+    }
+
+    pulseTuneUi = {
+      dock,
+      panel,
+      zone,
+      trigger,
+      saveBtn,
+      saveIcon,
+      saveLbl,
+      statusEl,
+      controls,
+      swatchWrap,
+      saveTimer: 0,
+    };
+    syncPulseTuningUi();
+  }
+
   function init(cfg) {
     hooks = cfg;
     tracks = cfg.tracks || [];
@@ -1868,6 +2528,7 @@
     starEmptyEl = document.getElementById("star-empty-msg");
     if (!mapWrap || !canvas || !svg) return;
 
+    loadStoredPulseTuning();
     ctx = canvas.getContext("2d");
     samplePalette();
     resizeCanvas();
@@ -1887,6 +2548,7 @@
 
     computeTargetPositions();
     nodes.forEach((n) => { n.x = n.tx; n.y = n.ty; });
+    mountPulseTuningUi();
     bindEvents();
     zoom = defaultMapZoom();
     clampZoom();
@@ -1933,13 +2595,23 @@
       fromId: pulseState.fromId,
       toId: pulseState.toId,
       live: pulseState.live,
+      preview: pulseState.preview,
       alpha: pulseAlpha,
       timeSec: pulseTimeSec,
+      flowSec: pulseFlowSec,
+      targetSec: pulseTargetSec,
       rafActive: Boolean(pulseRaf),
+      panelOpen: pulsePanelOpen,
+      tuning: { ...pulseTuning },
     }),
+    getPulseTuning: () => ({ ...pulseTuning }),
+    setPulseTuning,
+    resetPulseTuning,
+    savePulseTuning,
+    setPulsePanelOpen,
     setColorMode(mode) { colorMode = mode; paint(); },
     getColorMode: () => colorMode,
-    refreshTheme() { samplePalette(); paint(); },
+    refreshTheme() { samplePalette(); syncPulseTuningUi(); paint(); },
     relayout,
   };
 })();
