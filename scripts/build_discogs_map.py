@@ -233,6 +233,12 @@ DEFAULT_EXCLUDED_IDS = {
     "archive_2013_18_78",
     "archive_2013_18_103",
     "hd_2005_33",
+    # Superseded pre-release archive versions of released tracks (post-024882) + Wireless removal (post-024902)
+    "archive_2013_18_6",    # Casus Bella -> Sunrise on an alien shore (ep_concepts_39)
+    "archive_2013_18_43",   # Deepspace Guitar -> Voice of the Spirits (spirit_guides_2)
+    "archive_2013_18_106",  # Monks of Umber 03 Osx -> Dark Night of the Soul (spirit_guides_4)
+    "archive_2013_18_141",  # Suspended -> Call to Adventure (spirit_guides_1)
+    "sketches_2024_25_32",  # Wireless (feat. Sasha Jacques) — removed by owner (post-024902)
 }
 
 # Tracks genuinely rendered in 2026 move to the '2026' Era column (post-023035),
@@ -274,11 +280,8 @@ TITLE_OVERRIDES = {
     "archive_2013_18_120": "Protocol X Jam 2017",
     "ecstatic_wave_1": "Flowing Wave (Preview)",
     "remixes_commissions_17": "Voidcomplet - Ripple effect (Bill Tribble vox)",
-    "sketches_2024_25_32": "Wireless (feat. Sasha Jacques)",
 }
-SHORT_TITLE_OVERRIDES = {
-    "sketches_2024_25_32": "Wireless (Sasha Jacques)",
-}
+SHORT_TITLE_OVERRIDES: dict[str, str] = {}
 
 INDIE_GUITAR_KEEPER_IDS = {
     "hd_2005_7",          # Happy (post-023691: curated into Indie, post-punk & guitar)
@@ -314,7 +317,6 @@ DARK_EXPERIMENTAL_AMBIENT_IDS = {
 
 CLUSTER_OVERRIDES: dict[str, int] = {
     "hd_2005_7": 4,           # Happy -> Indie, post-punk & guitar (d4_indie_guitar, post-023691)
-    "archive_2013_18_106": 0, # Monks of Umber 03 Osx -> Ambient & soundscapes (d0_ambient, post-024513)
     "spirit_guides_4": 0,     # Dark Night of the Soul -> Ambient & soundscapes (d0_ambient, post-024513)
     "present_electro_30": 2,  # Caribbean Hotel At Night -> Downtempo & leftfield (d2_downtempo, post-024530)
     **{tid: 10 for tid in sorted(DARK_EXPERIMENTAL_AMBIENT_IDS)},
@@ -352,11 +354,6 @@ STYLE_OVERRIDES: dict[str, dict] = {
         "discogs_top": "Dark Ambient",
         "mood_tags": ["Dark", "Slow"],
     },
-    "archive_2013_18_106": {
-        "discogs_styles": ["Ambient", "Indian Classical", "New Age"],
-        "discogs_top": "Ambient",
-        "mood_tags": ["Meditative", "Relaxing"],
-    },
     "spirit_guides_4": {
         "discogs_styles": ["Ambient", "Berlin-School", "New Age"],
         "discogs_top": "Ambient",
@@ -383,7 +380,6 @@ FORCE_NON_SKETCH_IDS = INDIE_GUITAR_KEEPER_IDS | SPOKEN_WORD_IDS | {
     "archive_2013_18_19",   # Audiorealism test
     "archive_2013_18_20",   # demo B
     "archive_2013_18_21",   # Baddass Arp (sketch)
-    "archive_2013_18_43",   # Deepspace Guitar
     "archive_2013_18_59",   # G sharp piano sketch
     "archive_2013_18_61",   # Gamelan Test
     "archive_2013_18_89",   # Logic house loops
@@ -480,7 +476,6 @@ FORCE_SKETCH_TITLES = {
 }
 TRACK_NOTES = {
     "archive_2013_18_137": "Early sketch that became Kita Narashino.",
-    "sketches_2024_25_32": "Live sound healing & voice activation with Sasha Jacques at Ecstatic Dance UK (The Baths, Hackney, 17 Mar 2024).",
 }
 CURATED_FREE_DOWNLOAD_OVERRIDES = {
     "remixes_commissions_17": {
@@ -617,6 +612,12 @@ def is_excluded_by_folder_rule(path_str: str) -> bool:
       or "war machine/war machine 04" in low_p
       or "demo a 00008 lyric" in low_p
       or "demo a 00007" in low_p
+      or "monks of umber 03 osx" in low_p
+      or "casus bella project/casus bella 03 master" in low_p
+      or "stepper sketches 2012-2018/deepspace guitar." in low_p
+      or "stepper sketches 2012-2018/suspended." in low_p
+      or "wireless-bounce-1" in low_p
+      or "push for ed uk/samples/wireless-1" in low_p
   ):
     return True
   parts = [p.strip() for p in low_p.split("/") if p.strip()]
@@ -2034,7 +2035,7 @@ def build_dataset(
         or "jamstik" in tl
         or "jamstick" in tl
         or "minor chord rave riff" in tl
-        or tl in ("not 2 l8", "not 2 l8 comp")
+        or tl in ("not 2 l8", "not 2 l8 comp", "wireless", "wireless-bounce-1", "wireless (feat. sasha jacques)")
         or tl in ("demo a 00008 lyric", "demo a 00007")
     )
 

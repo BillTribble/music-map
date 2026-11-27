@@ -1534,17 +1534,6 @@
       "old_preview_start_sec": 12.64,
       "preview_start_sec": 12.64
     },
-    "archive_2013_18_6": {
-      "id": "archive_2013_18_6",
-      "title": "Casus Bella",
-      "cluster_label": "Ambient & soundscapes",
-      "is_ai": false,
-      "has_drums": false,
-      "drum_score": 0.0,
-      "has_drop": false,
-      "old_preview_start_sec": 79.69,
-      "preview_start_sec": 79.69
-    },
     "archive_2013_18_8": {
       "id": "archive_2013_18_8",
       "title": "808 Forever",
@@ -1858,17 +1847,6 @@
       "has_drop": false,
       "old_preview_start_sec": 87.58,
       "preview_start_sec": 87.58
-    },
-    "archive_2013_18_43": {
-      "id": "archive_2013_18_43",
-      "title": "Deepspace Guitar",
-      "cluster_label": "Ambient & soundscapes",
-      "is_ai": false,
-      "has_drums": false,
-      "drum_score": 0.0,
-      "has_drop": false,
-      "old_preview_start_sec": 28.98,
-      "preview_start_sec": 28.98
     },
     "archive_2013_18_45": {
       "id": "archive_2013_18_45",
@@ -2395,17 +2373,6 @@
       "old_preview_start_sec": 114.71,
       "preview_start_sec": 114.71
     },
-    "archive_2013_18_106": {
-      "id": "archive_2013_18_106",
-      "title": "Monks of Umber 03 Osx",
-      "cluster_label": "Ambient & soundscapes",
-      "is_ai": false,
-      "has_drums": false,
-      "drum_score": 0.0,
-      "has_drop": false,
-      "old_preview_start_sec": 101.43,
-      "preview_start_sec": 101.43
-    },
     "archive_2013_18_107": {
       "id": "archive_2013_18_107",
       "title": "Moody 8bit",
@@ -2728,17 +2695,6 @@
       "post_sub_norm": 0.74,
       "pre4_combo_norm": 0.33,
       "min_pre3_norm": 0.33
-    },
-    "archive_2013_18_141": {
-      "id": "archive_2013_18_141",
-      "title": "Suspended",
-      "cluster_label": "Ambient & soundscapes",
-      "is_ai": false,
-      "has_drums": false,
-      "drum_score": 0.0,
-      "has_drop": false,
-      "old_preview_start_sec": 44.86,
-      "preview_start_sec": 44.86
     },
     "archive_2013_18_142": {
       "id": "archive_2013_18_142",
@@ -5206,17 +5162,6 @@
       "has_drop": false,
       "old_preview_start_sec": 12.82,
       "preview_start_sec": 12.82
-    },
-    "sketches_2024_25_32": {
-      "id": "sketches_2024_25_32",
-      "title": "Wireless (feat. Sasha Jacques)",
-      "cluster_label": "Ambient & soundscapes",
-      "is_ai": false,
-      "has_drums": false,
-      "drum_score": 0.0,
-      "has_drop": false,
-      "old_preview_start_sec": 82.94,
-      "preview_start_sec": 82.94
     },
     "ecstatic_wave_1": {
       "id": "ecstatic_wave_1",

@@ -718,6 +718,12 @@ DEFAULT_EXCLUDED_IDS = {
     "archive_2013_18_78",
     "archive_2013_18_103",
     "hd_2005_33",
+    # Superseded pre-release archive versions of released tracks (post-024882) + Wireless removal (post-024902)
+    "archive_2013_18_6",
+    "archive_2013_18_43",
+    "archive_2013_18_106",
+    "archive_2013_18_141",
+    "sketches_2024_25_32",
 }
 
 CANONICAL_ARCHETYPES: list[tuple[str, str, int]] = [
@@ -740,7 +746,6 @@ ARCH_CANONICAL_IDX = {a[0]: idx for idx, a in enumerate(CANONICAL_ARCHETYPES)}
 STYLE_OVERRIDES: dict[str, str] = {
     "archive_2013_18_31": "dark_ambient",    # Cathedral -> Dark ambient (post-024403)
     "hd_2005_2": "dark_ambient",             # Sine Mix -> Experimental / dark ambient (post-024403)
-    "archive_2013_18_106": "ambient",        # Monks of Umber 03 Osx -> Normal ambient (post-024513)
     "spirit_guides_4": "ambient",            # Dark Night of the Soul -> Normal ambient (post-024513)
     "present_electro_30": "downtempo_lush",  # Caribbean Hotel At Night -> Downtempo (post-024530)
 }
@@ -1540,8 +1545,6 @@ def enrich_track_tiers(t: dict, rel_repo: str = "BillTribble/music-map") -> None
         t["note"] = "Made in one day, with help from friends on Endlesss."
     elif tid == "archive_2013_18_137":
         t["note"] = "Early sketch that became Kita Narashino."
-    elif tid == "sketches_2024_25_32":
-        t["note"] = "Live sound healing & voice activation with Sasha Jacques at Ecstatic Dance UK (The Baths, Hackney, 17 Mar 2024)."
     if is_forced_sketch:
         t["wip_eligible"] = False
     if links:
@@ -1610,6 +1613,12 @@ def is_excluded_by_folder_rule(path_str: str) -> bool:
         or "war machine/war machine 04" in low_p
         or "demo a 00008 lyric" in low_p
         or "demo a 00007" in low_p
+        or "monks of umber 03 osx" in low_p
+        or "casus bella project/casus bella 03 master" in low_p
+        or "stepper sketches 2012-2018/deepspace guitar." in low_p
+        or "stepper sketches 2012-2018/suspended." in low_p
+        or "wireless-bounce-1" in low_p
+        or "push for ed uk/samples/wireless-1" in low_p
     ):
         return True
     parts = [p.strip() for p in low_p.split("/") if p.strip()]

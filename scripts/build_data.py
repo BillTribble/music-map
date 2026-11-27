@@ -161,7 +161,6 @@ FORCE_NON_SKETCH_IDS = {
     "archive_2013_18_19",   # Audiorealism test
     "archive_2013_18_20",   # demo B
     "archive_2013_18_21",   # Baddass Arp (sketch)
-    "archive_2013_18_43",   # Deepspace Guitar
     "archive_2013_18_59",   # G sharp piano sketch
     "archive_2013_18_61",   # Gamelan Test
     "archive_2013_18_89",   # Logic house loops
@@ -258,7 +257,6 @@ FORCE_SKETCH_TITLES = {
 }
 TRACK_NOTES = {
     "archive_2013_18_137": "Early sketch that became Kita Narashino.",
-    "sketches_2024_25_32": "Live sound healing & voice activation with Sasha Jacques at Ecstatic Dance UK (The Baths, Hackney, 17 Mar 2024).",
 }
 CURATED_FREE_DOWNLOAD_OVERRIDES = {
     "remixes_commissions_17": {
@@ -1303,6 +1301,12 @@ DEFAULT_EXCLUDED_IDS = {
     "archive_2013_18_78",
     "archive_2013_18_103",
     "hd_2005_33",
+    # Superseded pre-release archive versions of released tracks (post-024882) + Wireless removal (post-024902)
+    "archive_2013_18_6",    # Casus Bella -> Sunrise on an alien shore (ep_concepts_39)
+    "archive_2013_18_43",   # Deepspace Guitar -> Voice of the Spirits (spirit_guides_2)
+    "archive_2013_18_106",  # Monks of Umber 03 Osx -> Dark Night of the Soul (spirit_guides_4)
+    "archive_2013_18_141",  # Suspended -> Call to Adventure (spirit_guides_1)
+    "sketches_2024_25_32",  # Wireless (feat. Sasha Jacques) — removed by owner (post-024902)
 }
 
 TITLE_OVERRIDES = {
@@ -1315,11 +1319,8 @@ TITLE_OVERRIDES = {
     "archive_2013_18_120": "Protocol X Jam 2017",
     "ecstatic_wave_1": "Flowing Wave (Preview)",
     "remixes_commissions_17": "Voidcomplet - Ripple effect (Bill Tribble vox)",
-    "sketches_2024_25_32": "Wireless (feat. Sasha Jacques)",
 }
-SHORT_TITLE_OVERRIDES = {
-    "sketches_2024_25_32": "Wireless (Sasha Jacques)",
-}
+SHORT_TITLE_OVERRIDES: dict[str, str] = {}
 
 STYLE_OVERRIDES: dict[str, dict] = {
     "archive_2013_18_31": {
@@ -1338,14 +1339,6 @@ STYLE_OVERRIDES: dict[str, dict] = {
         "discogs_top": "Experimental Ambient",
         "mood_tags": ["Dark", "Meditative"],
         "instrument_tags": ["Electric Guitar", "Guitar", "Synthesizer"],
-    },
-    "archive_2013_18_106": {
-        "cluster_id": "d0_ambient",
-        "cluster_label": "Ambient & soundscapes",
-        "cluster_idx": 0,
-        "discogs_styles": ["Ambient", "Indian Classical", "New Age"],
-        "discogs_top": "Ambient",
-        "mood_tags": ["Meditative", "Relaxing"],
     },
     "spirit_guides_4": {
         "cluster_id": "d0_ambient",
@@ -1599,6 +1592,12 @@ def is_excluded_by_folder_rule(path_str: str) -> bool:
         or "war machine/war machine 04" in low_p
         or "demo a 00008 lyric" in low_p
         or "demo a 00007" in low_p
+        or "monks of umber 03 osx" in low_p
+        or "casus bella project/casus bella 03 master" in low_p
+        or "stepper sketches 2012-2018/deepspace guitar." in low_p
+        or "stepper sketches 2012-2018/suspended." in low_p
+        or "wireless-bounce-1" in low_p
+        or "push for ed uk/samples/wireless-1" in low_p
     ):
         return True
     parts = [p.strip() for p in low_p.split("/") if p.strip()]

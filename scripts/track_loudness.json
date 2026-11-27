@@ -1436,14 +1436,6 @@
       "gain_trim": 3.6728,
       "source": "ebur128"
     },
-    "archive_2013_18_106": {
-      "lufs": -7.6,
-      "true_peak_db": -0.3,
-      "lra_lu": 8.4,
-      "gain_db": -2.4,
-      "gain_trim": 0.7586,
-      "source": "ebur128"
-    },
     "archive_2013_18_107": {
       "lufs": -32.1,
       "true_peak_db": -17.9,
@@ -1658,14 +1650,6 @@
       "lra_lu": 12.0,
       "gain_db": 7.8,
       "gain_trim": 2.4547,
-      "source": "ebur128"
-    },
-    "archive_2013_18_141": {
-      "lufs": -17.4,
-      "true_peak_db": -5.0,
-      "lra_lu": 9.9,
-      "gain_db": 7.4,
-      "gain_trim": 2.3442,
       "source": "ebur128"
     },
     "archive_2013_18_142": {
@@ -1916,14 +1900,6 @@
       "gain_trim": 1.3964,
       "source": "ebur128"
     },
-    "archive_2013_18_43": {
-      "lufs": -25.3,
-      "true_peak_db": -12.3,
-      "lra_lu": 2.2,
-      "gain_db": 14.0,
-      "gain_trim": 5.0119,
-      "source": "ebur128"
-    },
     "archive_2013_18_45": {
       "lufs": -17.9,
       "true_peak_db": -3.4,
@@ -2018,14 +1994,6 @@
       "lra_lu": 11.1,
       "gain_db": 6.0,
       "gain_trim": 1.9953,
-      "source": "ebur128"
-    },
-    "archive_2013_18_6": {
-      "lufs": -10.8,
-      "true_peak_db": -0.1,
-      "lra_lu": 7.1,
-      "gain_db": 0.8,
-      "gain_trim": 1.0965,
       "source": "ebur128"
     },
     "archive_2013_18_61": {
@@ -4194,14 +4162,6 @@
       "lra_lu": 9.0,
       "gain_db": 3.7,
       "gain_trim": 1.5311,
-      "source": "ebur128"
-    },
-    "sketches_2024_25_32": {
-      "lufs": -12.8,
-      "true_peak_db": -0.4,
-      "lra_lu": 23.2,
-      "gain_db": 2.8,
-      "gain_trim": 1.3804,
       "source": "ebur128"
     },
     "sketches_2024_25_4": {

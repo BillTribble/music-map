@@ -4,7 +4,7 @@ Interactive static web application visualizing Bill Tribble's solo and collabora
 
 - **Live site:** [https://billtribble.github.io/music-map/](https://billtribble.github.io/music-map/)
 - **Audio hosting:** Lightweight Git repository (`< 2 MB`) backed by GitHub Releases (`audio-previews-v1` for 8-bar beat-aligned previews and `archive-downloads-v1` for pre-2015 full-length 320 kbps MP3 & lossless FLAC downloads).
-- **Stack:** Vanilla HTML / CSS / Canvas + SVG / WebAudio (`js/data.js` generated from 554 deduplicated catalog tracks & MIDI analysis; zero framework dependencies).
+- **Stack:** Vanilla HTML / CSS / Canvas + SVG / WebAudio (`js/data.js` generated from 549 deduplicated catalog tracks & MIDI analysis; zero framework dependencies).
 
 ## Interactive Views
 

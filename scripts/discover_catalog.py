@@ -126,6 +126,8 @@ EXCLUDED_PATH_SUBSTRS = (
     "war machine/war machine 04",
     "demo a 00008 lyric",
     "demo a 00007",
+    "wireless-bounce-1",
+    "push for ed uk/samples/wireless-1",
 )
 EXCLUDED_EXACT_REL_PATHS = {
     "02 - psychedailies/season 1 - psychedaily/^ shortlist psychedailies/01 getaway/getaway vdj edit.flac",
@@ -213,6 +215,12 @@ EXCLUDED_EXACT_REL_PATHS = {
     "me music - 2005 hard drive/not 2 l8 comp.m4a",
     "music sketches archive. 2012-2020/stepper sketches 2012-2018/demo a - raw/demo a 00008 lyric.aif",
     "music sketches archive. 2012-2020/stepper sketches 2012-2018/demo a - raw/demo a - in c/demo a 00007.aif",
+    "archive me music 2013-18/monks of umber 03 osx.mp3",
+    "archive me music 2013-18/casus bella project/casus bella 03 master.mp3",
+    "music sketches archive. 2012-2020/stepper sketches 2012-2018/deepspace guitar.aif",
+    "music sketches archive. 2012-2020/stepper sketches 2012-2018/suspended.flac",
+    "^ music sketches 2024/simple mics setup for ecstatic/bounce/wireless-bounce-1.wav",
+    "^ music sketches 2024/push for ed uk/samples/wireless-1.wav",
 }
 TITLE_OVERRIDES_BY_REL_PATH = {
     "me music - 2005 hard drive/as we enter mix2.m4a": "As we Enter",
@@ -227,12 +235,8 @@ TITLE_OVERRIDES_BY_REL_PATH = {
     "06 - ecstatic wave album/^ export/flowing wave 27.flac": "Flowing Wave (Preview)",
     "06 - ecstatic wave album/flowing wave project/matchering - &me afro version/flowing wave 17 75bpm pt1_(matched).flac": "Flowing Wave (Preview)",
     "^ remixes and commissions/ripple effect with voidcomplet/ripple effect (120.00 bpm) - main out.m4a": "Voidcomplet - Ripple effect (Bill Tribble vox)",
-    "^ music sketches 2024/simple mics setup for ecstatic/bounce/wireless-bounce-1.wav": "Wireless (feat. Sasha Jacques)",
-    "^ music sketches 2024/push for ed uk/samples/wireless-1.wav": "Wireless (feat. Sasha Jacques)",
 }
-SHORT_TITLE_OVERRIDES_BY_TITLE = {
-    "Wireless (feat. Sasha Jacques)": "Wireless (Sasha Jacques)",
-}
+SHORT_TITLE_OVERRIDES_BY_TITLE: dict[str, str] = {}
 EXCLUDED_FILE_TOKENS = ("stem", "backing", "drumloop")
 EXCLUDED_EXACT_FILES = {"bass.wav", "vocals.wav", "perc.wav", "other.wav"}
 SKETCH_FOLDER_MARKERS = ("^ music sketches", "rc505 looper sketches", "2019 sketches", "guitar sketches")
@@ -684,8 +688,6 @@ def build_manifest(raw_items: list[dict], ffprobe_bin: str | None = None, check_
             item_out["note"] = "Made in one day, with help from friends on Endlesss."
         elif title.strip().lower() == "spiral structure":
             item_out["note"] = "Early sketch that became Kita Narashino."
-        elif "wireless-bounce-1" in w_low or "push for ed uk/samples/wireless-1" in w_low:
-            item_out["note"] = "Live sound healing & voice activation with Sasha Jacques at Ecstatic Dance UK (The Baths, Hackney, 17 Mar 2024)."
         selected.append(item_out)
 
     return {

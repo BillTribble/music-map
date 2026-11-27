@@ -969,9 +969,6 @@
               "prototcol-x-jam-2017": "archive_2013_18_120",
               "protocol": "archive_2013_18_120",
               "ripple-effect": "remixes_commissions_17",
-              "wireless": "sketches_2024_25_32",
-              "wireless-sasha-jacques": "sketches_2024_25_32",
-              "wireless-with-sasha-jacques": "sketches_2024_25_32",
             };
             const legacyId = targetSlug && LEGACY_TRACK_SLUGS[targetSlug];
             deepLinkTrack =
