@@ -2257,7 +2257,24 @@ function buildPulsePresetCorsHeaders(origin, env) {
   return headers;
 }
 
-function sanitizePulsePresetPayload(raw) {
+const PULSE_PRESET_SCHEMA_VERSION = 5;
+const DEFAULT_PULSE_PRESET_TUNING = Object.freeze({
+  mode: "line_dots",
+  lineStrength: 1.25,
+  dotSpeed: 0.2,
+  reverseMix: 0.65,
+  dirOscAmount: 0.75,
+  dirOscFreq: 0.1,
+  colorCount: 3,
+  targetPulseSpeed: 0.25,
+  pulseGlow: 0.35,
+  dotSize: 1.05,
+  dotSizePulseAmt: 0.5,
+  dotSizePulseFreq: 0.65,
+  dotSpacing: 0.9,
+});
+
+function sanitizePulsePresetPayload(raw, opts = {}) {
   if (!raw || typeof raw !== "object" || Array.isArray(raw)) return null;
   const src = raw.preset && typeof raw.preset === "object" && !Array.isArray(raw.preset) ? raw.preset : raw;
   const clampRound = (val, min, max, def) => {
@@ -2271,6 +2288,8 @@ function sanitizePulsePresetPayload(raw) {
     src.lineStrength !== undefined ||
     src.dotSpeed !== undefined ||
     src.reverseMix !== undefined ||
+    src.dirOscAmount !== undefined ||
+    src.dirOscFreq !== undefined ||
     src.colorCount !== undefined ||
     src.targetPulseSpeed !== undefined ||
     src.pulseGlow !== undefined ||
@@ -2280,22 +2299,26 @@ function sanitizePulsePresetPayload(raw) {
     src.dotSpacing !== undefined;
   if (!hasAny) return null;
   const rawMode = typeof src.mode === "string" ? src.mode.trim() : "";
-  const mode = rawMode === "line_sheen" ? "line_sheen" : "line_dots";
+  const mode = rawMode === "line_sheen" ? "line_sheen" : DEFAULT_PULSE_PRESET_TUNING.mode;
   const rawVersion = Number(src.version);
-  const version = Number.isFinite(rawVersion) && rawVersion >= 4 ? Math.round(rawVersion) : 4;
+  const version = opts && opts.preserveVersion
+    ? (Number.isFinite(rawVersion) && rawVersion >= 1 ? Math.round(rawVersion) : PULSE_PRESET_SCHEMA_VERSION)
+    : (Number.isFinite(rawVersion) && rawVersion >= PULSE_PRESET_SCHEMA_VERSION ? Math.round(rawVersion) : PULSE_PRESET_SCHEMA_VERSION);
   return {
     version,
     mode,
-    lineStrength: clampRound(src.lineStrength, 0, 3, 1.25),
-    dotSpeed: clampRound(src.dotSpeed, 0, 4, 0.2),
-    reverseMix: clampRound(src.reverseMix, 0, 1, 0.4),
-    colorCount: clampRound(src.colorCount, 1, 6, 3),
-    targetPulseSpeed: clampRound(src.targetPulseSpeed, 0, 4, 0.2),
-    pulseGlow: clampRound(src.pulseGlow, 0, 4, 0.35),
-    dotSize: clampRound(src.dotSize, 0.35, 3, 1.05),
-    dotSizePulseAmt: clampRound(src.dotSizePulseAmt, 0, 1, 0.5),
-    dotSizePulseFreq: clampRound(src.dotSizePulseFreq, 0.05, 8, 0.65),
-    dotSpacing: clampRound(src.dotSpacing, 0.4, 3, 0.9),
+    lineStrength: clampRound(src.lineStrength, 0, 3, DEFAULT_PULSE_PRESET_TUNING.lineStrength),
+    dotSpeed: clampRound(src.dotSpeed, 0, 4, DEFAULT_PULSE_PRESET_TUNING.dotSpeed),
+    reverseMix: clampRound(src.reverseMix, 0, 1, DEFAULT_PULSE_PRESET_TUNING.reverseMix),
+    dirOscAmount: clampRound(src.dirOscAmount, 0, 1, DEFAULT_PULSE_PRESET_TUNING.dirOscAmount),
+    dirOscFreq: clampRound(src.dirOscFreq, 0.02, 0.6, DEFAULT_PULSE_PRESET_TUNING.dirOscFreq),
+    colorCount: clampRound(src.colorCount, 1, 6, DEFAULT_PULSE_PRESET_TUNING.colorCount),
+    targetPulseSpeed: clampRound(src.targetPulseSpeed, 0, 4, DEFAULT_PULSE_PRESET_TUNING.targetPulseSpeed),
+    pulseGlow: clampRound(src.pulseGlow, 0, 4, DEFAULT_PULSE_PRESET_TUNING.pulseGlow),
+    dotSize: clampRound(src.dotSize, 0.35, 3, DEFAULT_PULSE_PRESET_TUNING.dotSize),
+    dotSizePulseAmt: clampRound(src.dotSizePulseAmt, 0, 1, DEFAULT_PULSE_PRESET_TUNING.dotSizePulseAmt),
+    dotSizePulseFreq: clampRound(src.dotSizePulseFreq, 0.05, 8, DEFAULT_PULSE_PRESET_TUNING.dotSizePulseFreq),
+    dotSpacing: clampRound(src.dotSpacing, 0.4, 3, DEFAULT_PULSE_PRESET_TUNING.dotSpacing),
   };
 }
 
@@ -2330,10 +2353,11 @@ async function handlePulsePreset(request, origin, env) {
     } catch (_) {
       parsed = null;
     }
+    const hydrated = parsed ? (sanitizePulsePresetPayload(parsed, { preserveVersion: true }) || parsed) : null;
     return jsonResponse(
       {
         ok: true,
-        preset: parsed,
+        preset: hydrated,
         updated_at: row.updated_at || null,
       },
       200,

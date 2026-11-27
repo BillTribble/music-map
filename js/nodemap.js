@@ -89,6 +89,7 @@
   let pulseTargetSec = 0;
   let pulseSizeModPhase = 0;
   let pulseRevWavePhase = 0;
+  let pulseDirOscPhase = 0;
   let pulseWaveOriginFlowSec = 0;
   let pulseAlpha = 0;
   let lastRingSig = "";
@@ -103,6 +104,7 @@
     mode: "line_dots",
     kFwd: 0,
     kRev: 0,
+    dirOsc: { osc: 0.5, shapedOsc: 0.5, effFwdAmt: 0.5, effRevMix: 0.65, effSheenFwd: 1, effSheenRev: 0.65 },
     forwardDots: [],
     reverseDots: [],
   };
@@ -113,17 +115,19 @@
 
   const PULSE_PRESET_KEY_PRIMARY = "btmm.pulsePreset.v1";
   const PULSE_PRESET_KEY_ALT = "btmm.pulseTuning.v1";
-  const PULSE_PRESET_SCHEMA_VERSION = 4;
-  const PULSE_PRESET_PROMOTED_AT_MS = Date.parse("2026-11-27T14:45:05Z");
+  const PULSE_PRESET_SCHEMA_VERSION = 5;
+  const PULSE_PRESET_PROMOTED_AT_MS = Date.parse("2026-11-27T15:13:10Z");
   const DEFAULT_PULSE_PRESET_API = "https://music-map-events.billtribble.workers.dev/api/pulse-preset";
   const VALID_PULSE_MODES = new Set(["line_dots", "line_sheen"]);
   const DEFAULT_PULSE_TUNING = Object.freeze({
     mode: "line_dots",
     lineStrength: 1.25,
     dotSpeed: 0.2,
-    reverseMix: 0.4,
+    reverseMix: 0.65,
+    dirOscAmount: 0.75,
+    dirOscFreq: 0.1,
     colorCount: 3,
-    targetPulseSpeed: 0.2,
+    targetPulseSpeed: 0.25,
     pulseGlow: 0.35,
     dotSize: 1.05,
     dotSizePulseAmt: 0.5,
@@ -131,6 +135,8 @@
     dotSpacing: 0.9,
   });
   let pulseTuning = { ...DEFAULT_PULSE_TUNING };
+  let pulseUserModifiedInSession = false;
+  let pulseLocalSavedAtMs = 0;
 
   const GEMINI_STOPS_DARK = [
     [139, 92, 246],  // electric Gemini violet
@@ -155,24 +161,28 @@
       if (!Number.isFinite(n)) return fb;
       return Math.round(Math.max(min, Math.min(max, n)) * 1000) / 1000;
     };
+    const baseNum = (k) => (base && Number.isFinite(base[k]) ? base[k] : DEFAULT_PULSE_TUNING[k]);
     const rawMode = typeof src.mode === "string" ? src.mode.trim() : "";
-    const fbMode = VALID_PULSE_MODES.has(base.mode) ? base.mode : DEFAULT_PULSE_TUNING.mode;
+    const fbMode = base && VALID_PULSE_MODES.has(base.mode) ? base.mode : DEFAULT_PULSE_TUNING.mode;
     return {
       mode: VALID_PULSE_MODES.has(rawMode) ? rawMode : fbMode,
-      lineStrength: clampRound(src.lineStrength, 0.2, 2.0, base.lineStrength),
-      dotSpeed: clampRound(src.dotSpeed, 0, 3, base.dotSpeed),
-      reverseMix: clampRound(src.reverseMix, 0, 1, base.reverseMix),
-      colorCount: clampRound(src.colorCount, 1, 5, base.colorCount),
-      targetPulseSpeed: clampRound(src.targetPulseSpeed, 0, 3, base.targetPulseSpeed),
-      pulseGlow: clampRound(src.pulseGlow, 0, 2.5, base.pulseGlow),
-      dotSize: clampRound(src.dotSize, 0.5, 2, base.dotSize),
-      dotSizePulseAmt: clampRound(src.dotSizePulseAmt, 0, 1, base.dotSizePulseAmt),
-      dotSizePulseFreq: clampRound(src.dotSizePulseFreq, 0.1, 4, base.dotSizePulseFreq),
-      dotSpacing: clampRound(src.dotSpacing, 0.6, 1.8, base.dotSpacing),
+      lineStrength: clampRound(src.lineStrength, 0.2, 2.0, baseNum("lineStrength")),
+      dotSpeed: clampRound(src.dotSpeed, 0, 3, baseNum("dotSpeed")),
+      reverseMix: clampRound(src.reverseMix, 0, 1, baseNum("reverseMix")),
+      dirOscAmount: clampRound(src.dirOscAmount, 0, 1, baseNum("dirOscAmount")),
+      dirOscFreq: clampRound(src.dirOscFreq, 0.02, 0.6, baseNum("dirOscFreq")),
+      colorCount: clampRound(src.colorCount, 1, 5, baseNum("colorCount")),
+      targetPulseSpeed: clampRound(src.targetPulseSpeed, 0, 3, baseNum("targetPulseSpeed")),
+      pulseGlow: clampRound(src.pulseGlow, 0, 2.5, baseNum("pulseGlow")),
+      dotSize: clampRound(src.dotSize, 0.5, 2, baseNum("dotSize")),
+      dotSizePulseAmt: clampRound(src.dotSizePulseAmt, 0, 1, baseNum("dotSizePulseAmt")),
+      dotSizePulseFreq: clampRound(src.dotSizePulseFreq, 0.1, 4, baseNum("dotSizePulseFreq")),
+      dotSpacing: clampRound(src.dotSpacing, 0.6, 1.8, baseNum("dotSpacing")),
     };
   }
 
   function loadStoredPulseTuning() {
+    pulseLocalSavedAtMs = 0;
     if (typeof localStorage === "undefined") return;
     try {
       const raw = localStorage.getItem(PULSE_PRESET_KEY_PRIMARY) || localStorage.getItem(PULSE_PRESET_KEY_ALT);
@@ -192,6 +202,7 @@
       if (rawVersion < PULSE_PRESET_SCHEMA_VERSION) {
         if (Number.isFinite(savedAtMs) && savedAtMs > PULSE_PRESET_PROMOTED_AT_MS) {
           pulseTuning = sanitizePulseTuning(src, DEFAULT_PULSE_TUNING);
+          pulseLocalSavedAtMs = savedAtMs;
           const migrated = JSON.stringify({
             version: PULSE_PRESET_SCHEMA_VERSION,
             ...pulseTuning,
@@ -207,8 +218,89 @@
         return;
       }
       pulseTuning = sanitizePulseTuning(src, DEFAULT_PULSE_TUNING);
+      if (Number.isFinite(savedAtMs)) pulseLocalSavedAtMs = savedAtMs;
     } catch (_) {
       pulseTuning = { ...DEFAULT_PULSE_TUNING };
+    }
+  }
+
+  function applyRemotePulsePreset(remoteData, opts = {}) {
+    if (!remoteData || typeof remoteData !== "object" || Array.isArray(remoteData)) {
+      return { applied: false, reason: "invalid_payload" };
+    }
+    const presetSrc = remoteData.preset && typeof remoteData.preset === "object" && !Array.isArray(remoteData.preset)
+      ? remoteData.preset
+      : remoteData;
+    const hasField =
+      presetSrc.mode !== undefined ||
+      presetSrc.lineStrength !== undefined ||
+      presetSrc.dotSpeed !== undefined ||
+      presetSrc.reverseMix !== undefined ||
+      presetSrc.dirOscAmount !== undefined ||
+      presetSrc.dirOscFreq !== undefined ||
+      presetSrc.colorCount !== undefined ||
+      presetSrc.targetPulseSpeed !== undefined ||
+      presetSrc.pulseGlow !== undefined ||
+      presetSrc.dotSize !== undefined ||
+      presetSrc.dotSizePulseAmt !== undefined ||
+      presetSrc.dotSizePulseFreq !== undefined ||
+      presetSrc.dotSpacing !== undefined;
+    if (!hasField) {
+      return { applied: false, reason: "empty_preset" };
+    }
+    if (!opts.force && pulseUserModifiedInSession) {
+      return { applied: false, reason: "user_modified" };
+    }
+    const updatedRaw = typeof (remoteData.updated_at ?? presetSrc.savedAt) === "string"
+      ? (remoteData.updated_at ?? presetSrc.savedAt).trim()
+      : "";
+    const remoteMs = updatedRaw ? Date.parse(updatedRaw) : NaN;
+    if (!opts.force) {
+      if (!Number.isFinite(remoteMs) || remoteMs <= PULSE_PRESET_PROMOTED_AT_MS) {
+        return { applied: false, reason: "already_promoted" };
+      }
+      if (pulseLocalSavedAtMs > 0 && remoteMs <= pulseLocalSavedAtMs) {
+        return { applied: false, reason: "local_newer" };
+      }
+    }
+    // Always merge onto DEFAULT_PULSE_TUNING so missing v5 keys (dirOscAmount, dirOscFreq)
+    // in a legacy <v5 D1 row inherit v5 defaults (0.75 / 0.10) instead of clobbering to 0.
+    pulseTuning = sanitizePulseTuning(presetSrc, DEFAULT_PULSE_TUNING);
+    if (Number.isFinite(remoteMs)) pulseLocalSavedAtMs = remoteMs;
+    try {
+      if (typeof localStorage !== "undefined") {
+        const serialized = JSON.stringify({
+          version: PULSE_PRESET_SCHEMA_VERSION,
+          ...pulseTuning,
+          savedAt: updatedRaw || new Date().toISOString().replace(/\.\d{3}Z$/, "Z"),
+        });
+        localStorage.setItem(PULSE_PRESET_KEY_PRIMARY, serialized);
+        localStorage.setItem(PULSE_PRESET_KEY_ALT, serialized);
+      }
+    } catch (_) {}
+    syncPulseTuningUi();
+    paintCanvas();
+    return { applied: true, tuning: { ...pulseTuning } };
+  }
+
+  async function hydrateRemotePulseTuning() {
+    if (typeof fetch !== "function") return { applied: false, reason: "no_fetch" };
+    if (typeof window !== "undefined" && window.BTMM_DISABLE_REMOTE_PRESET_FETCH === true) {
+      return { applied: false, reason: "disabled" };
+    }
+    try {
+      const endpoint = resolvePulsePresetEndpoint();
+      const resp = await fetch(endpoint, {
+        method: "GET",
+        mode: "cors",
+        credentials: "omit",
+      });
+      if (!resp.ok) return { applied: false, reason: "http_error" };
+      const data = await resp.json().catch(() => null);
+      if (!data || data.ok === false || !data.preset) return { applied: false, reason: "no_preset" };
+      return applyRemotePulsePreset(data);
+    } catch (_) {
+      return { applied: false, reason: "network_error" };
     }
   }
 
@@ -1091,6 +1183,7 @@
         pulseTargetSec += dt * pulseTuning.targetPulseSpeed;
         pulseSizeModPhase = (pulseSizeModPhase + dt * pulseTuning.dotSizePulseFreq * Math.PI * 2) % (Math.PI * 2000);
         pulseRevWavePhase = (pulseRevWavePhase + dt * pulseTuning.dotSizePulseFreq * REV_WAVE_FREQ_RATIO * Math.PI * 2) % (Math.PI * 2000);
+        pulseDirOscPhase = (pulseDirOscPhase + dt * pulseTuning.dirOscFreq * Math.PI * 2) % (Math.PI * 2000);
       }
       return;
     }
@@ -1108,11 +1201,19 @@
       pulseTargetSec += dt * 0.65 * pulseTuning.targetPulseSpeed;
       pulseSizeModPhase = (pulseSizeModPhase + dt * 0.65 * pulseTuning.dotSizePulseFreq * Math.PI * 2) % (Math.PI * 2000);
       pulseRevWavePhase = (pulseRevWavePhase + dt * 0.65 * pulseTuning.dotSizePulseFreq * REV_WAVE_FREQ_RATIO * Math.PI * 2) % (Math.PI * 2000);
+      pulseDirOscPhase = (pulseDirOscPhase + dt * 0.65 * pulseTuning.dirOscFreq * Math.PI * 2) % (Math.PI * 2000);
     }
     if (pulseAlpha <= 0.004) {
       pulseAlpha = 0;
       pulseLastNow = 0;
-      lastPulseRenderTelemetry = { mode: pulseTuning.mode, kFwd: 0, kRev: 0, forwardDots: [], reverseDots: [] };
+      lastPulseRenderTelemetry = {
+        mode: pulseTuning.mode,
+        kFwd: 0,
+        kRev: 0,
+        dirOsc: computeDirectionCrossfade(reduced),
+        forwardDots: [],
+        reverseDots: [],
+      };
     }
   }
 
@@ -1137,6 +1238,50 @@
       pulseRaf = 0;
       paintCanvas();
     });
+  }
+
+  function computeDirectionCrossfade(reduced) {
+    const oscAmt = pulseTuning.dirOscAmount;
+    const revMix = pulseTuning.reverseMix;
+    const sizePulseAmt = pulseTuning.dotSizePulseAmt;
+    const rawOsc = reduced ? 0.5 : 0.5 + 0.5 * Math.sin(pulseDirOscPhase);
+    if (oscAmt <= 0.001) {
+      return {
+        osc: rawOsc,
+        shapedOsc: rawOsc,
+        effFwdAmt: sizePulseAmt,
+        effRevMix: revMix,
+        effSheenFwd: 1,
+        effSheenRev: revMix,
+      };
+    }
+    // Center bias around reverseMix while preserving full 0 -> 1 crossfade endpoints
+    const gamma = Math.pow(2, (0.5 - revMix) * 0.75);
+    const shapedOsc = rawOsc <= 0 ? 0 : rawOsc >= 1 ? 1 : Math.pow(rawOsc, gamma);
+    // Equal-power quarter-circle envelope (cos^2 + sin^2 === 1 so total visual energy never drops dead mid-crossfade)
+    const theta = shapedOsc * (Math.PI * 0.5);
+    const tideFwd = Math.cos(theta);
+    const tideRev = Math.sin(theta);
+
+    const baseEnergy = Math.max(sizePulseAmt, revMix * 0.65, 0.35);
+    const fwdPeak = Math.max(sizePulseAmt, baseEnergy * 0.78) * (1 + 0.16 * revMix);
+    const revPeak = Math.min(1.22, Math.max(revMix * 1.24, baseEnergy * 1.48));
+
+    const effFwdAmt = sizePulseAmt + oscAmt * (fwdPeak * tideFwd - sizePulseAmt);
+    const effRevMix = revMix + oscAmt * (revPeak * tideRev - revMix);
+
+    const sheenRevPeak = Math.max(revMix, 0.88);
+    const effSheenFwd = 1 + oscAmt * (tideFwd - 1);
+    const effSheenRev = revMix + oscAmt * (sheenRevPeak * tideRev - revMix);
+
+    return {
+      osc: rawOsc,
+      shapedOsc,
+      effFwdAmt,
+      effRevMix,
+      effSheenFwd,
+      effSheenRev,
+    };
   }
 
   function evalQuad(ax, ay, cx, cy, bx, by, u) {
@@ -1275,14 +1420,17 @@
       return Math.pow(s, 2.85);
     }
 
+    const xfade = computeDirectionCrossfade(reduced);
     const activeWaveArrival = pulseTuning.mode === "line_sheen"
-      ? (stationaryDots ? 0.25 : sheenWaveAt(0.96))
-      : pulseTuning.dotSizePulseAmt * fwdSizeWaveAt(0.96);
+      ? (stationaryDots ? 0.25 : sheenWaveAt(0.96) * xfade.effSheenFwd)
+      : xfade.effFwdAmt * fwdSizeWaveAt(0.96);
     const arrivalBoost = reduced ? 0.25 : activeWaveArrival;
     const activeRevArrival = pulseTuning.mode === "line_sheen"
       ? revSheenWaveAt(0.04)
       : revSizeWaveAt(0.04);
-    const revArrivalBoost = (reduced ? 0.25 : activeRevArrival) * pulseTuning.reverseMix;
+    const revArrivalBoost =
+      (reduced ? 0.25 : activeRevArrival) *
+      (pulseTuning.mode === "line_sheen" ? xfade.effSheenRev : xfade.effRevMix);
     const tRate = pulseTuning.targetPulseSpeed;
     const targetBreath = reduced || tRate <= 0.001
       ? 0.35
@@ -1310,6 +1458,7 @@
       dotStep,
       kFwd,
       kRev,
+      xfade,
       arrivalBoost,
       revArrivalBoost,
       targetBreath,
@@ -1368,6 +1517,7 @@
       totalLen,
       curR,
       nextR,
+      xfade,
       revArrivalBoost,
       targetCombinedPulse,
       uAtArcLen,
@@ -1378,7 +1528,8 @@
     const phaseShift = -pulseFlowSec * (isSheenMode ? 0.34 : 0.18);
     const glowRadiusScale = 0.68 + 0.32 * glow;
     const glowAlphaScale = Math.min(2.35, glow);
-    const revSheenWeight = pulseTuning.reverseMix;
+    const fwdSheenWeight = xfade ? xfade.effSheenFwd : 1;
+    const revSheenWeight = xfade ? xfade.effSheenRev : pulseTuning.reverseMix;
 
     ctx.save();
     ctx.setLineDash([]);
@@ -1443,7 +1594,7 @@
           for (let i = 0; i <= STOPS; i++) {
             const tStop = i / STOPS;
             const u = u0 + (u1 - u0) * tStop;
-            const wFwd = sheenWaveAt(u);
+            const wFwd = sheenWaveAt(u) * fwdSheenWeight;
             const wRev = revSheenWeight > 0.004 ? revSheenWaveAt(u) * revSheenWeight : 0;
             const w = wRev > 0
               ? Math.min(1, wFwd * (1 - 0.14 * revSheenWeight) + 0.68 * wRev)
@@ -1531,6 +1682,7 @@
       dotStep,
       kFwd,
       kRev,
+      xfade,
       targetCombinedPulse,
       uAtArcLen,
       fwdSizeWaveAt,
@@ -1544,8 +1696,9 @@
     const glow = pulseTuning.pulseGlow;
     const lineStrength = pulseTuning.lineStrength;
     const tRate = pulseTuning.targetPulseSpeed;
-    const sizePulseAmt = pulseTuning.dotSizePulseAmt;
-    const revMix = pulseTuning.reverseMix;
+    const dirOsc = xfade || computeDirectionCrossfade(isReducedMotionPreferred() && !pulsePanelOpen);
+    const effFwdAmt = dirOsc.effFwdAmt;
+    const effRevMix = dirOsc.effRevMix;
     const stationaryDots = pulseTuning.dotSpeed <= 0.001;
     const reduced = isReducedMotionPreferred() && !pulsePanelOpen;
 
@@ -1595,7 +1748,8 @@
       // constellation line with broad forward sheen + smaller opposite-direction sheen/thickness ripples.
       const sSheenStart = Math.min(totalLen * 0.46, curR + 1.0);
       const sSheenEnd = Math.max(totalLen * 0.54, totalLen - (nextR + 1.0));
-      const revWeight = revMix;
+      const fwdWeight = dirOsc.effSheenFwd;
+      const revWeight = dirOsc.effSheenRev;
       if (sSheenEnd > sSheenStart + 1.5) {
         const u0 = uAtArcLen(sSheenStart);
         const u1 = uAtArcLen(sSheenEnd);
@@ -1609,11 +1763,12 @@
         for (let i = 0; i <= STOPS; i++) {
           const tStop = i / STOPS;
           const u = u0 + (u1 - u0) * tStop;
-          const wFwd = sheenWaveAt(u);
+          const wFwdRaw = sheenWaveAt(u);
+          const wFwd = wFwdRaw * fwdWeight;
           const wRevRaw = revSheenWaveAt(u);
           const wRev = revWeight > 0.004 ? wRevRaw * revWeight : 0;
           const w = wRev > 0
-            ? Math.min(1.12, wFwd * (1 - 0.14 * revWeight) + 0.68 * wRev)
+            ? Math.min(1.12, wFwd * (1 - 0.14 * Math.min(1, revWeight)) + 0.68 * wRev)
             : wFwd;
           let rgb = sampleGeminiCyclic(u * 0.82 + phaseShift, isLight);
           if (wRev > 0) {
@@ -1629,7 +1784,7 @@
           }
           const stopAlpha = Math.min(1, floorAlpha + (isLight ? 0.84 : 0.88) * strengthGain * Math.pow(Math.min(1, w), 0.9)) * master;
           sheenGrad.addColorStop(tStop, rgbaStr(rgb, stopAlpha));
-          const swellEnv = Math.min(1, 0.52 * Math.pow(wFwd, 2.2) + 0.48 * revWeight * Math.pow(wRevRaw, 2.4));
+          const swellEnv = Math.min(1, 0.52 * fwdWeight * Math.pow(wFwdRaw, 2.2) + 0.48 * revWeight * Math.pow(wRevRaw, 2.4));
           crestGrad.addColorStop(tStop, rgbaStr(rgb, Math.min(0.78, (isLight ? 0.38 : 0.48) * strengthGain * swellEnv) * master));
         }
         tracePulseSpanPath(geom, u0, u1);
@@ -1646,14 +1801,15 @@
         ctx.globalAlpha = 1;
         ctx.stroke();
       }
-      lastPulseRenderTelemetry = { mode: "line_sheen", kFwd, kRev, forwardDots: [], reverseDots: [] };
+      lastPulseRenderTelemetry = { mode: "line_sheen", kFwd, kRev, dirOsc, forwardDots: [], reverseDots: [] };
       ctx.restore();
       return;
     }
 
     // 2b. Line + dots mode ("line_dots"): SINGLE continuous stream of forward-moving dots
     // (playingNode -> nextNode, 100% du/dt >= 0) carrying superposed forward size pulses (0 -> 1)
-    // plus smaller higher-wavenumber size waves rippling in the opposite direction (1 -> 0).
+    // plus smaller higher-wavenumber size waves rippling in the opposite direction (1 -> 0),
+    // smoothly crossfaded by the Direction Crossfade Oscillator (dirOscAmount, dirOscFreq).
     const marchBaseSpeed = 44;
     const baseUnitR = 1.64 * pulseTuning.dotSize;
     const forwardDots = [];
@@ -1666,14 +1822,14 @@
       }
       const wFwd = fwdSizeWaveAt(u);
       const wRev = revSizeWaveAt(u);
-      const fwdDelta = sizePulseAmt * (1.36 * wFwd - 0.20);
-      const revDelta = revMix * (0.74 * wRev - 0.08);
+      const fwdDelta = effFwdAmt * (1.36 * wFwd - 0.20);
+      const revDelta = effRevMix * (0.74 * wRev - 0.08);
       const sizeMult = Math.max(0.42, 1 + fwdDelta + revDelta);
       const dotR = Math.max(0.45, baseR * sizeMult);
 
-      const fwdGlow = sizePulseAmt * wFwd;
-      const revGlow = revMix * wRev;
-      const steadyBase = 0.34 * Math.max(0, 1 - 0.62 * Math.max(sizePulseAmt, revMix));
+      const fwdGlow = effFwdAmt * wFwd;
+      const revGlow = effRevMix * wRev;
+      const steadyBase = 0.34 * Math.max(0, 1 - 0.62 * Math.max(effFwdAmt, effRevMix));
       const effWave = Math.min(1.18, steadyBase + 0.92 * fwdGlow + 0.66 * revGlow);
       return { dotR, baseR, wFwd, wRev, effWave, revGlow };
     }
@@ -1792,6 +1948,7 @@
       mode: "line_dots",
       kFwd,
       kRev,
+      dirOsc,
       forwardDots,
       reverseDots: [],
     };
@@ -2514,6 +2671,14 @@
     if (key === "reverseMix") {
       return val <= 0.005 ? "Off" : `${Math.round(val * 100)}%`;
     }
+    if (key === "dirOscAmount") {
+      return val <= 0.005 ? "0%" : `${Math.round(val * 100)}%`;
+    }
+    if (key === "dirOscFreq") {
+      const sec = val > 0 ? 1 / val : 0;
+      const cyc = sec >= 10 ? `${Math.round(sec)}s` : `${sec.toFixed(1).replace(/\.0$/, "")}s`;
+      return `${val.toFixed(2)} Hz · ${cyc}`;
+    }
     if (key === "dotSizePulseAmt") {
       return val <= 0.005 ? "0%" : `${Math.round(val * 100)}%`;
     }
@@ -2593,6 +2758,7 @@
   }
 
   function setPulseTuning(patch, opts = {}) {
+    if (!opts.fromRemote) pulseUserModifiedInSession = true;
     pulseTuning = sanitizePulseTuning({ ...pulseTuning, ...(patch || {}) }, pulseTuning);
     if (!opts.keepSaveBadge) clearSavedButtonFeedback();
     syncPulseTuningUi();
@@ -2601,6 +2767,7 @@
   }
 
   function resetPulseTuning() {
+    pulseUserModifiedInSession = true;
     pulseTuning = { ...DEFAULT_PULSE_TUNING };
     clearSavedButtonFeedback();
     syncPulseTuningUi();
@@ -2611,12 +2778,16 @@
   async function savePulseTuning() {
     if (pulseSaveInFlight) return { ok: false, inFlight: true };
     pulseSaveInFlight = true;
+    pulseUserModifiedInSession = true;
+    const savedAtIso = new Date().toISOString().replace(/\.\d{3}Z$/, "Z");
     const payload = {
       version: PULSE_PRESET_SCHEMA_VERSION,
       mode: pulseTuning.mode,
       lineStrength: pulseTuning.lineStrength,
       dotSpeed: pulseTuning.dotSpeed,
       reverseMix: pulseTuning.reverseMix,
+      dirOscAmount: pulseTuning.dirOscAmount,
+      dirOscFreq: pulseTuning.dirOscFreq,
       colorCount: pulseTuning.colorCount,
       targetPulseSpeed: pulseTuning.targetPulseSpeed,
       pulseGlow: pulseTuning.pulseGlow,
@@ -2624,8 +2795,10 @@
       dotSizePulseAmt: pulseTuning.dotSizePulseAmt,
       dotSizePulseFreq: pulseTuning.dotSizePulseFreq,
       dotSpacing: pulseTuning.dotSpacing,
-      savedAt: new Date().toISOString().replace(/\.\d{3}Z$/, "Z"),
+      savedAt: savedAtIso,
     };
+    const savedMs = Date.parse(savedAtIso);
+    if (Number.isFinite(savedMs)) pulseLocalSavedAtMs = savedMs;
     const serialized = JSON.stringify(payload);
 
     try {
@@ -2803,6 +2976,8 @@
       { id: "pt-line-strength", key: "lineStrength", label: "Line strength", min: 0.2, max: 2.0, step: 0.05, primary: true },
       { id: "pt-dot-speed", key: "dotSpeed", label: "Dot speed", sheenLabel: "Flow speed", min: 0, max: 3, step: 0.05, primary: true },
       { id: "pt-reverse-mix", key: "reverseMix", label: "Reverse wave", min: 0, max: 1, step: 0.05, primary: true },
+      { id: "pt-dir-osc-amt", key: "dirOscAmount", label: "Direction crossfade", min: 0, max: 1, step: 0.05, primary: true },
+      { id: "pt-dir-osc-freq", key: "dirOscFreq", label: "Crossfade speed", min: 0.02, max: 0.6, step: 0.01, primary: true },
       { id: "pt-color-count", key: "colorCount", label: "Amount of colors", min: 1, max: 5, step: 1, primary: true, swatches: true },
       { id: "pt-target-speed", key: "targetPulseSpeed", label: "Receiving track pulse", min: 0, max: 3, step: 0.05, primary: true },
       { id: "pt-pulse-glow", key: "pulseGlow", label: "Pulse glow", min: 0, max: 2.5, step: 0.05, primary: true },
@@ -3046,6 +3221,7 @@
     clampZoom();
     buildEdges();
     paint();
+    hydrateRemotePulseTuning();
     if (typeof document !== "undefined" && document.fonts && document.fonts.ready) {
       document.fonts.ready.then(() => paint());
     }
@@ -3094,6 +3270,7 @@
       targetSec: pulseTargetSec,
       sizeModPhase: pulseSizeModPhase,
       revWavePhase: pulseRevWavePhase,
+      dirOscPhase: pulseDirOscPhase,
       rafActive: Boolean(pulseRaf),
       panelOpen: pulsePanelOpen,
       tuning: { ...pulseTuning },
@@ -3101,6 +3278,7 @@
         mode: lastPulseRenderTelemetry.mode,
         kFwd: lastPulseRenderTelemetry.kFwd || 0,
         kRev: lastPulseRenderTelemetry.kRev || 0,
+        dirOsc: lastPulseRenderTelemetry.dirOsc ? { ...lastPulseRenderTelemetry.dirOsc } : null,
         forwardCount: lastPulseRenderTelemetry.forwardDots.length,
         reverseCount: lastPulseRenderTelemetry.reverseDots.length,
         forwardDots: lastPulseRenderTelemetry.forwardDots.map((d) => ({ ...d })),
@@ -3111,6 +3289,7 @@
     setPulseTuning,
     resetPulseTuning,
     savePulseTuning,
+    applyRemotePulsePreset,
     setPulsePanelOpen,
     setColorMode(mode) { colorMode = mode; paint(); },
     getColorMode: () => colorMode,

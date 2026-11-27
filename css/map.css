@@ -325,7 +325,7 @@
 .pulse-tune-panel {
   pointer-events: auto;
   width: min(312px, calc(100vw - 28px));
-  max-height: calc(100dvh - var(--bar-h) - 72px);
+  max-height: calc(100dvh - var(--bar-h) - 84px);
   overflow: hidden;
   padding: 13px 15px 14px;
   border-radius: 20px;
@@ -335,7 +335,7 @@
   box-shadow: 0 14px 36px color-mix(in srgb, var(--md-sys-color-shadow) 28%, transparent);
   display: flex;
   flex-direction: column;
-  gap: 9px;
+  gap: 8px;
 }
 .pulse-tune-panel[hidden] {
   display: none;
@@ -365,6 +365,7 @@
   align-items: center;
   justify-content: space-between;
   gap: 8px;
+  flex-shrink: 0;
 }
 .pulse-tune-title-wrap {
   display: inline-flex;
