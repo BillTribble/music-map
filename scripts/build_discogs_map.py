@@ -295,8 +295,71 @@ INDIE_GUITAR_KEEPER_IDS = {
     "bands_archive_21",   # Yon - Robots Will Replace You (Yon)
 }
 
+DARK_EXPERIMENTAL_AMBIENT_IDS = {
+    "archive_2013_18_31",  # Cathedral -> Dark ambient (post-024403)
+    "hd_2005_2",           # Sine Mix -> Experimental / difficult ambient with distorted guitar (post-024403)
+    "ep_concepts_33",      # Op-x (Dark ambient EP)
+    "ep_concepts_3",       # Olga (Dark ambient EP — electric guitar over dark drone)
+    "present_ambient_2",   # Sankhara (dark industrial/noise ambient)
+    "bands_archive_5",     # Spudboy — Drone 2 Static (dark drone)
+    "ep_concepts_6",       # Spacetime (dark ambient / dungeon synth)
+    "spirit_guides_4",     # Dark Night of the Soul
+    "present_ambient_1",   # 1 Thing Led 2 Another (dark abstract ambient)
+    "archive_2018_23_62",  # Spectacular fail (dark experimental ambient)
+    "present_electro_30",  # Caribbean Hotel At Night ... (le Garcon) (dark leftfield ambient)
+    "hd_2005_8",           # Mary J (dark soundscape ambient)
+    "archive_2013_18_106", # Monks of Umber 03 Osx (dark drone + guitar)
+    "archive_2013_18_107", # Moody 8bit (dark ambient sketch)
+    "archive_2018_23_38",  # Bells (dark abstract ambient sketch)
+    "archive_2013_18_63",  # Glitchbeat Chords (musique concrète / dark experimental sketch)
+}
+
 CLUSTER_OVERRIDES: dict[str, int] = {
     "hd_2005_7": 4,       # Happy -> Indie, post-punk & guitar (d4_indie_guitar, post-023691)
+    **{tid: 10 for tid in sorted(DARK_EXPERIMENTAL_AMBIENT_IDS)},
+}
+
+STYLE_OVERRIDES: dict[str, dict] = {
+    "archive_2013_18_31": {
+        "discogs_styles": ["Dark Ambient", "Drone", "Experimental"],
+        "discogs_top": "Dark Ambient",
+        "mood_tags": ["Dark", "Soundscape"],
+    },
+    "hd_2005_2": {
+        "discogs_styles": ["Experimental Ambient", "Dark Ambient", "Abstract"],
+        "discogs_top": "Experimental Ambient",
+        "mood_tags": ["Dark", "Meditative"],
+        "instrument_tags": ["Electric Guitar", "Guitar", "Synthesizer"],
+    },
+    "present_ambient_2": {
+        "discogs_styles": ["Dark Ambient", "Industrial", "Experimental"],
+        "discogs_top": "Dark Ambient",
+        "mood_tags": ["Dark", "Soundscape"],
+    },
+    "ep_concepts_33": {
+        "discogs_styles": ["Dark Ambient", "Industrial", "Experimental"],
+        "discogs_top": "Dark Ambient",
+        "mood_tags": ["Dark", "Soundscape"],
+    },
+    "ep_concepts_3": {
+        "discogs_styles": ["Dark Ambient", "Drone", "Experimental"],
+        "discogs_top": "Dark Ambient",
+        "mood_tags": ["Dark", "Soundscape"],
+    },
+    "bands_archive_5": {
+        "discogs_styles": ["Dark Ambient", "Drone", "Experimental"],
+        "discogs_top": "Dark Ambient",
+        "mood_tags": ["Dark", "Slow"],
+    },
+    "spirit_guides_4": {
+        "discogs_styles": ["Dark Ambient", "Ambient", "Drone"],
+        "discogs_top": "Dark Ambient",
+    },
+    "present_electro_30": {
+        "discogs_styles": ["Experimental Ambient", "Downtempo", "Dark Ambient"],
+        "discogs_top": "Experimental Ambient",
+        "mood_tags": ["Dark", "Slow"],
+    },
 }
 
 PSYCHEDAILIES_NOTE = "Made in one day, with help from friends on Endlesss."
@@ -651,11 +714,29 @@ STYLE_SLOTS = [
         "mood_kw": {"energetic": 0.8, "slow": 0.8},
         "inst_kw": {"bass": 2.0},
     },
+    {
+        "idx": 10,
+        "id": "d10_dark_ambient",
+        "label": "Dark & experimental ambient",
+        "short_label": "Dark ambient",
+        "hue": 312,
+        "discogs_kw": {
+            "Electronic---Dark Ambient": 3.4,
+            "Electronic---Drone": 2.8,
+            "Electronic---Experimental": 2.4,
+            "Electronic---Abstract": 2.0,
+            "Electronic---Musique Concrète": 2.0,
+            "Electronic---Ambient": 1.8,
+            "Electronic---Dungeon Synth": 1.6,
+        },
+        "mood_kw": {"dark": 3.0, "soundscape": 2.0, "slow": 1.4, "space": 1.2},
+        "inst_kw": {"synthesizer": 0.8, "electricguitar": 1.0, "guitar": 0.8},
+    },
 ]
 
 # AI genre sub-family groupings (for subtle sub-labels inside the Generative AI Music territory)
 AI_SUBFAMILIES = [
-    ("ai_sub_world_exp", "Gamelan & ambient", "Gamelan & ambient", {0, 1}, 210),
+    ("ai_sub_world_exp", "Gamelan & ambient", "Gamelan & ambient", {0, 1, 10}, 210),
     ("ai_sub_orch", "Orchestral & choir", "Orchestral & choir", {8}, 190),
     ("ai_sub_downtempo", "Downtempo & melodic", "Downtempo", {2}, 170),
     ("ai_sub_house", "Afro, house & cumbia", "Afro & house", {3, 5}, 140),
@@ -817,7 +898,7 @@ def build_seeded_prototypes(
   )
 
   seeds = []
-  for slot in STYLE_SLOTS:
+  for slot in STYLE_SLOTS[:10]:
     if slot["idx"] == 4 and keeper_rows:
       seeds.append(X_hybrid[keeper_rows].mean(axis=0))
       continue
@@ -989,13 +1070,19 @@ def classify_folder_guidance(
 
   if tid in CLUSTER_OVERRIDES:
     override_cidx = int(CLUSTER_OVERRIDES[tid])
-    prior[override_cidx] += 0.45
+    if override_cidx < 10:
+      prior[override_cidx] += 0.45
+      allowed_ov: set[int] | None = {override_cidx}
+    else:
+      prior[0] += 0.30
+      allowed_ov = None
     return {
         "is_ai": False,
         "is_spoken_word": False,
         "is_sketch": is_sketch,
         "prior": prior,
-        "allowed": {override_cidx},
+        "allowed": allowed_ov,
+        "override_cluster": override_cidx,
         "rule": f"curated:cluster_override_{override_cidx}",
     }
 
@@ -1224,7 +1311,7 @@ def compute_organic_continuum_and_ai_layout(
     if np.any(west_m) and pca2[west_m, 0].mean() > 0:
       pca2[:, 0] = -pca2[:, 0]
     top_m = np.isin(hc_clusters, [6, 7])
-    bot_m = np.isin(hc_clusters, [0, 8, 4])
+    bot_m = np.isin(hc_clusters, [0, 8, 4, 10])
     if np.any(top_m) and np.any(bot_m) and pca2[top_m, 1].mean() > pca2[bot_m, 1].mean():
       pca2[:, 1] = -pca2[:, 1]
     pca_init = (pca2 / (np.std(pca2[:, 0]) + 1e-6) * 8.0).astype(np.float32)
@@ -1257,8 +1344,9 @@ def compute_organic_continuum_and_ai_layout(
       c_radii[c] = 66.0 * math.sqrt(max(10.0, float(n_eff)) / 27.0)
       c_centers_feat[c] = normalize(X_hc[m_all].mean(axis=0, keepdims=True), norm="l2")[0]
 
-    aff = np.zeros((10, 10), dtype=np.float64)
-    cross_links = np.zeros((10, 10), dtype=np.float64)
+    n_slot_cap = max(11, (max(present_clusters) + 1) if present_clusters else 11)
+    aff = np.zeros((n_slot_cap, n_slot_cap), dtype=np.float64)
+    cross_links = np.zeros((n_slot_cap, n_slot_cap), dtype=np.float64)
     for ca in present_clusters:
       ia = np.where((hc_clusters == ca) & vis_mask)[0]
       if len(ia) == 0:
@@ -1295,7 +1383,7 @@ def compute_organic_continuum_and_ai_layout(
     ).fit_transform(dissim)
 
     # Bottom-to-top energy compass (post-023500: screen y increases downward, so +y = bottom mobile thumb zone, -y = top of screen):
-    # - Bottom thumb zone: Ambient (0), Meditative (8), Indie/guitar (4), Downtempo (2)
+    # - Bottom thumb zone: Ambient (0), Meditative (8), Dark & experimental ambient (10), Indie/guitar (4), Downtempo (2)
     # - Middle groove zone: House (3), Hypnotic/dub (1), Electro/techno (5), UK bass (9)
     # - Top high-energy zone: IDM/industrial (6) & Jungle/DnB/breakcore (7)
     compass_targets = {
@@ -1305,10 +1393,11 @@ def compute_organic_continuum_and_ai_layout(
         9: np.array([ 1.12, -0.30]),
         1: np.array([-0.14, -0.08]),
         3: np.array([-1.14,  0.22]),
-        2: np.array([ 0.66,  0.48]),
-        8: np.array([-0.18,  0.72]),
-        0: np.array([-1.00,  1.02]),
-        4: np.array([ 0.92,  0.94]),
+        2: np.array([ 0.62,  0.38]),
+        8: np.array([-0.26,  0.64]),
+        0: np.array([-1.06,  1.04]),
+        10: np.array([ 0.24,  1.24]),
+        4: np.array([ 1.14,  0.74]),
     }
     T_comp = np.array([compass_targets.get(c, np.zeros(2)) for c in present_clusters], dtype=np.float64)
     mds_c = mds_xy - mds_xy.mean(axis=0)
@@ -2097,7 +2186,11 @@ def build_dataset(
     folder_rules.append(guidance["rule"])
 
     if guidance["is_spoken_word"]:
-      cluster_idx[i] = 10
+      cluster_idx[i] = 11
+      continue
+
+    if "override_cluster" in guidance and guidance["override_cluster"] is not None:
+      cluster_idx[i] = int(guidance["override_cluster"])
       continue
 
     sc = base_scores[i] + guidance["prior"]
@@ -2182,6 +2275,9 @@ def build_dataset(
           "mood_tags": mood_tags,
           "instrument_tags": inst_tags,
       }
+      if tid in STYLE_OVERRIDES:
+        for ov_k, ov_v in STYLE_OVERRIDES[tid].items():
+          upd[ov_k] = list(ov_v) if isinstance(ov_v, list) else ov_v
       if ai_sub_id:
         upd["ai_sub_id"] = ai_sub_id
         upd["ai_sub_label"] = ai_sub_label
@@ -2297,6 +2393,12 @@ def build_dataset(
     else:
       same_c_mask = (cluster_idx == cidx) & (sims >= 0.28)
       other_c_mask = (cluster_idx != cidx) & (sims >= 0.645)
+      if cidx == 10:
+        # Dark & experimental ambient links cross-genre cousins only to ambient/meditative/downtempo/hypnotic/guitar (never IDM/DnB)
+        other_c_mask = other_c_mask & np.isin(cluster_idx, [0, 1, 2, 4, 8])
+      elif cidx in (6, 7):
+        # Prevent high-energy IDM/Industrial & DnB tracks from pointing incoming edges into Dark & experimental ambient
+        other_c_mask = other_c_mask & (cluster_idx != 10)
       same_vis_mask = same_c_mask & (~is_sketch_mask)
       same_vis_nn = [int(j) for j in np.argsort(-np.where(same_vis_mask, sims, -2.0)) if same_vis_mask[j]][:10]
       same_sk_nn = [int(j) for j in np.argsort(-np.where(same_c_mask, sims, -2.0)) if same_c_mask[j] and j not in set(same_vis_nn)][:4]
@@ -2421,7 +2523,7 @@ def build_dataset(
   data["meta"]["era_anchors"] = rebuilt_anchors
 
   style_groups = []
-  for cidx in range(10):
+  for cidx in range(len(STYLE_SLOTS)):
     slot = slot_by_idx[cidx]
     mem_indices = np.where((cluster_idx == cidx) & (~is_ai_mask) & (~is_spoken_mask))[0]
     if len(mem_indices) == 0:

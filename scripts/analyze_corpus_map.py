@@ -737,6 +737,11 @@ ARCH_LABELS = {a[0]: a[1] for a in CANONICAL_ARCHETYPES}
 ARCH_HUES = {a[0]: a[2] for a in CANONICAL_ARCHETYPES}
 ARCH_CANONICAL_IDX = {a[0]: idx for idx, a in enumerate(CANONICAL_ARCHETYPES)}
 
+STYLE_OVERRIDES: dict[str, str] = {
+    "archive_2013_18_31": "dark_ambient",  # Cathedral -> Dark ambient (post-024403)
+    "hd_2005_2": "dark_ambient",           # Sine Mix -> Experimental / dark ambient (post-024403)
+}
+
 PIANO_SYNTH_RE = re.compile(
     r"\b(piano|kalimba|sid|c64|8bit|chiptune|arp|arps|imposcar|diva|serum|modsynth|"
     r"gamelan|choir|orchestral|techno|house|afro|jungle|d&b|808|ambi|ambisktch|rave|glitchbeat|wizball)\b",
@@ -1275,6 +1280,10 @@ def cluster_and_layout(tracks: list[dict]) -> dict:
         [[float(t.get("genre_scores", {}).get(aid, 0.0)) for aid in ARCH_KEYS] for t in tracks],
         dtype=np.float64,
     )
+    for row_i, t in enumerate(tracks):
+        ov_arch = STYLE_OVERRIDES.get(str(t.get("id") or ""))
+        if ov_arch and ov_arch in ARCH_CANONICAL_IDX:
+            S_ens[row_i, ARCH_CANONICAL_IDX[ov_arch]] = max(100.0, float(np.max(S_ens[row_i])) + 25.0)
     win_arch_idxs = np.argmax(S_ens, axis=1)
 
     # Combine sonic coordinates + normalized ensemble territory pull for cohesive, high-legibility 2D Vibe islands

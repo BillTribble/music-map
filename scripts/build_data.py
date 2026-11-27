@@ -1145,6 +1145,26 @@ SHORT_TITLE_OVERRIDES = {
     "sketches_2024_25_32": "Wireless (Sasha Jacques)",
 }
 
+STYLE_OVERRIDES: dict[str, dict] = {
+    "archive_2013_18_31": {
+        "cluster_id": "d10_dark_ambient",
+        "cluster_label": "Dark & experimental ambient",
+        "cluster_idx": 10,
+        "discogs_styles": ["Dark Ambient", "Drone", "Experimental"],
+        "discogs_top": "Dark Ambient",
+        "mood_tags": ["Dark", "Soundscape"],
+    },
+    "hd_2005_2": {
+        "cluster_id": "d10_dark_ambient",
+        "cluster_label": "Dark & experimental ambient",
+        "cluster_idx": 10,
+        "discogs_styles": ["Experimental Ambient", "Dark Ambient", "Abstract"],
+        "discogs_top": "Experimental Ambient",
+        "mood_tags": ["Dark", "Meditative"],
+        "instrument_tags": ["Electric Guitar", "Guitar", "Synthesizer"],
+    },
+}
+
 _PRESENT_LEET_MAP = str.maketrans({
     "3": "e", "0": "o", "1": "i", "4": "a", "5": "s", "7": "t", "z": "s",
 })
@@ -1580,6 +1600,9 @@ def build_from_full_analysis(
                 if str(t.get("id") or "") in FORCE_SKETCH_IDS or str(t.get("title") or "").strip().lower() in FORCE_SKETCH_TITLES:
                     t["is_sketch"] = True
                     t["wip_eligible"] = False
+            if tid in STYLE_OVERRIDES:
+                for ov_k, ov_v in STYLE_OVERRIDES[tid].items():
+                    t[ov_k] = list(ov_v) if isinstance(ov_v, list) else ov_v
 
         merged_tracks.append(t)
 
@@ -1764,6 +1787,9 @@ def main() -> None:
                 merged["note"] = TRACK_NOTES[tid]
             if tid in CURATED_FREE_DOWNLOAD_OVERRIDES:
                 merged.update(CURATED_FREE_DOWNLOAD_OVERRIDES[tid])
+            if tid in STYLE_OVERRIDES:
+                for ov_k, ov_v in STYLE_OVERRIDES[tid].items():
+                    merged[ov_k] = list(ov_v) if isinstance(ov_v, list) else ov_v
             merged_tracks.append(merged)
             tracks_by_era[eid].append(merged)
 
