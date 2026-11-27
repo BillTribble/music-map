@@ -222,6 +222,7 @@ TITLE_OVERRIDES_BY_REL_PATH = {
     "me music - 2005 hard drive/war pr3s3nt mix hard.m4a": "WAR hard mix",
     "music sketches archive. 2012-2020/stepper sketches 2012-2018/epic 4-4 demo2-.mp3": "Epic Powers",
     "music sketches archive. 2012-2020/stepper sketches 2012-2018/epic powers (formerly epic 4-4 demo2)/epic powers.mp3": "Epic Powers",
+    "^ music sketches archive/prototcol x jam 2017.aif": "Protocol X Jam 2017",
     "06 - ecstatic wave album/^ export/flowing wave 33 arrange.mp3": "Flowing Wave (Preview)",
     "06 - ecstatic wave album/^ export/flowing wave 27.flac": "Flowing Wave (Preview)",
     "06 - ecstatic wave album/flowing wave project/matchering - &me afro version/flowing wave 17 75bpm pt1_(matched).flac": "Flowing Wave (Preview)",
@@ -437,6 +438,7 @@ def clean_title(rel_path: str) -> str:
     t = re.sub(r"\s+20\d{2}-\d{2}-\d{2}(?:\s+\d{4})?\b", "", t)
     t = re.sub(r"\s+_(\d+)$", r" (\1)", t)
     t = re.sub(r"\s+-\s+remaster\s+\d+$", "", t, flags=re.IGNORECASE)
+    t = re.sub(r"\bprototcol\b", "Protocol", t, flags=re.IGNORECASE)
     cleaned = re.sub(r"\s+", " ", t).strip() or stem
     return strip_present_references(cleaned)
 
@@ -570,13 +572,14 @@ def build_manifest(raw_items: list[dict], ffprobe_bin: str | None = None, check_
             or "/ai afrohouse" in w_low
             or "ai_test_kitchen" in w_low
         )
-        # User rules (post-022787, post-023035, post-023356, post-023452, post-023995, post-024088, post-024096, post-024108..024111, post-024126, post-024281): 100% of GenAI tracks and full-length (>= 75s) tracks have is_sketch = False unless explicitly overridden
+        # User rules (post-022787, post-023035, post-023356, post-023452, post-023995, post-024088, post-024096, post-024108..024111, post-024126, post-024281, post-024500, post-024510): 100% of GenAI tracks and full-length (>= 75s) tracks have is_sketch = False unless explicitly overridden
         is_forced_sketch = (
             tid in {
                 "archive_2013_18_12",
                 "archive_2013_18_15",
                 "archive_2013_18_33",
                 "archive_2013_18_35",
+                "archive_2013_18_70",
                 "archive_2013_18_71",
                 "archive_2013_18_87",
                 "archive_2013_18_97",
@@ -593,6 +596,7 @@ def build_manifest(raw_items: list[dict], ffprobe_bin: str | None = None, check_
                 "archive_2013_18_152",
                 "archive_2013_18_154",
                 "archive_2018_23_48",
+                "bands_archive_5",
                 "bands_archive_8",
                 "bands_archive_15",
                 "ep_concepts_37",
@@ -612,6 +616,8 @@ def build_manifest(raw_items: list[dict], ffprobe_bin: str | None = None, check_
                 "dancehorl ruff",
                 "deep ruff",
                 "gnarly peak beat",
+                "hip-hawp b",
+                "hip-hawp b 1",
                 "huge-riff demo",
                 "lazer-sketch",
                 "lazer sketch",
@@ -630,6 +636,8 @@ def build_manifest(raw_items: list[dict], ffprobe_bin: str | None = None, check_
                 "rock sketch",
                 "scrapeyard sketch",
                 "spiral structure",
+                "spudboy — drone 2 static",
+                "spudboy - drone 2 static",
                 "step 411 regal sketch",
                 "synth test imposcar- devastor",
                 "tryell modsynth",

@@ -186,6 +186,7 @@ FORCE_SKETCH_IDS = {
     "archive_2013_18_15",   # Anjuna (post-023995: sketch despite >= 75s)
     "archive_2013_18_33",   # Chord-ideas (post-024281: sketch despite >= 75s)
     "archive_2013_18_35",   # Clean 29 Test Track (post-024108: sketch despite >= 75s)
+    "archive_2013_18_70",   # Hip-hawp B (post-024500: sketch despite >= 75s)
     "archive_2013_18_71",   # Huge-riff Demo (post-024281: sketch despite >= 75s)
     "archive_2013_18_87",   # Lazer-sketch (post-024096: sketch despite >= 75s)
     "archive_2013_18_97",   # Massive Dune Patch (post-023356: sketch despite >= 75s)
@@ -202,6 +203,7 @@ FORCE_SKETCH_IDS = {
     "archive_2013_18_152",  # Weather-reportish (post-024109: sketch despite >= 75s)
     "archive_2013_18_154",  # Who-knows 01 Blues7th (post-024110: sketch despite >= 75s)
     "archive_2018_23_48",   # Gnarly Peak Beat (post-024281: sketch despite >= 75s)
+    "bands_archive_5",      # Spudboy — Drone 2 Static (post-024510: sketch despite >= 75s)
     "bands_archive_8",      # Dancehorl ruff (post-024281: sketch despite >= 75s)
     "bands_archive_15",     # Lets Watch TV Ruff (post-024281: sketch despite >= 75s)
     "ep_concepts_37",       # Random Acid Hard (post-024281: sketch despite >= 75s)
@@ -221,6 +223,8 @@ FORCE_SKETCH_TITLES = {
     "dancehorl ruff",
     "deep ruff",
     "gnarly peak beat",
+    "hip-hawp b",
+    "hip-hawp b 1",
     "huge-riff demo",
     "lazer-sketch",
     "lazer sketch",
@@ -239,6 +243,8 @@ FORCE_SKETCH_TITLES = {
     "rock sketch",
     "scrapeyard sketch",
     "spiral structure",
+    "spudboy — drone 2 static",
+    "spudboy - drone 2 static",
     "step 411 regal sketch",
     "synth test imposcar- devastor",
     "tryell modsynth",
@@ -1137,6 +1143,7 @@ TITLE_OVERRIDES = {
     "hd_2005_23": "Grimy",
     "hd_2005_48": "WAR hard mix",
     "archive_2013_18_53": "Epic Powers",
+    "archive_2013_18_120": "Protocol X Jam 2017",
     "ecstatic_wave_1": "Flowing Wave (Preview)",
     "remixes_commissions_17": "Voidcomplet - Ripple effect (Bill Tribble vox)",
     "sketches_2024_25_32": "Wireless (feat. Sasha Jacques)",
@@ -1162,6 +1169,30 @@ STYLE_OVERRIDES: dict[str, dict] = {
         "discogs_top": "Experimental Ambient",
         "mood_tags": ["Dark", "Meditative"],
         "instrument_tags": ["Electric Guitar", "Guitar", "Synthesizer"],
+    },
+    "archive_2013_18_106": {
+        "cluster_id": "d0_ambient",
+        "cluster_label": "Ambient & soundscapes",
+        "cluster_idx": 0,
+        "discogs_styles": ["Ambient", "Indian Classical", "New Age"],
+        "discogs_top": "Ambient",
+        "mood_tags": ["Meditative", "Relaxing"],
+    },
+    "spirit_guides_4": {
+        "cluster_id": "d0_ambient",
+        "cluster_label": "Ambient & soundscapes",
+        "cluster_idx": 0,
+        "discogs_styles": ["Ambient", "Berlin-School", "New Age"],
+        "discogs_top": "Ambient",
+        "mood_tags": ["Soundscape", "Meditative"],
+    },
+    "present_electro_30": {
+        "cluster_id": "d2_downtempo",
+        "cluster_label": "Downtempo & leftfield",
+        "cluster_idx": 2,
+        "discogs_styles": ["Downtempo", "Leftfield", "Lounge"],
+        "discogs_top": "Downtempo",
+        "mood_tags": ["Whimsical", "Playful"],
     },
 }
 

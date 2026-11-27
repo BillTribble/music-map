@@ -738,8 +738,11 @@ ARCH_HUES = {a[0]: a[2] for a in CANONICAL_ARCHETYPES}
 ARCH_CANONICAL_IDX = {a[0]: idx for idx, a in enumerate(CANONICAL_ARCHETYPES)}
 
 STYLE_OVERRIDES: dict[str, str] = {
-    "archive_2013_18_31": "dark_ambient",  # Cathedral -> Dark ambient (post-024403)
-    "hd_2005_2": "dark_ambient",           # Sine Mix -> Experimental / dark ambient (post-024403)
+    "archive_2013_18_31": "dark_ambient",    # Cathedral -> Dark ambient (post-024403)
+    "hd_2005_2": "dark_ambient",             # Sine Mix -> Experimental / dark ambient (post-024403)
+    "archive_2013_18_106": "ambient",        # Monks of Umber 03 Osx -> Normal ambient (post-024513)
+    "spirit_guides_4": "ambient",            # Dark Night of the Soul -> Normal ambient (post-024513)
+    "present_electro_30": "downtempo_lush",  # Caribbean Hotel At Night -> Downtempo (post-024530)
 }
 
 PIANO_SYNTH_RE = re.compile(
@@ -1438,6 +1441,9 @@ def cluster_and_layout(tracks: list[dict]) -> dict:
 def enrich_track_tiers(t: dict, rel_repo: str = "BillTribble/music-map") -> None:
     """Attach year, released, is_sketch, tier, links, and archive download metadata."""
     tid, era = t["id"], t["era"]
+    if tid == "archive_2013_18_120":
+        t["title"] = "Protocol X Jam 2017"
+        t["shortTitle"] = "Protocol X Jam 2017"
     year = int(t.get("year") or PRE_2015_OVERRIDES.get(tid) or ERA_DEFAULT_YEAR.get(era, 2020))
     rel_match = rc.match_released_track(t["title"], t.get("rel_path", ""), era)
     released = bool(rel_match is not None)
@@ -1451,6 +1457,7 @@ def enrich_track_tiers(t: dict, rel_repo: str = "BillTribble/music-map") -> None
             "archive_2013_18_15",
             "archive_2013_18_33",
             "archive_2013_18_35",
+            "archive_2013_18_70",
             "archive_2013_18_71",
             "archive_2013_18_87",
             "archive_2013_18_97",
@@ -1467,6 +1474,7 @@ def enrich_track_tiers(t: dict, rel_repo: str = "BillTribble/music-map") -> None
             "archive_2013_18_152",
             "archive_2013_18_154",
             "archive_2018_23_48",
+            "bands_archive_5",
             "bands_archive_8",
             "bands_archive_15",
             "ep_concepts_37",
@@ -1486,6 +1494,8 @@ def enrich_track_tiers(t: dict, rel_repo: str = "BillTribble/music-map") -> None
             "dancehorl ruff",
             "deep ruff",
             "gnarly peak beat",
+            "hip-hawp b",
+            "hip-hawp b 1",
             "huge-riff demo",
             "lazer-sketch",
             "lazer sketch",
@@ -1504,6 +1514,8 @@ def enrich_track_tiers(t: dict, rel_repo: str = "BillTribble/music-map") -> None
             "rock sketch",
             "scrapeyard sketch",
             "spiral structure",
+            "spudboy — drone 2 static",
+            "spudboy - drone 2 static",
             "step 411 regal sketch",
             "synth test imposcar- devastor",
             "tryell modsynth",

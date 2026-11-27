@@ -271,6 +271,7 @@ TITLE_OVERRIDES = {
     "hd_2005_23": "Grimy",
     "hd_2005_48": "WAR hard mix",
     "archive_2013_18_53": "Epic Powers",
+    "archive_2013_18_120": "Protocol X Jam 2017",
     "ecstatic_wave_1": "Flowing Wave (Preview)",
     "remixes_commissions_17": "Voidcomplet - Ripple effect (Bill Tribble vox)",
     "sketches_2024_25_32": "Wireless (feat. Sasha Jacques)",
@@ -301,21 +302,21 @@ DARK_EXPERIMENTAL_AMBIENT_IDS = {
     "ep_concepts_33",      # Op-x (Dark ambient EP)
     "ep_concepts_3",       # Olga (Dark ambient EP — electric guitar over dark drone)
     "present_ambient_2",   # Sankhara (dark industrial/noise ambient)
-    "bands_archive_5",     # Spudboy — Drone 2 Static (dark drone)
+    "bands_archive_5",     # Spudboy — Drone 2 Static (dark drone sketch, post-024510)
     "ep_concepts_6",       # Spacetime (dark ambient / dungeon synth)
-    "spirit_guides_4",     # Dark Night of the Soul
     "present_ambient_1",   # 1 Thing Led 2 Another (dark abstract ambient)
     "archive_2018_23_62",  # Spectacular fail (dark experimental ambient)
-    "present_electro_30",  # Caribbean Hotel At Night ... (le Garcon) (dark leftfield ambient)
     "hd_2005_8",           # Mary J (dark soundscape ambient)
-    "archive_2013_18_106", # Monks of Umber 03 Osx (dark drone + guitar)
     "archive_2013_18_107", # Moody 8bit (dark ambient sketch)
     "archive_2018_23_38",  # Bells (dark abstract ambient sketch)
     "archive_2013_18_63",  # Glitchbeat Chords (musique concrète / dark experimental sketch)
 }
 
 CLUSTER_OVERRIDES: dict[str, int] = {
-    "hd_2005_7": 4,       # Happy -> Indie, post-punk & guitar (d4_indie_guitar, post-023691)
+    "hd_2005_7": 4,           # Happy -> Indie, post-punk & guitar (d4_indie_guitar, post-023691)
+    "archive_2013_18_106": 0, # Monks of Umber 03 Osx -> Ambient & soundscapes (d0_ambient, post-024513)
+    "spirit_guides_4": 0,     # Dark Night of the Soul -> Ambient & soundscapes (d0_ambient, post-024513)
+    "present_electro_30": 2,  # Caribbean Hotel At Night -> Downtempo & leftfield (d2_downtempo, post-024530)
     **{tid: 10 for tid in sorted(DARK_EXPERIMENTAL_AMBIENT_IDS)},
 }
 
@@ -351,14 +352,20 @@ STYLE_OVERRIDES: dict[str, dict] = {
         "discogs_top": "Dark Ambient",
         "mood_tags": ["Dark", "Slow"],
     },
+    "archive_2013_18_106": {
+        "discogs_styles": ["Ambient", "Indian Classical", "New Age"],
+        "discogs_top": "Ambient",
+        "mood_tags": ["Meditative", "Relaxing"],
+    },
     "spirit_guides_4": {
-        "discogs_styles": ["Dark Ambient", "Ambient", "Drone"],
-        "discogs_top": "Dark Ambient",
+        "discogs_styles": ["Ambient", "Berlin-School", "New Age"],
+        "discogs_top": "Ambient",
+        "mood_tags": ["Soundscape", "Meditative"],
     },
     "present_electro_30": {
-        "discogs_styles": ["Experimental Ambient", "Downtempo", "Dark Ambient"],
-        "discogs_top": "Experimental Ambient",
-        "mood_tags": ["Dark", "Slow"],
+        "discogs_styles": ["Downtempo", "Leftfield", "Lounge"],
+        "discogs_top": "Downtempo",
+        "mood_tags": ["Whimsical", "Playful"],
     },
 }
 
@@ -401,6 +408,7 @@ FORCE_SKETCH_IDS = {
     "archive_2013_18_15",   # Anjuna (post-023995: sketch despite >= 75s)
     "archive_2013_18_33",   # Chord-ideas (post-024281: sketch despite >= 75s)
     "archive_2013_18_35",   # Clean 29 Test Track (post-024108: sketch despite >= 75s)
+    "archive_2013_18_70",   # Hip-hawp B (post-024500: sketch despite >= 75s)
     "archive_2013_18_71",   # Huge-riff Demo (post-024281: sketch despite >= 75s)
     "archive_2013_18_87",   # Lazer-sketch (post-024096: sketch despite >= 75s)
     "archive_2013_18_97",   # Massive Dune Patch (post-023356: sketch despite >= 75s)
@@ -417,6 +425,7 @@ FORCE_SKETCH_IDS = {
     "archive_2013_18_152",  # Weather-reportish (post-024109: sketch despite >= 75s)
     "archive_2013_18_154",  # Who-knows 01 Blues7th (post-024110: sketch despite >= 75s)
     "archive_2018_23_48",   # Gnarly Peak Beat (post-024281: sketch despite >= 75s)
+    "bands_archive_5",      # Spudboy — Drone 2 Static (post-024510: sketch despite >= 75s)
     "bands_archive_8",      # Dancehorl ruff (post-024281: sketch despite >= 75s)
     "bands_archive_15",     # Lets Watch TV Ruff (post-024281: sketch despite >= 75s)
     "ep_concepts_37",       # Random Acid Hard (post-024281: sketch despite >= 75s)
@@ -436,6 +445,8 @@ FORCE_SKETCH_TITLES = {
     "dancehorl ruff",
     "deep ruff",
     "gnarly peak beat",
+    "hip-hawp b",
+    "hip-hawp b 1",
     "huge-riff demo",
     "lazer-sketch",
     "lazer sketch",
@@ -454,6 +465,8 @@ FORCE_SKETCH_TITLES = {
     "rock sketch",
     "scrapeyard sketch",
     "spiral structure",
+    "spudboy — drone 2 static",
+    "spudboy - drone 2 static",
     "step 411 regal sketch",
     "synth test imposcar- devastor",
     "tryell modsynth",
