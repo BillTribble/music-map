@@ -338,7 +338,7 @@ def apply_canonical_bpm_override(t: dict, beatgrids_map: dict[str, dict]) -> Non
         t["rhythm_tag"] = "Driven 4/4 house pulse"
 
 
-LOUDNESS_TARGET_LUFS = -16.5
+LOUDNESS_TARGET_LUFS = -10.0
 
 
 def load_track_loudness_map(loudness_json: Path | None = None) -> dict[str, dict]:
@@ -359,9 +359,10 @@ def apply_canonical_loudness_override(t: dict, loudness_map: dict[str, dict]) ->
         return
     lufs_r = round(float(ent["lufs"]), 1)
     tp_r = round(float(ent.get("true_peak_db", -1.0)), 1)
-    raw_db = max(-18.0, min(12.0, LOUDNESS_TARGET_LUFS - lufs_r))
+    raw_db = max(-18.0, min(14.0, LOUDNESS_TARGET_LUFS - lufs_r))
     if raw_db > 0.0 and math.isfinite(tp_r):
-        raw_db = min(raw_db, max(-6.0, (-1.0 - tp_r) + 6.0))
+        eff_tp = min(tp_r, 0.5)
+        raw_db = min(raw_db, max(0.0, (-0.5 - eff_tp) + 6.5))
     gain_db = round(raw_db, 2)
     t["lufs"] = lufs_r
     t["true_peak_db"] = tp_r

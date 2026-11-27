@@ -2,7 +2,7 @@
 """Measure ITU-R BS.1770-4 / EBU R128 Loudness Across All Music Map Tracks & Sync data.js.
 
 Computes integrated loudness (`lufs`), true peak (`true_peak_db`), loudness range (`lra_lu`),
-reference gain offset (`gain_db` relative to `TARGET_LUFS = -16.5`), and linear `gain_trim`
+reference gain offset (`gain_db` relative to `TARGET_LUFS = -10.0`), and linear `gain_trim`
 for every track in `js/data.js` (`tracks`, `eras`, `phases`).
 
 Persists canonical measurements in `scripts/track_loudness.json` and fixes any non-linear
@@ -33,11 +33,11 @@ DEFAULT_CACHE_DIR = Path(
     or (Path(os.environ.get("SWARM_TMP_ROOT") or tempfile.gettempdir()) / "drop_audio_cache")
 )
 
-TARGET_LUFS = -16.5
+TARGET_LUFS = -10.0
 MIN_GAIN_DB = -18.0
-MAX_BOOST_DB = 12.0
-LIMITER_CEILING_DBTP = -1.0
-MAX_LIMITER_GR_DB = 6.0
+MAX_BOOST_DB = 14.0
+LIMITER_CEILING_DBTP = -0.5
+MAX_LIMITER_GR_DB = 6.5
 
 _RE_INT_LUFS = re.compile(r"Integrated loudness:\s+I:\s+(-?\d+(?:\.\d+)?)\s+LUFS", re.MULTILINE)
 _RE_LRA = re.compile(r"Loudness range:\s+LRA:\s+(-?\d+(?:\.\d+)?)\s+LU", re.MULTILINE)
@@ -56,8 +56,9 @@ def compute_loudness_gains(
     """Return `(gain_db, gain_trim)` for a track relative to `target_lufs`."""
     raw_db = clamp(target_lufs - float(lufs), MIN_GAIN_DB, MAX_BOOST_DB)
     if raw_db > 0.0 and true_peak_db is not None and math.isfinite(true_peak_db):
-        max_peak_safe_db = (LIMITER_CEILING_DBTP - float(true_peak_db)) + MAX_LIMITER_GR_DB
-        raw_db = min(raw_db, max(-6.0, max_peak_safe_db))
+        eff_tp = min(float(true_peak_db), 0.5)
+        max_peak_safe_db = (LIMITER_CEILING_DBTP - eff_tp) + MAX_LIMITER_GR_DB
+        raw_db = min(raw_db, max(0.0, max_peak_safe_db))
     gain_db = round(raw_db, 2)
     gain_trim = round(math.pow(10.0, gain_db / 20.0), 4)
     return gain_db, gain_trim
@@ -182,7 +183,7 @@ def _measure_worker(args_tuple: tuple[dict, str]) -> tuple[str, dict]:
         res["source"] = "ebur128"
         return tid, res
     except Exception:
-        rms_fb = float(fb_rms) if fb_rms is not None else -16.5
+        rms_fb = float(fb_rms) if fb_rms is not None else -14.0
         lufs_r = round(clamp(rms_fb - 0.7, -45.0, -3.0), 1)
         tp_r = round(min(0.0, lufs_r + 12.5), 1)
         gain_db, gain_trim = compute_loudness_gains(lufs_r, tp_r, TARGET_LUFS)

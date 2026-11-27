@@ -65,7 +65,7 @@
     animGhost: "prev",
     barsPerEra: 4,
     audioEnabled: true,
-    audioVolume: 0.85,
+    audioVolume: 1.0,
   };
 
   let animRafId = null;

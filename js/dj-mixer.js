@@ -32,13 +32,15 @@
   const CORS_RETRY_COOLDOWN_MS = 30000;
 
   let ctx = null;
+  let masterMixBus = null;
   let mixerMasterGain = null;
   let masterLimiter = null;
+  let masterSoftClip = null;
   let masterAnalyser = null;
   let analyserBuf = null;
 
   let enabled = typeof baseAudio.isEnabled === "function" ? Boolean(baseAudio.isEnabled()) : true;
-  let volume = typeof baseAudio.getVolume === "function" ? Number(baseAudio.getVolume()) : 0.85;
+  let volume = typeof baseAudio.getVolume === "function" ? Number(baseAudio.getVolume()) : 1.0;
   let autoPlay = typeof baseAudio.getAutoPlay === "function" ? Boolean(baseAudio.getAutoPlay()) : true;
 
   let tracksList = [];
@@ -391,21 +393,32 @@
       }
     }
     if (ctx && !mixerMasterGain) {
+      masterMixBus = ctx.createGain();
+      masterMixBus.gain.value = 1.0;
       mixerMasterGain = ctx.createGain();
       mixerMasterGain.gain.value = enabled ? clamp(volume, 0, 1) : 0;
-      masterLimiter = (typeof window !== "undefined" && window.BTMM_LOUDNESS && typeof window.BTMM_LOUDNESS.createSafetyLimiter === "function")
-        ? window.BTMM_LOUDNESS.createSafetyLimiter(ctx)
+      const loudnessApi = typeof window !== "undefined" ? window.BTMM_LOUDNESS : null;
+      masterLimiter = (loudnessApi && typeof loudnessApi.createSafetyLimiter === "function")
+        ? loudnessApi.createSafetyLimiter(ctx)
+        : null;
+      masterSoftClip = (loudnessApi && typeof loudnessApi.createSoftClipStage === "function")
+        ? loudnessApi.createSoftClipStage(ctx)
         : null;
       masterAnalyser = ctx.createAnalyser();
       masterAnalyser.fftSize = 2048;
       masterAnalyser.smoothingTimeConstant = 0.5;
       analyserBuf = new Float32Array(masterAnalyser.fftSize);
+      let busTail = masterMixBus;
       if (masterLimiter) {
-        mixerMasterGain.connect(masterLimiter);
-        masterLimiter.connect(masterAnalyser);
-      } else {
-        mixerMasterGain.connect(masterAnalyser);
+        busTail.connect(masterLimiter);
+        busTail = masterLimiter;
       }
+      if (masterSoftClip && masterSoftClip.input && masterSoftClip.output) {
+        busTail.connect(masterSoftClip.input);
+        busTail = masterSoftClip.output;
+      }
+      busTail.connect(mixerMasterGain);
+      mixerMasterGain.connect(masterAnalyser);
       masterAnalyser.connect(ctx.destination);
     }
     if (ctx && ctx.state === "suspended" && typeof ctx.resume === "function") {
@@ -469,7 +482,7 @@
       src.connect(filter);
       filter.connect(gain);
       gain.connect(analyser);
-      analyser.connect(mixerMasterGain);
+      analyser.connect(masterMixBus || mixerMasterGain);
 
       deck.mediaSource = src;
       deck.bassFilter = filter;
@@ -502,6 +515,21 @@
 
   function getOutputRms() {
     return readAnalyserRms(masterAnalyser, analyserBuf);
+  }
+
+  function getOutputPeak() {
+    if (!masterAnalyser || !analyserBuf || !ctx || ctx.state !== "running") return 0;
+    try {
+      masterAnalyser.getFloatTimeDomainData(analyserBuf);
+      let peak = 0;
+      for (let i = 0; i < analyserBuf.length; i++) {
+        const a = Math.abs(analyserBuf[i]);
+        if (a > peak) peak = a;
+      }
+      return peak;
+    } catch (_) {
+      return 0;
+    }
   }
 
   function setVoicePlaybackRate(voice, rate) {
@@ -543,8 +571,9 @@
     if (typeof window !== "undefined" && window.BTMM_LOUDNESS && typeof window.BTMM_LOUDNESS.getTrackLoudnessGain === "function") {
       return window.BTMM_LOUDNESS.getTrackLoudnessGain(track, { mode: mode || "webaudio" });
     }
+    const isDirect = mode === "direct" || mode === "element";
     if (track && Number.isFinite(Number(track.gain_trim)) && Number(track.gain_trim) > 0) {
-      return clamp(Number(track.gain_trim), 0.125, 3.981);
+      return clamp(Number(track.gain_trim), 0.1259, isDirect ? 1.0 : 5.012);
     }
     return 1.0;
   }
@@ -565,7 +594,10 @@
 
     if (voice.audioMode === "webaudio" && deck && deck.deckGain) {
       const trim = getTrackTrim(voice.track, "webaudio");
-      const targetGain = (!enabled || holdSilentForSeek) ? 0 : clamp(trim * fade * mush, 0, 3.982);
+      const maxGain = (typeof window !== "undefined" && window.BTMM_LOUDNESS && Number.isFinite(window.BTMM_LOUDNESS.MAX_LINEAR_GAIN))
+        ? window.BTMM_LOUDNESS.MAX_LINEAR_GAIN
+        : 5.012;
+      const targetGain = (!enabled || holdSilentForSeek) ? 0 : clamp(trim * fade * mush, 0, maxGain);
       deck.gainVal = targetGain;
       if (ctx) {
         try {
@@ -2996,6 +3028,7 @@
     getAutoMixWindow,
     computeTempoMatch,
     getOutputRms,
+    getOutputPeak,
     getDecks: () => { ensureDecks(); return decks.slice(); },
     getTransitionHistory: () => transitionHistory.slice(),
     clearTransitionHistory: () => { transitionHistory.length = 0; },
@@ -3016,6 +3049,10 @@
         activeDeck: serializeVoiceDiag(active),
         outgoingDeck: serializeVoiceDiag(outgoing),
         outputRms: Number(getOutputRms().toFixed(5)),
+        outputPeak: Number(getOutputPeak().toFixed(5)),
+        limiterReductionDb: masterLimiter && Number.isFinite(masterLimiter.reduction)
+          ? Number(masterLimiter.reduction.toFixed(2))
+          : 0,
       };
     },
   };

@@ -15,7 +15,7 @@
   let ctx = null;
   let masterGain = null;
   let enabled = true;
-  let volume = 0.85;
+  let volume = 1.0;
   let autoPlay = true;
 
   let tracksList = [];
@@ -624,7 +624,7 @@
       return window.BTMM_LOUDNESS.getTrackLoudnessGain(track, { mode: "direct" });
     }
     if (track && Number.isFinite(Number(track.gain_trim)) && Number(track.gain_trim) > 0) {
-      return clamp(Number(track.gain_trim), 0.125, 3.981);
+      return clamp(Number(track.gain_trim), 0.1259, 1.0);
     }
     return 1.0;
   }
