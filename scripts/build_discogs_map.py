@@ -500,10 +500,10 @@ DROP_PREVIEW_OVERRIDES = {
         "duration_sec": 24.48,
         "bytes": 343913,
     },
-    "psychedailies_26": {  # '24' (post-024497: exact 125.00 BPM 4/4 -> Bar 6 Beat 1 9.60s lead-in to Bar 9 Beat 1 15.36s drop)
+    "psychedailies_26": {  # '24' (post-024497 + post-024689: exact 125.00 BPM 4/4, all Psychedailies start previews at 0.0s)
         "has_drop": True,
         "drop_sec": 15.36,
-        "preview_start_sec": 9.6,
+        "preview_start_sec": 0.0,
         "preview_dur_sec": 17.28,
     },
 }
@@ -2458,10 +2458,11 @@ def build_dataset(
         upd.update(CURATED_FREE_DOWNLOAD_OVERRIDES[tid])
 
     drop_entry = DROP_PREVIEW_OVERRIDES.get(tid) or drop_previews_by_id.get(tid)
+    is_psychedailies_era = eff_era == "psychedailies" or tid.startswith("psychedailies_")
     if isinstance(drop_entry, dict) and drop_entry.get("has_drop"):
       upd["has_drop"] = True
       upd["drop_sec"] = round(float(drop_entry["drop_sec"]), 2)
-      upd["preview_start_sec"] = round(float(drop_entry["preview_start_sec"]), 2)
+      upd["preview_start_sec"] = 0.0 if is_psychedailies_era else round(float(drop_entry["preview_start_sec"]), 2)
       upd["preview_dur_sec"] = round(float(drop_entry["preview_dur_sec"]), 2)
       if "duration_sec" in drop_entry:
         upd["duration_sec"] = round(float(drop_entry["duration_sec"]), 3)
@@ -2470,6 +2471,10 @@ def build_dataset(
     else:
       t.pop("has_drop", None)
       t.pop("drop_sec", None)
+    if is_psychedailies_era:
+      # Start all Psychedailies previews at 0:00 (post-024689)
+      upd["preview_start_sec"] = 0.0
+      upd["cue_sec"] = 0.0
 
     t.update(upd)
     apply_canonical_bpm_override(t, beatgrids_by_id)

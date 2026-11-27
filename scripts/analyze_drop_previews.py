@@ -665,22 +665,33 @@ def detect_drop(t: dict, f: dict) -> dict | None:
     }
 
 
+def is_psychedailies_track(t: dict) -> bool:
+    era = str(t.get("era") or t.get("era_id") or "").strip().lower()
+    tid = str(t.get("id") or "").strip().lower()
+    return era == "psychedailies" or tid.startswith("psychedailies_")
+
+
 def apply_drop_previews_to_corpus(data: dict, drop_map: dict[str, dict]) -> int:
     """Surgically update preview cues on drop tracks across `tracks`, `eras`, and `phases`."""
     updated_ids = set()
 
     def _patch_track_obj(tr: dict) -> None:
         tid = str(tr.get("id") or "")
+        is_psy = is_psychedailies_track(tr)
         entry = DROP_PREVIEW_OVERRIDES.get(tid) or drop_map.get(tid)
         if entry and entry.get("has_drop"):
             tr["has_drop"] = True
             tr["drop_sec"] = float(entry["drop_sec"])
-            tr["preview_start_sec"] = float(entry["preview_start_sec"])
+            tr["preview_start_sec"] = 0.0 if is_psy else float(entry["preview_start_sec"])
             tr["preview_dur_sec"] = float(entry["preview_dur_sec"])
             updated_ids.add(tid)
         else:
             tr.pop("has_drop", None)
             tr.pop("drop_sec", None)
+        if is_psy:
+            tr["preview_start_sec"] = 0.0
+            tr["cue_sec"] = 0.0
+            updated_ids.add(tid)
 
     for tr in data.get("tracks", []):
         if isinstance(tr, dict):
@@ -738,17 +749,18 @@ def main() -> None:
 
     for t in tracks:
         tid = str(t["id"])
+        is_psy = is_psychedailies_track(t)
         cl = str(t.get("cluster_label") or "Unknown")
         cluster_stats[cl][0] += 1
         f = feats[tid]
         has_drums, drum_score = evaluate_drum_gate(t, f)
-        prev_before = round(float(t.get("preview_start_sec") or 0.0), 2)
+        prev_before = 0.0 if is_psy else round(float(t.get("preview_start_sec") or 0.0), 2)
         if not has_drums:
             ov = DROP_PREVIEW_OVERRIDES.get(tid)
             if ov and ov.get("has_drop"):
                 drop_count += 1
                 cluster_stats[cl][2] += 1
-                out_records[tid] = {
+                rec = {
                     "id": tid,
                     "title": t.get("title", tid),
                     "cluster_label": cl,
@@ -758,6 +770,9 @@ def main() -> None:
                     "old_preview_start_sec": prev_before,
                     **ov,
                 }
+                if is_psy:
+                    rec["preview_start_sec"] = 0.0
+                out_records[tid] = rec
             else:
                 out_records[tid] = {
                     "id": tid,
@@ -768,7 +783,7 @@ def main() -> None:
                     "drum_score": drum_score,
                     "has_drop": False,
                     "old_preview_start_sec": prev_before,
-                    "preview_start_sec": prev_before,
+                    "preview_start_sec": 0.0 if is_psy else prev_before,
                 }
             continue
 
@@ -778,7 +793,7 @@ def main() -> None:
         if drop_info:
             drop_count += 1
             cluster_stats[cl][2] += 1
-            out_records[tid] = {
+            rec = {
                 "id": tid,
                 "title": t.get("title", tid),
                 "cluster_label": cl,
@@ -787,6 +802,9 @@ def main() -> None:
                 "old_preview_start_sec": prev_before,
                 **drop_info,
             }
+            if is_psy:
+                rec["preview_start_sec"] = 0.0
+            out_records[tid] = rec
         else:
             out_records[tid] = {
                 "id": tid,
@@ -797,7 +815,7 @@ def main() -> None:
                 "drum_score": drum_score,
                 "has_drop": False,
                 "old_preview_start_sec": prev_before,
-                "preview_start_sec": prev_before,
+                "preview_start_sec": 0.0 if is_psy else prev_before,
             }
 
     payload = {

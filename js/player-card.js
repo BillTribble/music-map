@@ -214,7 +214,7 @@
 
   function isPsychedailiesTrack(t) {
     if (!t) return false;
-    const era = String(t.era || "").trim().toLowerCase();
+    const era = String(t.era || t.era_id || "").trim().toLowerCase();
     const tid = String(t.id || "").trim().toLowerCase();
     return era === "psychedailies" || tid.startsWith("psychedailies_");
   }
@@ -365,11 +365,63 @@
 
   function getPreviewStart(t) {
     if (!t) return 0;
+    if (isPsychedailiesTrack(t)) return 0;
     const hasDropCue = Boolean(t.has_drop) && Number.isFinite(t.preview_start_sec) && Number(t.preview_start_sec) > 0;
     if (t.is_ai && !hasDropCue) return 0;
     if (Number.isFinite(t.preview_start_sec)) return Math.max(0, Number(t.preview_start_sec));
     if (Number.isFinite(t.cue_in_sec)) return Math.max(0, Number(t.cue_in_sec));
     return Math.max(0, Number(t.cue_sec) || 0);
+  }
+
+  function getAudibleEndSec(trackOrId, knownDur) {
+    const t = typeof trackOrId === "object" && trackOrId ? trackOrId : byId.get(String(trackOrId || ""));
+    if (typeof window !== "undefined" && window.ME_AUDIO && typeof window.ME_AUDIO.getAudibleEndSec === "function") {
+      return window.ME_AUDIO.getAudibleEndSec(t || trackOrId, null, knownDur);
+    }
+    const dur = Number.isFinite(Number(knownDur)) && Number(knownDur) > 0
+      ? Number(knownDur)
+      : (Number(t && t.full_duration_sec) || Number(t && t.duration_sec) || 0);
+    if (!t || !(dur > 0)) return 0;
+    let effEnd = dur;
+    if (t.has_mush === true && Number.isFinite(Number(t.mush_onset_sec)) && Number(t.mush_onset_sec) > 0) {
+      const mushLim = Number(t.mush_onset_sec) + 3.0;
+      if (mushLim > 12.0 && mushLim < effEnd) effEnd = mushLim;
+    }
+    const peaks = Array.isArray(t.peaks) ? t.peaks : null;
+    if (!peaks || peaks.length < 16 || dur <= 6.0) return effEnd;
+    const n = peaks.length;
+    const maxBin = Math.min(n - 1, Math.max(0, Math.floor((effEnd / dur) * n) - 1));
+    if (maxBin < 8) return effEnd;
+    const activeSlice = [];
+    const nonzero = [];
+    for (let i = 0; i <= maxBin; i++) {
+      const v = Number(peaks[i]) || 0;
+      activeSlice.push(v);
+      if (v > 2.0) nonzero.push(v);
+    }
+    const sample = (nonzero.length >= 6 ? nonzero : activeSlice).slice().sort((a, b) => a - b);
+    const pct = (q) => {
+      if (!sample.length) return 0;
+      const pos = clamp(q, 0, 1) * (sample.length - 1);
+      const lo = Math.floor(pos);
+      const hi = Math.min(sample.length - 1, lo + 1);
+      return sample[lo] + (sample[hi] - sample[lo]) * (pos - lo);
+    };
+    const p80 = pct(0.80);
+    const p50 = pct(0.50);
+    if (p80 <= 5.0) return effEnd;
+    const thr = clamp(Math.min(0.18 * p80, 0.45 * p50), 4.0, 22.0);
+    const minBin = Math.max(3, Math.floor(0.22 * (maxBin + 1)));
+    let last = maxBin;
+    while (last > minBin) {
+      const cur = activeSlice[last];
+      const prev = activeSlice[last - 1];
+      const nxt = last + 1 <= maxBin ? activeSlice[last + 1] : 0;
+      if ((cur >= thr && (prev >= thr * 0.72 || nxt >= thr * 0.72)) || (0.5 * (cur + prev) >= thr)) break;
+      last -= 1;
+    }
+    const audEnd = Math.min(effEnd, ((last + 1) / n) * dur);
+    return effEnd - audEnd < 0.5 ? effEnd : Number(audEnd.toFixed(3));
   }
 
   function formatClock(sec, roundNearest = false) {
@@ -2317,6 +2369,8 @@
     setWeb3FormsKey() {},
     refreshWaveform: syncWaveVisuals,
     getPreviewStart,
+    getAudibleEndSec,
+    isPsychedailiesTrack,
     getShareUrl: (tid) => buildTrackShareUrl(tid || selectedId),
     isWorkInProgress,
     formatSimpleKey,

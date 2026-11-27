@@ -117,11 +117,86 @@ BEATGRID_OVERRIDES: dict[str, dict] = {
         "bar_offset": 0,
         "phrase_bar": 0,
         "groove": "4x4",
-        "cue_in_sec": 0.004,
-        "mix_out_sec": 30.724,
-        "phrase_fade_sec": 38.404,
+        "cue_in_sec": 0.0,
+        "audible_end_sec": 46.08,
+        "mix_out_sec": 42.244,
+        "phrase_fade_sec": 42.244,
     },
 }
+
+
+def is_psychedailies_track(track: dict) -> bool:
+    era = str(track.get("era") or track.get("era_id") or "").strip().lower()
+    tid = str(track.get("id") or "").strip().lower()
+    return era == "psychedailies" or tid.startswith("psychedailies_")
+
+
+def compute_audible_end_sec(track: dict, full_dur: float) -> float:
+    """Find last sustained musical energy above near-silence across `full_dur` (post-024701)."""
+    eff_end = float(full_dur)
+    if track.get("has_mush") is True and track.get("mush_onset_sec"):
+        mush_lim = float(track["mush_onset_sec"]) + 3.0
+        if 12.0 < mush_lim < eff_end:
+            eff_end = mush_lim
+    peaks = track.get("peaks") or []
+    if len(peaks) < 16 or full_dur <= 6.0:
+        return round(eff_end, 3)
+
+    pk = np.asarray(peaks, dtype=np.float64)
+    n = len(pk)
+    max_bin = min(n - 1, max(0, int(math.floor((eff_end / full_dur) * n)) - 1))
+    if max_bin < 8:
+        return round(eff_end, 3)
+
+    active_slice = pk[: max_bin + 1]
+    nonzero = active_slice[active_slice > 2.0]
+    sample = nonzero if len(nonzero) >= 6 else active_slice
+    p80 = float(np.percentile(sample, 80))
+    p50 = float(np.percentile(sample, 50))
+    if p80 <= 5.0:
+        return round(eff_end, 3)
+
+    thr = float(np.clip(min(0.18 * p80, 0.45 * p50), 4.0, 22.0))
+    min_bin = max(3, int(0.22 * (max_bin + 1)))
+    last_sustained = max_bin
+    while last_sustained > min_bin:
+        cur = float(pk[last_sustained])
+        prev = float(pk[last_sustained - 1])
+        nxt = float(pk[last_sustained + 1]) if last_sustained + 1 <= max_bin else 0.0
+        if (cur >= thr and (prev >= thr * 0.72 or nxt >= thr * 0.72)) or (0.5 * (cur + prev) >= thr):
+            break
+        last_sustained -= 1
+
+    aud_end = min(eff_end, ((last_sustained + 1) / n) * full_dur)
+    if eff_end - aud_end < 0.5:
+        return round(eff_end, 3)
+    return round(aud_end, 3)
+
+
+def compute_psychedailies_tail_mixout(
+    audible_end: float,
+    groove: str,
+    bpm_out: float,
+    fb_out: float,
+    bar_offset: int,
+) -> float:
+    """Place outgoing Psychedailies mix-out right at the very tail before `audible_end` (post-024688)."""
+    beat_sec = 60.0 / max(45.0, bpm_out)
+    bar_sec = 4.0 * beat_sec
+    first_bar = fb_out + int(bar_offset) * beat_sec
+    if groove == "ambient":
+        fade_s = min(2.4, max(1.5, 0.08 * audible_end))
+        return round(max(0.5, audible_end - fade_s), 4)
+    min_tail = max(2.0, min(3.8, 1.35 * bar_sec))
+    target_max = audible_end - min_tail
+    b_idx = int(math.floor((target_max - first_bar + 0.05) / bar_sec))
+    if b_idx >= 1:
+        mo = first_bar + b_idx * bar_sec
+        if audible_end - mo > 4.4 and (audible_end - (mo + bar_sec)) >= max(1.8, 0.95 * bar_sec):
+            b_idx += 1
+            mo = first_bar + b_idx * bar_sec
+        return round(mo, 4)
+    return round(max(0.5, audible_end - min(3.2, 0.25 * audible_end)), 4)
 
 _PARAMS_CACHE: dict | None = None
 _GRID_BPM: np.ndarray | None = None
@@ -661,14 +736,16 @@ def analyze_beatgrid_and_groove(
         else:
             groove = "broken"
 
-    # ---- Cue-In (`cue_in_sec`) & Mix-Out (`mix_out_sec`) ----
+    # ---- Cue-In (`cue_in_sec`), Audible End (`audible_end_sec`) & Mix-Out (`mix_out_sec`) ----
+    is_psy = is_psychedailies_track(track)
     first_bar_sec = first_beat_sec + bar_offset * beat_sec
     first_phrase_sec = first_bar_sec + phrase_bar * bar_sec
 
-    # Cue-in: find first bar/phrase downbeat past dead silence where intro groove/sound is established
+    # Cue-in: Psychedailies & ambient tracks always fade in right from 0.0s (post-024688);
+    # other rhythmic tracks find the first bar/phrase downbeat past dead silence.
     win_arr = env["win"]
-    cue_in_sec = round(first_bar_sec, 3)
-    if groove != "ambient" and len(win_arr) >= 4:
+    cue_in_sec = 0.0 if (is_psy or groove == "ambient") else round(first_bar_sec, 3)
+    if not is_psy and groove != "ambient" and len(win_arr) >= 4:
         win_db = win_arr[:, 0]
         body_db = float(np.percentile(win_db, 80))
         audible_win = np.flatnonzero(win_db >= body_db - 20.0)
@@ -686,29 +763,9 @@ def analyze_beatgrid_and_groove(
             if rem_to_phrase == 1 and (cand_bar + bar_sec) <= max_intro_s + 0.5:
                 cand_bar += bar_sec
             cue_in_sec = round(min(cand_bar, max(0.0, full_dur - 8.0)), 3)
-    elif groove == "ambient":
-        cue_in_sec = 0.0
 
-    # Mix-out: find audible end (using full-track `peaks` across `full_dur` + AI mush cutoff)
-    eff_end = float(full_dur)
-    if track.get("has_mush") is True and track.get("mush_onset_sec"):
-        mush_lim = float(track["mush_onset_sec"]) + 3.0
-        if 12.0 < mush_lim < eff_end:
-            eff_end = mush_lim
-
-    peaks = track.get("peaks") or []
-    audible_end = eff_end
-    if len(peaks) >= 32 and full_dur > 16.0:
-        pk_arr = np.asarray(peaks, dtype=np.float64)
-        p80 = float(np.percentile(pk_arr, 80))
-        if p80 > 5.0:
-            # Walk backward from eff_end to skip silent/near-silent reverb tail (< 16% of p80 peak)
-            max_bin = min(len(pk_arr) - 1, int(math.floor((eff_end / full_dur) * len(pk_arr))))
-            thr_pk = max(3.0, 0.16 * p80)
-            last_good = max_bin
-            while last_good > int(0.55 * max_bin) and pk_arr[last_good] < thr_pk:
-                last_good -= 1
-            audible_end = min(eff_end, ((last_good + 1) / len(pk_arr)) * full_dur)
+    # Audible end: detect trailing silence / near-silence across `full_dur` (post-024701)
+    audible_end = compute_audible_end_sec(track, full_dur)
 
     bpm_out = round(bpm, 2)
     fb_out = round(first_beat_sec, 4)
@@ -720,7 +777,7 @@ def analyze_beatgrid_and_groove(
 
     def _calc_phrase_fade_sec() -> float:
         res_pf = max(1.8, 1.5 * bar_sec_out)
-        hard_pf = eff_end - max(1.2, 1.1 * bar_sec_out)
+        hard_pf = audible_end - max(1.2, 1.1 * bar_sec_out)
         target_pf = min(hard_pf, audible_end - res_pf)
         max_p_pf = int(math.floor((hard_pf - first_phrase_out) / phrase_sec_out))
         if max_p_pf >= 1:
@@ -731,10 +788,13 @@ def analyze_beatgrid_and_groove(
             return round(first_phrase_out + p_i * phrase_sec_out, 4)
         return round(max(0.0, audible_end - max(1.8, bar_sec_out)), 3)
 
-    if groove == "4x4":
-        # Reserve >= 5.2 bars (~10s) of solid audio from the 4-bar phrase boundary for the 5-bar DJ blend
+    if is_psy:
+        mix_out_sec = compute_psychedailies_tail_mixout(audible_end, groove, bpm_out, fb_out, int(bar_offset))
+        phrase_fade_sec = mix_out_sec
+    elif groove == "4x4":
+        # Reserve >= 5.2 bars (~10s) of solid audio before audible_end for the 5-bar DJ blend
         reserve_sec = max(8.5, 5.2 * bar_sec_out)
-        hard_max = eff_end - max(1.8, 2.2 * bar_sec_out)
+        hard_max = audible_end - max(1.8, 2.2 * bar_sec_out)
         target_mix_max = min(hard_max, audible_end - reserve_sec)
         max_p_hard = int(math.floor((hard_max - first_phrase_out) / phrase_sec_out))
         if max_p_hard >= 1:
@@ -752,7 +812,8 @@ def analyze_beatgrid_and_groove(
         mix_out_sec = _calc_phrase_fade_sec()
         phrase_fade_sec = mix_out_sec
     else:
-        mix_out_sec = round(max(min(cue_in_sec + bar_sec_out, max(0.0, full_dur - 2.0)), min(max(0.0, audible_end - 2.2), max(0.0, full_dur - 1.5))), 3)
+        fade_amb = 2.4 if (full_dur - audible_end >= 1.5) else 1.65
+        mix_out_sec = round(max(0.5, min(audible_end - fade_amb, max(0.5, full_dur - 1.5))), 3)
         phrase_fade_sec = mix_out_sec
 
     return {
@@ -764,6 +825,7 @@ def analyze_beatgrid_and_groove(
         "energy_dj": int(energy_dj),
         "groove": groove,
         "cue_in_sec": cue_in_sec,
+        "audible_end_sec": round(audible_end, 3),
         "mix_out_sec": mix_out_sec,
         "phrase_fade_sec": phrase_fade_sec,
     }
@@ -853,23 +915,32 @@ def process_one_track(args_tuple: tuple[dict, dict, str, str]) -> tuple[str, dic
         return tid, entry
     except Exception:
         # Clean fallback from catalog fields if decode fails or clip is extremely short
-        bpm_fb = float(BPM_OVERRIDES.get(tid) or cat_bpm or 120.0)
+        bpm_fb = round(float(BPM_OVERRIDES.get(tid) or cat_bpm or 120.0), 2)
         beat_s = 60.0 / bpm_fb
         bar_s = 4.0 * beat_s
+        fb_s = round(float(track.get("beat_phase_sec") or 0.0) % beat_s, 4)
         groove_fb = "ambient" if track.get("is_spoken_word") else (
             "4x4" if str(track.get("groove_style")) == "four_on_floor" else "broken"
         )
+        aud_fb = compute_audible_end_sec(track, full_dur)
+        if is_psychedailies_track(track):
+            mo_fb = compute_psychedailies_tail_mixout(aud_fb, groove_fb, bpm_fb, fb_s, 0)
+            pf_fb = mo_fb
+        else:
+            mo_fb = round(max(0.0, aud_fb - 5.0 * bar_s), 3)
+            pf_fb = round(max(0.0, aud_fb - 2.0 * bar_s), 3)
         fb_entry = {
-            "bpm": round(bpm_fb, 2),
-            "first_beat_sec": round(float(track.get("beat_phase_sec") or 0.0) % beat_s, 4),
+            "bpm": bpm_fb,
+            "first_beat_sec": fb_s,
             "bar_offset": 0,
             "phrase_bar": 0,
             "beat_clarity": round(float(track.get("pulse_clarity") or 0.35), 3),
             "energy_dj": int(track.get("energy") or 5),
             "groove": groove_fb,
             "cue_in_sec": 0.0,
-            "mix_out_sec": round(max(0.0, full_dur - 5.0 * bar_s), 3),
-            "phrase_fade_sec": round(max(0.0, full_dur - 2.0 * bar_s), 3),
+            "audible_end_sec": aud_fb,
+            "mix_out_sec": mo_fb,
+            "phrase_fade_sec": pf_fb,
         }
         if tid in BEATGRID_OVERRIDES:
             fb_entry.update(BEATGRID_OVERRIDES[tid])

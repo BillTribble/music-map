@@ -19,10 +19,12 @@
   const TEMPO_TOL_4X4 = 0.12;      // ±12% pitch-steady BPM match window for 4/4 blends
   const TEMPO_TOL_BROKEN = 0.10;   // ±10% pitch-steady BPM match window for broken-beat fades
   const AUTO_4X4_BLEND_BARS = 5.0; // 1 bar highs-in + 2 bars bass-swap + 2 bars outgoing fade (~9.5-10.5s)
+  const PSY_AUTO_BLEND_BARS = 2.0; // Tight ~1.5-2.2 bar start/end blend for short Psychedailies (post-024688)
   const MANUAL_BLEND_BARS = 1.0;   // Immediate 1-bar (4-beat) smooth transition on Next / click
   const BROKEN_FADE_BARS = 1.0;    // Short 1-bar (4-beat) beat-synced fade on broken-beat tracks
   const TEMPO_GLIDE_BARS = 2.0;    // Smooth post-blend tempo glide back to 1.0x
   const AMBIENT_FADE_MS = 1500;
+  const AMBIENT_TAIL_FADE_MS = 2400;
   const MUSH_TASTE_SEC = 3.0;
   const MUSH_FADE_MS = 2500;
   const MUSH_MIN_FACTOR = 0.02;
@@ -128,6 +130,68 @@
     }
   }
 
+  function isPsychedailiesTrack(t) {
+    if (!t) return false;
+    const era = String(t.era || t.era_id || "").trim().toLowerCase();
+    const tid = String(t.id || "").trim().toLowerCase();
+    return era === "psychedailies" || tid.startsWith("psychedailies_");
+  }
+
+  function percentileLinear(sortedArr, q01) {
+    if (!sortedArr.length) return 0;
+    if (sortedArr.length === 1) return sortedArr[0];
+    const pos = clamp(q01, 0, 1) * (sortedArr.length - 1);
+    const lo = Math.floor(pos);
+    const hi = Math.min(sortedArr.length - 1, lo + 1);
+    const frac = pos - lo;
+    return sortedArr[lo] + (sortedArr[hi] - sortedArr[lo]) * frac;
+  }
+
+  function computeAudibleEndFromPeaks(track, fullDur) {
+    const dur = Number(fullDur) || 0;
+    if (!track || dur <= 0) return 0;
+    let effEnd = dur;
+    if (track.has_mush === true && Number.isFinite(Number(track.mush_onset_sec)) && Number(track.mush_onset_sec) > 0) {
+      const mushLim = Number(track.mush_onset_sec) + MUSH_TASTE_SEC;
+      if (mushLim > 12.0 && mushLim < effEnd) effEnd = mushLim;
+    }
+    const peaks = Array.isArray(track.peaks) ? track.peaks : null;
+    if (!peaks || peaks.length < 16 || dur <= 6.0) return effEnd;
+
+    const n = peaks.length;
+    const maxBin = Math.min(n - 1, Math.max(0, Math.floor((effEnd / dur) * n) - 1));
+    if (maxBin < 8) return effEnd;
+
+    const activeSlice = new Array(maxBin + 1);
+    const nonzero = [];
+    for (let i = 0; i <= maxBin; i++) {
+      const v = Number(peaks[i]) || 0;
+      activeSlice[i] = v;
+      if (v > 2.0) nonzero.push(v);
+    }
+    const sample = (nonzero.length >= 6 ? nonzero : activeSlice).slice().sort((a, b) => a - b);
+    const p80 = percentileLinear(sample, 0.80);
+    const p50 = percentileLinear(sample, 0.50);
+    if (p80 <= 5.0) return effEnd;
+
+    const thr = clamp(Math.min(0.18 * p80, 0.45 * p50), 4.0, 22.0);
+    const minBin = Math.max(3, Math.floor(0.22 * (maxBin + 1)));
+    let lastSustained = maxBin;
+    while (lastSustained > minBin) {
+      const cur = activeSlice[lastSustained];
+      const prev = activeSlice[lastSustained - 1];
+      const nxt = lastSustained + 1 <= maxBin ? activeSlice[lastSustained + 1] : 0;
+      if ((cur >= thr && (prev >= thr * 0.72 || nxt >= thr * 0.72)) || (0.5 * (cur + prev) >= thr)) {
+        break;
+      }
+      lastSustained -= 1;
+    }
+
+    const audEnd = Math.min(effEnd, ((lastSustained + 1) / n) * dur);
+    if (effEnd - audEnd < 0.5) return effEnd;
+    return Number(audEnd.toFixed(3));
+  }
+
   function resolveRawTrackUrls(t) {
     if (!t) return [];
     if (typeof window !== "undefined" && typeof window.BTMM_LOCAL_AUDIO_MAP === "object" && window.BTMM_LOCAL_AUDIO_MAP) {
@@ -136,7 +200,11 @@
         return [mapped];
       }
     }
-    const raw = [t.stream_url, t.mp3_320_url, t.mp3_url, t.preview_url, t.file];
+    const hasFullStream = Boolean(t.stream_url || t.mp3_320_url || t.mp3_url);
+    // Psychedailies previews & playback always start at 0:00 (post-024689): never fall back to mid-track cut .mp3 clips when full stream exists
+    const raw = (isPsychedailiesTrack(t) && hasFullStream)
+      ? [t.stream_url, t.mp3_320_url, t.mp3_url]
+      : [t.stream_url, t.mp3_320_url, t.mp3_url, t.preview_url, t.file];
     const out = [];
     for (let i = 0; i < raw.length; i++) {
       const u = raw[i];
@@ -223,9 +291,15 @@
       else groove = "broken";
     }
 
-    const cueInSec = g && Number.isFinite(Number(g.cue_in_sec))
-      ? Math.max(0, Number(g.cue_in_sec))
-      : (groove === "ambient" ? 0 : firstBarSec);
+    const isPsy = isPsychedailiesTrack(tr) || tid.toLowerCase().startsWith("psychedailies_");
+    const cueInSec = isPsy
+      ? 0
+      : (g && Number.isFinite(Number(g.cue_in_sec))
+        ? Math.max(0, Number(g.cue_in_sec))
+        : (groove === "ambient" ? 0 : firstBarSec));
+    const audibleEndSec = g && Number.isFinite(Number(g.audible_end_sec)) && Number(g.audible_end_sec) > 0
+      ? Number(g.audible_end_sec)
+      : null;
     const mixOutSec = g && Number.isFinite(Number(g.mix_out_sec)) ? Math.max(0, Number(g.mix_out_sec)) : null;
     const phraseFadeSec = g && Number.isFinite(Number(g.phrase_fade_sec))
       ? Math.max(0, Number(g.phrase_fade_sec))
@@ -236,6 +310,7 @@
 
     return {
       trackId: tid,
+      isPsychedailies: isPsy,
       bpm,
       beatSec,
       barSec,
@@ -248,9 +323,29 @@
       beatClarity,
       groove,
       cueInSec,
+      audibleEndSec,
       mixOutSec,
       phraseFadeSec,
     };
+  }
+
+  function getAudibleEndSec(trackOrId, gridOpt, knownDur) {
+    const tr = typeof trackOrId === "object" && trackOrId ? trackOrId : byId.get(String(trackOrId || ""));
+    const g = gridOpt || (tr ? getTrackGrid(tr) : null);
+    const catDur = Number(tr && tr.full_duration_sec) || Number(tr && tr.duration_sec) || 0;
+    const dur = Number.isFinite(Number(knownDur)) && Number(knownDur) > 0 ? Number(knownDur) : catDur;
+    if (!(dur > 0)) return 0;
+
+    const peakAudEnd = tr ? computeAudibleEndFromPeaks(tr, dur) : dur;
+    let gridAudEnd = dur;
+    if (g && Number.isFinite(g.audibleEndSec) && g.audibleEndSec > 0) {
+      if (catDur > 0 && Math.abs(dur - catDur) > 1.5) {
+        gridAudEnd = Math.min(dur, (g.audibleEndSec / catDur) * dur);
+      } else {
+        gridAudEnd = Math.min(dur, g.audibleEndSec);
+      }
+    }
+    return Number(clamp(Math.min(peakAudEnd, gridAudEnd), Math.min(dur, 3.5), dur).toFixed(3));
   }
 
   function computeTempoMatch(gridA, gridB, currentRateA, tolPct) {
@@ -517,7 +612,8 @@
   function computeTrackBounds(track, isFullTrack, knownDur) {
     if (!track) return { duration: 0, previewStart: 0, previewEnd: 0, previewDur: 20 };
     const isAi = Boolean(track.is_ai);
-    const hasDropCue = Boolean(track.has_drop) && Number.isFinite(track.preview_start_sec) && Number(track.preview_start_sec) > 0;
+    const isPsy = isPsychedailiesTrack(track);
+    const hasDropCue = !isPsy && Boolean(track.has_drop) && Number.isFinite(track.preview_start_sec) && Number(track.preview_start_sec) > 0;
     const finiteKnown = Number.isFinite(knownDur) && knownDur > 0 ? knownDur : 0;
     if (isFullTrack) {
       const estDur = finiteKnown || Number(track.full_duration_sec) || Number(track.duration_sec) || 0;
@@ -525,9 +621,11 @@
         const fullSpanDur = Math.max(4, estDur || Number(track.duration_sec) || 22);
         return { duration: estDur, previewStart: 0, previewEnd: estDur, previewDur: fullSpanDur };
       }
-      const rawCueVal = Number.isFinite(track.preview_start_sec)
-        ? Number(track.preview_start_sec)
-        : (Number.isFinite(track.cue_in_sec) ? Number(track.cue_in_sec) : (Number(track.cue_sec) || 0));
+      const rawCueVal = isPsy
+        ? 0
+        : (Number.isFinite(track.preview_start_sec)
+          ? Number(track.preview_start_sec)
+          : (Number.isFinite(track.cue_in_sec) ? Number(track.cue_in_sec) : (Number(track.cue_sec) || 0)));
       const rawStart = Math.max(0, rawCueVal);
       const previewStart = estDur > 1.5 ? Math.min(rawStart, Math.max(0, estDur - 1.5)) : rawStart;
       const previewDur = Math.max(4, Number(track.preview_dur_sec) || Number(track.duration_sec) || 22);
@@ -535,7 +633,7 @@
       return { duration: estDur, previewStart, previewEnd, previewDur };
     }
     const clipDur = finiteKnown || Number(track.duration_sec) || Number(track.preview_dur_sec) || 0;
-    const rawCue = isAi ? 0 : Math.max(0, Number(track.cue_sec) || 0);
+    const rawCue = (isAi || isPsy) ? 0 : Math.max(0, Number(track.cue_sec) || 0);
     const previewStart = clipDur > 1.0 ? Math.min(rawCue, Math.max(0, clipDur - 1.0)) : rawCue;
     const previewEnd = clipDur > 0 ? clipDur : Math.max(previewStart + 16, 20);
     return { duration: clipDur, previewStart, previewEnd, previewDur: Math.max(4, previewEnd - previewStart) };
@@ -981,27 +1079,153 @@
       };
     }
 
-    const effEnd = realDur;
+    const audibleEnd = getAudibleEndSec(track, gridA, realDur);
+    const userSoughtIntoQuietTail = lastManualSeekSec !== null && lastManualSeekSec >= audibleEnd - 1.2;
+    const effEnd = userSoughtIntoQuietTail ? realDur : clamp(audibleEnd, Math.min(realDur, 4.0), realDur);
+    const hasQuietTail = !userSoughtIntoQuietTail && (realDur - effEnd >= 1.5);
+    const isOutPsy = isPsychedailiesTrack(track);
+    const isInPsy = Boolean(nextTrack && isPsychedailiesTrack(nextTrack));
     const both4x4 = gridA.groove === "4x4" && gridB && gridB.groove === "4x4";
     const tempoMatch = both4x4
       ? computeTempoMatch(gridA, gridB, playbackRate, TEMPO_TOL_4X4)
       : { matched: false, rateB: 1.0, mult: 1.0 };
     const usePrecomputedMixOut = gridA.mixOutSec !== null;
 
-    // 2. 4/4 DJ Phrase Blend (5 bars across 4-bar phrase boundary)
-    if (both4x4 && tempoMatch.matched && effEnd > gridA.firstPhraseSec + gridA.phraseSec + gridA.barSec * 2.2) {
-      const minReserve = Math.max(8.0, AUTO_4X4_BLEND_BARS * gridA.barSec + 0.35);
-      const maxStart = effEnd - minReserve;
-      const mixTarget = usePrecomputedMixOut ? Math.min(gridA.mixOutSec, maxStart) : maxStart;
-      const baseQ = quantizePhraseBoundary(gridA, mixTarget, effEnd, 2.2);
-      const adjQ = resolveSeekAdjustedTrigger(gridA, baseQ, effEnd, lastManualSeekSec, 2.0);
-      const availBars = Math.max(0.5, (effEnd - adjQ.triggerSec) / gridA.barSec);
-      const totalBars = clamp(Math.min(AUTO_4X4_BLEND_BARS, availBars - 0.15), 1.5, AUTO_4X4_BLEND_BARS);
-      const endSec = Math.min(effEnd, adjQ.triggerSec + totalBars * gridA.barSec);
+    // 1b. Outgoing Psychedaily: short jam -> tight tail fade right before `audibleEnd` (post-024688 + post-024701)
+    if (isOutPsy) {
+      if (gridA.groove !== "ambient" && effEnd > gridA.barSec * 2.0) {
+        const minTail = Math.max(2.0, Math.min(3.8, 1.35 * gridA.barSec));
+        const targetMax = effEnd - minTail;
+        const bIdx = Math.floor((targetMax - gridA.firstBarSec + 0.05) / gridA.barSec);
+        let barTrig;
+        if (bIdx >= 1) {
+          barTrig = gridA.firstBarSec + bIdx * gridA.barSec;
+          if (effEnd - barTrig > 4.4 && (effEnd - (barTrig + gridA.barSec)) >= Math.max(1.8, 0.95 * gridA.barSec)) {
+            barTrig += gridA.barSec;
+          }
+        } else {
+          barTrig = Math.max(0.5, effEnd - Math.min(3.2, 0.25 * effEnd));
+        }
+        if (usePrecomputedMixOut && gridA.mixOutSec < effEnd - 1.2 && gridA.mixOutSec >= effEnd - 5.0) {
+          barTrig = Math.min(gridA.mixOutSec, effEnd - Math.max(1.4, 0.9 * gridA.barSec));
+        }
+        if (lastManualSeekSec !== null && lastManualSeekSec > barTrig + 0.15) {
+          const nextBarIdx = Math.ceil((lastManualSeekSec + 0.15 - gridA.firstBarSec) / gridA.barSec);
+          const nextBarSec = gridA.firstBarSec + Math.max(0, nextBarIdx) * gridA.barSec;
+          barTrig = effEnd - nextBarSec >= gridA.barSec * 0.85
+            ? nextBarSec
+            : clamp(Math.max(lastManualSeekSec + 0.20, effEnd - gridA.barSec), 0.5, Math.max(0.5, effEnd - 0.35));
+        }
+
+        if (both4x4 && tempoMatch.matched) {
+          const effRateA = Number.isFinite(playbackRate) && playbackRate > 0 ? playbackRate : 1.0;
+          const leadInSecA = (isInPsy && gridB && gridB.firstBarSec > 0.02 && gridB.firstBarSec <= gridB.barSec * 0.85)
+            ? clamp(gridB.firstBarSec * (effRateA / (tempoMatch.rateB || 1.0)), 0, gridA.barSec * 0.75)
+            : 0;
+          const trig4 = Math.max(0.5, barTrig - leadInSecA);
+          const totalBars4 = clamp((effEnd - trig4) / gridA.barSec, 0.75, 2.75);
+          const endSec4 = Math.min(effEnd, trig4 + totalBars4 * gridA.barSec);
+          return {
+            triggerSec: trig4,
+            endSec: endSec4,
+            durationSec: Math.max(0.2, endSec4 - trig4),
+            bars: Number(totalBars4.toFixed(2)),
+            kind: "4x4",
+            blendType: "4x4-phrase-blend",
+            prewarmLeadSec: Math.max(4.5, 2.5 * gridA.barSec),
+            tempoMatch,
+            effEnd,
+            phraseOriginSec: gridA.firstBarSec,
+            phraseSec: gridA.barSec,
+            phraseIndex: null,
+            phraseAligned: false,
+            gridA,
+            gridB,
+            nextTrack,
+          };
+        }
+
+        const tmBrokenPsy = gridB && gridB.groove !== "ambient"
+          ? computeTempoMatch(gridA, gridB, playbackRate, TEMPO_TOL_BROKEN)
+          : { matched: false, rateB: 1.0, mult: 1.0 };
+        const totalBarsBrk = clamp((effEnd - barTrig) / gridA.barSec, 0.65, 2.6);
+        const endSecBrk = Math.min(effEnd, barTrig + totalBarsBrk * gridA.barSec);
+        return {
+          triggerSec: barTrig,
+          endSec: endSecBrk,
+          durationSec: Math.max(0.2, endSecBrk - barTrig),
+          bars: Number(totalBarsBrk.toFixed(2)),
+          kind: "broken",
+          blendType: "beat-short-1bar",
+          prewarmLeadSec: Math.max(4.5, 2.5 * gridA.barSec),
+          tempoMatch: tmBrokenPsy,
+          effEnd,
+          phraseOriginSec: gridA.firstBarSec,
+          phraseSec: gridA.barSec,
+          phraseIndex: null,
+          phraseAligned: false,
+          gridA,
+          gridB,
+          nextTrack,
+        };
+      }
+
+      const psyFadeSec = Math.min(2.4, Math.max(1.5, 0.08 * effEnd));
+      let psyTrig = usePrecomputedMixOut && gridA.mixOutSec < effEnd - 0.8
+        ? Math.min(gridA.mixOutSec, effEnd - psyFadeSec)
+        : Math.max(0.5, effEnd - psyFadeSec);
+      if (lastManualSeekSec !== null && lastManualSeekSec > psyTrig + 0.1) {
+        const rem = Math.max(0.4, effEnd - lastManualSeekSec);
+        psyTrig = clamp(
+          Math.max(lastManualSeekSec + 0.25, effEnd - Math.min(psyFadeSec, rem * 0.55)),
+          0.5,
+          Math.max(0.5, effEnd - 0.35)
+        );
+      }
       return {
-        triggerSec: adjQ.triggerSec,
+        triggerSec: psyTrig,
+        endSec: effEnd,
+        durationSec: Math.max(0.2, effEnd - psyTrig),
+        bars: null,
+        kind: "ambient",
+        blendType: "ambient-crossfade",
+        prewarmLeadSec: 5.5,
+        tempoMatch: { matched: false, rateB: 1.0, mult: 1.0 },
+        effEnd,
+        phraseOriginSec: gridA.firstPhraseSec,
+        phraseSec: gridA.phraseSec,
+        phraseIndex: null,
+        phraseAligned: false,
+        gridA,
+        gridB,
+        nextTrack,
+      };
+    }
+
+    // 2. 4/4 DJ Phrase Blend (5 bars across 4-bar phrase boundary, or tight 2-bar fade-in when incoming is a Psychedaily)
+    if (both4x4 && tempoMatch.matched && effEnd > gridA.firstPhraseSec + gridA.phraseSec + gridA.barSec * 2.2) {
+      const targetBlendBars = isInPsy ? PSY_AUTO_BLEND_BARS : AUTO_4X4_BLEND_BARS;
+      const minReserve = isInPsy
+        ? Math.max(3.6, PSY_AUTO_BLEND_BARS * gridA.barSec + 0.35)
+        : Math.max(8.0, AUTO_4X4_BLEND_BARS * gridA.barSec + 0.35);
+      const maxStart = effEnd - minReserve;
+      const mixTarget = (usePrecomputedMixOut && !isInPsy) ? Math.min(gridA.mixOutSec, maxStart) : maxStart;
+      const baseQ = quantizePhraseBoundary(gridA, mixTarget, effEnd, isInPsy ? 1.5 : 2.2);
+      const adjQ = resolveSeekAdjustedTrigger(gridA, baseQ, effEnd, lastManualSeekSec, isInPsy ? 1.4 : 2.0);
+      const effRateA = Number.isFinite(playbackRate) && playbackRate > 0 ? playbackRate : 1.0;
+      const leadInSecA = (isInPsy && gridB && gridB.firstBarSec > 0.02 && gridB.firstBarSec <= gridB.barSec * 0.85 && adjQ.triggerSec > 1.5)
+        ? clamp(gridB.firstBarSec * (effRateA / (tempoMatch.rateB || 1.0)), 0, gridA.barSec * 0.75)
+        : 0;
+      const trigSec = Math.max(0.5, adjQ.triggerSec - leadInSecA);
+      const leadInBarsA = leadInSecA / gridA.barSec;
+      const availBars = Math.max(0.5, (effEnd - trigSec) / gridA.barSec);
+      const desiredBars = targetBlendBars + leadInBarsA;
+      const totalBars = clamp(Math.min(desiredBars, availBars - 0.1), isInPsy ? 1.0 : 1.5, AUTO_4X4_BLEND_BARS);
+      const endSec = Math.min(effEnd, trigSec + totalBars * gridA.barSec);
+      return {
+        triggerSec: trigSec,
         endSec,
-        durationSec: Math.max(0.2, endSec - adjQ.triggerSec),
+        durationSec: Math.max(0.2, endSec - trigSec),
         bars: Number(totalBars.toFixed(2)),
         kind: "4x4",
         blendType: "4x4-phrase-blend",
@@ -1011,7 +1235,7 @@
         phraseOriginSec: adjQ.phraseOriginSec,
         phraseSec: adjQ.phraseSec,
         phraseIndex: adjQ.phraseIndex,
-        phraseAligned: adjQ.phraseAligned,
+        phraseAligned: adjQ.phraseAligned && leadInSecA < 0.02,
         gridA,
         gridB,
         nextTrack,
@@ -1020,7 +1244,7 @@
 
     // 3. Broken-beat / DnB / breakbeat / UK bass (and non-4x4-matched rhythmic tracks) ->
     //    Always trigger strictly at the end of a 4-bar phrase section (`firstPhraseSec + k * 4 * barSec`)
-    //    and fade smoothly over 1 bar on beat!
+    //    before `audibleEnd` and fade smoothly over 1 bar on beat!
     if (gridA.groove !== "ambient" && effEnd > gridA.barSec * 2.5) {
       const tmBroken = gridB && gridB.groove !== "ambient"
         ? computeTempoMatch(gridA, gridB, playbackRate, TEMPO_TOL_BROKEN)
@@ -1056,9 +1280,14 @@
       };
     }
 
-    // 4. Beatless ambient track -> smooth equal-power crossfade
-    const fadeSec = AMBIENT_FADE_MS / 1000;
-    let trigSec = Math.max(0.5, effEnd - fadeSec - 0.15);
+    // 4. Beatless ambient track -> smooth equal-power crossfade anchored before `audibleEnd` (e.g. Winter Mood, post-024701)
+    const fadeSec = (hasQuietTail ? AMBIENT_TAIL_FADE_MS : AMBIENT_FADE_MS) / 1000;
+    let trigSec = hasQuietTail
+      ? Math.max(0.5, effEnd - fadeSec)
+      : Math.max(0.5, effEnd - fadeSec - 0.15);
+    if (usePrecomputedMixOut && !userSoughtIntoQuietTail && gridA.mixOutSec < effEnd - 0.5 && gridA.mixOutSec >= effEnd - 4.0) {
+      trigSec = Math.min(trigSec, gridA.mixOutSec);
+    }
     if (lastManualSeekSec !== null && lastManualSeekSec > trigSec + 0.1) {
       const rem = Math.max(0.4, effEnd - lastManualSeekSec);
       trigSec = clamp(
@@ -1067,7 +1296,9 @@
         Math.max(0.5, effEnd - 0.35)
       );
     }
-    const endSec = Math.min(effEnd, trigSec + fadeSec);
+    const endSec = hasQuietTail
+      ? Math.min(realDur, Math.max(trigSec + 0.35, effEnd))
+      : Math.min(effEnd, trigSec + fadeSec);
     return {
       triggerSec: trigSec,
       endSec,
@@ -1306,12 +1537,15 @@
     const deck = decks[standbyIdx];
     if (!deck) return;
 
-    const hasDropCue = Boolean(nextTrack.has_drop) && Number(nextTrack.preview_start_sec) > 0.02;
-    const targetCue = plan && plan.blendType === "4x4-phrase-blend"
-      ? gridB.cueInSec
-      : (plan && plan.blendType === "beat-short-1bar" && gridB.groove !== "ambient"
+    const isNextPsy = isPsychedailiesTrack(nextTrack);
+    const hasDropCue = !isNextPsy && Boolean(nextTrack.has_drop) && Number(nextTrack.preview_start_sec) > 0.02;
+    const targetCue = isNextPsy
+      ? 0
+      : (plan && plan.blendType === "4x4-phrase-blend"
         ? gridB.cueInSec
-        : (hasDropCue ? Number(nextTrack.preview_start_sec) : 0));
+        : (plan && plan.blendType === "beat-short-1bar" && gridB.groove !== "ambient"
+          ? gridB.cueInSec
+          : (hasDropCue ? Number(nextTrack.preview_start_sec) : 0)));
 
     const pw = {
       deckIdx: standbyIdx,
@@ -1869,21 +2103,28 @@
     }
 
     const gridA = outVoice.grid || getTrackGrid(outVoice.track);
+    const isOutPsy = isPsychedailiesTrack(outVoice.track);
+    const isInPsy = isPsychedailiesTrack(inTrack);
     const curSecA = getVoiceCurrentTime(outVoice);
     const realDurA = outVoice.htmlAudio && Number.isFinite(outVoice.htmlAudio.duration) && outVoice.htmlAudio.duration > 0
       ? outVoice.htmlAudio.duration
       : (Number(outVoice.track && outVoice.track.full_duration_sec) || 60);
-    const availBarsA = Math.max(0.5, (realDurA - curSecA) / gridA.barSec);
+    const audibleEndA = getAudibleEndSec(outVoice.track, gridA, realDurA);
+    const effEndA = curSecA < audibleEndA - 0.4 ? audibleEndA : realDurA;
+    const availBarsA = Math.max(0.5, (effEndA - curSecA) / gridA.barSec);
     const isAuto = Boolean(opts && opts.fromAutoPlay);
 
-    // 1. Auto-Play 4/4 Phrase Blend (5 bars: 1 bar highs-in + 2 bars bass-swap + 2 bars fade-out)
+    // 1. Auto-Play 4/4 Phrase Blend (5 bars, or tight ~2-bar start/end blend when Psychedaily is outgoing/incoming)
     if (isAuto && gridA.groove === "4x4" && gridB.groove === "4x4") {
       const tm = (opts.djPlan && opts.djPlan.tempoMatch) || computeTempoMatch(gridA, gridB, outVoice.playbackRate, TEMPO_TOL_4X4);
       if (tm.matched) {
         const triggerRef = opts.djPlan && Number.isFinite(opts.djPlan.triggerSec) ? opts.djPlan.triggerSec : curSecA;
         const lateSecA = clamp(curSecA - triggerRef, 0, gridA.barSec * 0.5);
-        const phaseCompB = lateSecA * (gridB.bpm * tm.mult / Math.max(45, gridA.bpm));
-        const totalBars = clamp(Math.min(AUTO_4X4_BLEND_BARS, availBarsA - 0.15), 1.5, AUTO_4X4_BLEND_BARS);
+        const phaseCompB = isInPsy ? 0 : (lateSecA * (gridB.bpm * tm.mult / Math.max(45, gridA.bpm)));
+        const planBars = opts.djPlan && Number.isFinite(opts.djPlan.bars) && opts.djPlan.bars > 0
+          ? opts.djPlan.bars
+          : ((isOutPsy || isInPsy) ? PSY_AUTO_BLEND_BARS : AUTO_4X4_BLEND_BARS);
+        const totalBars = clamp(Math.min(planBars, availBarsA + 0.15), (isOutPsy || isInPsy) ? 0.75 : 1.5, AUTO_4X4_BLEND_BARS);
         return {
           shouldBlend: true,
           blendType: "4x4-phrase-blend",
@@ -1894,7 +2135,7 @@
           initialBassDbB: BASS_CUT_DB,
           initialGainB: 0.0,
           startSecOffsetB: phaseCompB,
-          useCueInB: true,
+          useCueInB: !isInPsy,
           glideBars: TEMPO_GLIDE_BARS,
         };
       }
@@ -1906,7 +2147,7 @@
         const tm = computeTempoMatch(gridA, gridB, outVoice.playbackRate, TEMPO_TOL_4X4);
         if (tm.matched) {
           const inBarBeatsA = (((curSecA - gridA.firstBarSec) / gridA.beatSec) % 4 + 4) % 4;
-          const phaseOffsetB = (inBarBeatsA * gridB.beatSec) / tm.mult;
+          const phaseOffsetB = isInPsy ? 0 : ((inBarBeatsA * gridB.beatSec) / tm.mult);
           const totalBars = Math.min(MANUAL_BLEND_BARS, Math.max(0.5, availBarsA));
           return {
             shouldBlend: true,
@@ -1919,7 +2160,7 @@
             initialGainB: 0.0,
             startSecOffsetB: phaseOffsetB,
             useCueInB: false,
-            snapStartToBarB: true,
+            snapStartToBarB: !isInPsy,
             glideBars: 1.5,
           };
         }
@@ -1928,7 +2169,7 @@
       if (gridA.groove !== "ambient" && gridB.groove !== "ambient") {
         const tm = computeTempoMatch(gridA, gridB, outVoice.playbackRate, TEMPO_TOL_BROKEN);
         const inBeatPhaseA = (((curSecA - gridA.firstBeatSec) / gridA.beatSec) % 1 + 1) % 1;
-        const phaseOffsetB = tm.matched ? (inBeatPhaseA * gridB.beatSec) / tm.mult : 0;
+        const phaseOffsetB = (!isInPsy && tm.matched) ? (inBeatPhaseA * gridB.beatSec) / tm.mult : 0;
         const totalBars = Math.min(MANUAL_BLEND_BARS, Math.max(0.5, availBarsA));
         return {
           shouldBlend: true,
@@ -1941,7 +2182,7 @@
           initialGainB: 0.0,
           startSecOffsetB: phaseOffsetB,
           useCueInB: false,
-          snapStartToBeatB: true,
+          snapStartToBeatB: !isInPsy,
           glideBars: 1.0,
         };
       }
@@ -1961,7 +2202,7 @@
       };
     }
 
-    // 3. Auto-Play Broken-Beat / DnB / UK Bass / Far-BPM -> Smooth 1-bar beat-synced short fade from 4-bar phrase end
+    // 3. Auto-Play Broken-Beat / DnB / UK Bass / Far-BPM -> Smooth beat-synced short fade
     if (gridA.groove !== "ambient") {
       const incomingRhythmic = gridB.groove !== "ambient";
       const tm = incomingRhythmic
@@ -1969,10 +2210,14 @@
         : { matched: false, rateB: 1.0, mult: 1.0 };
       const triggerRef = opts.djPlan && Number.isFinite(opts.djPlan.triggerSec) ? opts.djPlan.triggerSec : curSecA;
       const lateSecA = clamp(curSecA - triggerRef, 0, gridA.beatSec * 0.5);
-      const phaseCompB = (incomingRhythmic && tm.matched)
+      const phaseCompB = (!isInPsy && incomingRhythmic && tm.matched)
         ? lateSecA * (gridB.bpm * (tm.mult || 1.0) / Math.max(45, gridA.bpm))
         : 0;
-      const totalBars = Math.min(BROKEN_FADE_BARS, Math.max(0.5, availBarsA - 0.1));
+      const planBars = opts.djPlan && Number.isFinite(opts.djPlan.bars) && opts.djPlan.bars > 0
+        ? opts.djPlan.bars
+        : BROKEN_FADE_BARS;
+      const maxBrokenBars = isOutPsy ? 2.6 : BROKEN_FADE_BARS;
+      const totalBars = clamp(Math.min(planBars, Math.max(0.5, availBarsA + 0.1)), 0.5, maxBrokenBars);
       return {
         shouldBlend: true,
         blendType: "beat-short-1bar",
@@ -1983,19 +2228,22 @@
         initialBassDbB: 0.0,
         initialGainB: 0.0,
         startSecOffsetB: phaseCompB,
-        useCueInB: incomingRhythmic,
+        useCueInB: incomingRhythmic && !isInPsy,
         glideBars: 1.0,
       };
     }
 
-    // 4. Auto-Play Ambient -> Smooth equal-power crossfade
+    // 4. Auto-Play Ambient -> Smooth equal-power crossfade (matching djPlan.durationSec on quiet-tail tracks)
+    const ambDurMs = opts && opts.djPlan && Number.isFinite(opts.djPlan.durationSec) && opts.djPlan.durationSec > 0.2
+      ? Math.round(opts.djPlan.durationSec * 1000)
+      : AMBIENT_FADE_MS;
     return {
       shouldBlend: true,
       blendType: "ambient-crossfade",
       rateB: 1.0,
       mult: 1.0,
       totalBars: 1.0,
-      durMs: AMBIENT_FADE_MS,
+      durMs: ambDurMs,
       initialBassDbB: 0.0,
       initialGainB: 0.0,
       startSecOffsetB: 0,
@@ -2137,12 +2385,13 @@
       firstCand.isFullTrack,
       reusePrewarm && Number.isFinite(initEl.duration) ? initEl.duration : 0
     );
-    const hasDropCue = Boolean(tr.has_drop) && initBounds.previewStart > 0.02;
+    const isPsy = isPsychedailiesTrack(tr);
+    const hasDropCue = !isPsy && Boolean(tr.has_drop) && initBounds.previewStart > 0.02;
 
     let baseStartSec = 0;
     if (typeof opts.startSec === "number" && Number.isFinite(opts.startSec)) {
       baseStartSec = Math.max(0, opts.startSec);
-    } else if (opts.fromStart) {
+    } else if (opts.fromStart || isPsy) {
       baseStartSec = 0;
     } else if (transCfg.useCueInB) {
       baseStartSec = gridB.cueInSec;
@@ -2155,8 +2404,9 @@
     }
 
     // Snap manual blend cue to nearest bar/beat on incoming track + add beat-phase offset from outgoing track
+    // (Never skip past 0.0s on an incoming Psychedaily — post-024688 + post-024689)
     let initialStartSec = baseStartSec;
-    if (transCfg.shouldBlend && opts.startSec === undefined && !opts.fromStart) {
+    if (!isPsy && transCfg.shouldBlend && opts.startSec === undefined && !opts.fromStart) {
       if (transCfg.snapStartToBarB) {
         const bIdx = Math.max(0, Math.round((baseStartSec - gridB.firstBarSec) / gridB.barSec));
         initialStartSec = gridB.firstBarSec + bIdx * gridB.barSec + transCfg.startSecOffsetB;
@@ -2739,7 +2989,10 @@
 
   const djMixerApi = {
     getBeatGrid: getTrackGrid,
+    getAudibleEndSec,
+    isPsychedailiesTrack,
     quantizePhraseBoundary,
+    computeAutoMixPlan,
     getAutoMixWindow,
     computeTempoMatch,
     getOutputRms,
@@ -2781,6 +3034,7 @@
       getPlaybackState: buildPlaybackState,
       getProgress: buildPlaybackState,
       getAutoMixWindow,
+      getAudibleEndSec,
       getAutoPlay: () => autoPlay,
       setAutoPlay,
       onStateChange,

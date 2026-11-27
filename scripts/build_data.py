@@ -278,10 +278,10 @@ DROP_PREVIEW_OVERRIDES = {
         "duration_sec": 24.48,
         "bytes": 343913,
     },
-    "psychedailies_26": {  # '24' (post-024497: exact 125.00 BPM 4/4 -> Bar 6 Beat 1 9.60s lead-in to Bar 9 Beat 1 15.36s drop)
+    "psychedailies_26": {  # '24' (post-024497 + post-024689: exact 125.00 BPM 4/4, all Psychedailies start previews at 0.0s)
         "has_drop": True,
         "drop_sec": 15.36,
-        "preview_start_sec": 9.6,
+        "preview_start_sec": 0.0,
         "preview_dur_sec": 17.28,
     },
 }
@@ -1722,7 +1722,8 @@ def build_from_full_analysis(
                 t["era"] = new_era
                 t["year"] = new_yr
                 t["slot"] = new_slot
-            if str(t.get("era") or "").strip().lower() == "psychedailies" or str(t.get("id") or "").startswith("psychedailies_"):
+            is_psy = str(t.get("era") or "").strip().lower() == "psychedailies" or str(t.get("id") or "").startswith("psychedailies_")
+            if is_psy:
                 t["is_sketch"] = False
                 t["note"] = "Made in one day, with help from friends on Endlesss."
             else:
@@ -1733,6 +1734,10 @@ def build_from_full_analysis(
                     t["wip_eligible"] = False
             if tid in DROP_PREVIEW_OVERRIDES:
                 t.update(DROP_PREVIEW_OVERRIDES[tid])
+            if is_psy:
+                # Start all Psychedailies previews at 0:00 (post-024689)
+                t["preview_start_sec"] = 0.0
+                t["cue_sec"] = 0.0
             if tid in STYLE_OVERRIDES:
                 for ov_k, ov_v in STYLE_OVERRIDES[tid].items():
                     t[ov_k] = list(ov_v) if isinstance(ov_v, list) else ov_v
@@ -1932,6 +1937,9 @@ def main() -> None:
                 merged.update(CURATED_FREE_DOWNLOAD_OVERRIDES[tid])
             if tid in DROP_PREVIEW_OVERRIDES:
                 merged.update(DROP_PREVIEW_OVERRIDES[tid])
+            if eid == "psychedailies" or tid.startswith("psychedailies_"):
+                merged["preview_start_sec"] = 0.0
+                merged["cue_sec"] = 0.0
             if tid in STYLE_OVERRIDES:
                 for ov_k, ov_v in STYLE_OVERRIDES[tid].items():
                     merged[ov_k] = list(ov_v) if isinstance(ov_v, list) else ov_v

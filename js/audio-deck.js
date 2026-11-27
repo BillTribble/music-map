@@ -60,9 +60,64 @@
     return Math.max(lo, Math.min(hi, v));
   }
 
+  function isPsychedailiesTrack(t) {
+    if (!t) return false;
+    const era = String(t.era || t.era_id || "").trim().toLowerCase();
+    const tid = String(t.id || "").trim().toLowerCase();
+    return era === "psychedailies" || tid.startsWith("psychedailies_");
+  }
+
+  function getAudibleEndSec(track, fullDur) {
+    const dur = Number(fullDur) || 0;
+    if (!track || dur <= 0) return 0;
+    let effEnd = dur;
+    if (track.has_mush === true && Number.isFinite(Number(track.mush_onset_sec)) && Number(track.mush_onset_sec) > 0) {
+      const mushLim = Number(track.mush_onset_sec) + MUSH_TASTE_SEC;
+      if (mushLim > 12.0 && mushLim < effEnd) effEnd = mushLim;
+    }
+    const peaks = Array.isArray(track.peaks) ? track.peaks : null;
+    if (!peaks || peaks.length < 16 || dur <= 6.0) return effEnd;
+    const n = peaks.length;
+    const maxBin = Math.min(n - 1, Math.max(0, Math.floor((effEnd / dur) * n) - 1));
+    if (maxBin < 8) return effEnd;
+    const activeSlice = new Array(maxBin + 1);
+    const nonzero = [];
+    for (let i = 0; i <= maxBin; i++) {
+      const v = Number(peaks[i]) || 0;
+      activeSlice[i] = v;
+      if (v > 2.0) nonzero.push(v);
+    }
+    const sample = (nonzero.length >= 6 ? nonzero : activeSlice).slice().sort((a, b) => a - b);
+    const pct = (q) => {
+      if (!sample.length) return 0;
+      const pos = clamp(q, 0, 1) * (sample.length - 1);
+      const lo = Math.floor(pos);
+      const hi = Math.min(sample.length - 1, lo + 1);
+      return sample[lo] + (sample[hi] - sample[lo]) * (pos - lo);
+    };
+    const p80 = pct(0.80);
+    const p50 = pct(0.50);
+    if (p80 <= 5.0) return effEnd;
+    const thr = clamp(Math.min(0.18 * p80, 0.45 * p50), 4.0, 22.0);
+    const minBin = Math.max(3, Math.floor(0.22 * (maxBin + 1)));
+    let last = maxBin;
+    while (last > minBin) {
+      const cur = activeSlice[last];
+      const prev = activeSlice[last - 1];
+      const nxt = last + 1 <= maxBin ? activeSlice[last + 1] : 0;
+      if ((cur >= thr && (prev >= thr * 0.72 || nxt >= thr * 0.72)) || (0.5 * (cur + prev) >= thr)) break;
+      last -= 1;
+    }
+    const audEnd = Math.min(effEnd, ((last + 1) / n) * dur);
+    return effEnd - audEnd < 0.5 ? effEnd : Number(audEnd.toFixed(3));
+  }
+
   function resolveTrackUrls(t) {
     if (!t) return [];
-    const raw = [t.stream_url, t.mp3_320_url, t.mp3_url, t.preview_url, t.file];
+    const hasFullStream = Boolean(t.stream_url || t.mp3_320_url || t.mp3_url);
+    const raw = (isPsychedailiesTrack(t) && hasFullStream)
+      ? [t.stream_url, t.mp3_320_url, t.mp3_url]
+      : [t.stream_url, t.mp3_320_url, t.mp3_url, t.preview_url, t.file];
     const out = [];
     for (let i = 0; i < raw.length; i++) {
       const u = raw[i];
@@ -510,7 +565,8 @@
   function computeTrackBounds(track, isFullTrack, knownDur) {
     if (!track) return { duration: 0, previewStart: 0, previewEnd: 0, previewDur: 20 };
     const isAi = Boolean(track.is_ai);
-    const hasDropCue = Boolean(track.has_drop) && Number.isFinite(track.preview_start_sec) && Number(track.preview_start_sec) > 0;
+    const isPsy = isPsychedailiesTrack(track);
+    const hasDropCue = !isPsy && Boolean(track.has_drop) && Number.isFinite(track.preview_start_sec) && Number(track.preview_start_sec) > 0;
     const finiteKnown = Number.isFinite(knownDur) && knownDur > 0 ? knownDur : 0;
     if (isFullTrack) {
       const estDur = finiteKnown || Number(track.full_duration_sec) || Number(track.duration_sec) || 0;
@@ -518,9 +574,11 @@
         const fullSpanDur = Math.max(4, estDur || Number(track.duration_sec) || 22);
         return { duration: estDur, previewStart: 0, previewEnd: estDur, previewDur: fullSpanDur };
       }
-      const rawCueVal = Number.isFinite(track.preview_start_sec)
-        ? Number(track.preview_start_sec)
-        : (Number.isFinite(track.cue_in_sec) ? Number(track.cue_in_sec) : (Number(track.cue_sec) || 0));
+      const rawCueVal = isPsy
+        ? 0
+        : (Number.isFinite(track.preview_start_sec)
+          ? Number(track.preview_start_sec)
+          : (Number.isFinite(track.cue_in_sec) ? Number(track.cue_in_sec) : (Number(track.cue_sec) || 0)));
       const rawStart = Math.max(0, rawCueVal);
       const previewStart = estDur > 1.5 ? Math.min(rawStart, Math.max(0, estDur - 1.5)) : rawStart;
       const previewDur = Math.max(4, Number(track.preview_dur_sec) || Number(track.duration_sec) || 22);
@@ -528,7 +586,7 @@
       return { duration: estDur, previewStart, previewEnd, previewDur };
     }
     const clipDur = finiteKnown || Number(track.duration_sec) || Number(track.preview_dur_sec) || 0;
-    const rawCue = isAi ? 0 : Math.max(0, Number(track.cue_sec) || 0);
+    const rawCue = (isAi || isPsy) ? 0 : Math.max(0, Number(track.cue_sec) || 0);
     const previewStart = clipDur > 1.0 ? Math.min(rawCue, Math.max(0, clipDur - 1.0)) : rawCue;
     const previewEnd = clipDur > 0 ? clipDur : Math.max(previewStart + 16, 20);
     return { duration: clipDur, previewStart, previewEnd, previewDur: Math.max(4, previewEnd - previewStart) };
@@ -1217,11 +1275,13 @@
       }
     }
 
-    const remaining = realDur - curSec;
+    const audEnd = active.isFullTrack ? getAudibleEndSec(active.track, realDur) : realDur;
+    const effDur = curSec < audEnd - 0.35 ? audEnd : realDur;
+    const remaining = effDur - curSec;
     if (!fadingOut && remaining <= PREWARM_LEAD_SEC && remaining > CROSSFADE_SEC + 0.1) {
       maybePrewarmNext(active.trackId);
     }
-    if (!active.crossfadeTriggered && realDur > 1.2 && remaining <= CROSSFADE_SEC) {
+    if (!active.crossfadeTriggered && effDur > 1.2 && remaining <= CROSSFADE_SEC) {
       active.crossfadeTriggered = true;
       const effFadeMs = Math.round(clamp(remaining, 0.25, CROSSFADE_SEC) * 1000);
       advanceToNextSimilar({ crossfadeMs: effFadeMs });
@@ -1361,11 +1421,12 @@
     }
 
     const initBounds = computeTrackBounds(tr, isFull, reusePrewarm && Number.isFinite(el.duration) ? el.duration : 0);
-    const hasDropCue = Boolean(tr.has_drop) && initBounds.previewStart > 0.02;
+    const isPsy = isPsychedailiesTrack(tr);
+    const hasDropCue = !isPsy && Boolean(tr.has_drop) && initBounds.previewStart > 0.02;
     let initialStartSec = 0;
     if (typeof opts.startSec === "number" && Number.isFinite(opts.startSec)) {
       initialStartSec = Math.max(0, opts.startSec);
-    } else if (opts.fromStart || (opts.fromAutoPlay && !hasDropCue) || (tr.is_ai && !hasDropCue)) {
+    } else if (opts.fromStart || isPsy || (opts.fromAutoPlay && !hasDropCue) || (tr.is_ai && !hasDropCue)) {
       initialStartSec = 0;
     } else {
       initialStartSec = initBounds.previewStart;
