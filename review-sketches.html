@@ -1,0 +1,2344 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover" />
+  <meta name="robots" content="noindex, nofollow" />
+  <meta name="googlebot" content="noindex, nofollow" />
+  <meta name="color-scheme" content="light dark" />
+  <link rel="icon" type="image/png" sizes="32x32" href="assets/favicon-32.png" />
+  <link rel="icon" type="image/png" sizes="64x64" href="assets/favicon-64.png" />
+  <link rel="apple-touch-icon" sizes="180x180" href="assets/apple-touch-icon.png" />
+  <title>Sketch Audition Deck — Bill Tribble Music Map</title>
+  <script>
+    (function () {
+      try {
+        var u = new URL(window.location.href);
+        var ownerParam = u.searchParams.get("owner");
+        if (ownerParam === "1") {
+          localStorage.setItem("bt_ignore_analytics", "1");
+          localStorage.setItem("skipgc", "t");
+          u.searchParams.delete("owner");
+          if (window.history && window.history.replaceState) {
+            window.history.replaceState(null, "", u.pathname + u.search + u.hash);
+          }
+        }
+      } catch (_) {}
+      // Strictly zero analytics on this private audition utility
+      window.goatcounter = { no_onload: true, no_events: true, count: function () {} };
+
+      var THEME_KEY = "btmm.theme";
+      var mode = "auto";
+      try {
+        var saved = localStorage.getItem(THEME_KEY);
+        if (saved === "auto" || saved === "light" || saved === "dark") mode = saved;
+      } catch (_) {}
+
+      function resolveAuto() {
+        try {
+          if (window.matchMedia && window.matchMedia("(prefers-color-scheme: dark)").matches) {
+            return "dark";
+          }
+        } catch (_) {}
+        return "light";
+      }
+
+      var resolved = mode === "auto" ? resolveAuto() : mode;
+      document.documentElement.setAttribute("data-theme", resolved);
+      document.documentElement.setAttribute("data-theme-mode", mode);
+      document.documentElement.style.colorScheme = resolved;
+    })();
+  </script>
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=Syne:wght@600..800&display=swap" rel="stylesheet" />
+  <link rel="stylesheet" href="css/gm3-color-tokens.css" />
+  <style>
+    *, *::before, *::after {
+      box-sizing: border-box;
+    }
+
+    :root {
+      --font-display: var(--md-ref-typeface-brand, 'Syne', sans-serif);
+      --font-sans: var(--md-ref-typeface-plain, 'Inter', sans-serif);
+      --ease-std: cubic-bezier(0.2, 0, 0, 1);
+    }
+
+    html, body {
+      margin: 0;
+      padding: 0;
+      background: var(--md-sys-color-background);
+      color: var(--md-sys-color-on-surface);
+      font-family: var(--font-sans);
+      -webkit-font-smoothing: antialiased;
+      text-rendering: optimizeLegibility;
+      min-height: 100dvh;
+    }
+
+    button {
+      font-family: var(--font-sans);
+      cursor: pointer;
+      -webkit-tap-highlight-color: transparent;
+    }
+
+    .tabular-live {
+      font-family: var(--font-sans);
+      font-variant-numeric: tabular-nums;
+    }
+
+    .app-wrap {
+      max-width: 1040px;
+      margin: 0 auto;
+      padding: 0 16px 64px;
+    }
+
+    /* Sticky Top Header + Active Player Deck */
+    .sticky-shell {
+      position: sticky;
+      top: 0;
+      z-index: 40;
+      background: color-mix(in srgb, var(--md-sys-color-background) 92%, transparent);
+      backdrop-filter: blur(18px);
+      -webkit-backdrop-filter: blur(18px);
+      padding-top: 10px;
+      padding-bottom: 10px;
+    }
+
+    .top-bar {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 10px;
+      margin-bottom: 8px;
+      flex-wrap: wrap;
+    }
+
+    .brand-row {
+      display: flex;
+      align-items: center;
+      gap: 10px;
+      min-width: 0;
+    }
+
+    .brand-mark {
+      width: 32px;
+      height: 32px;
+      border-radius: 10px;
+      background: var(--md-sys-color-indigo-wash);
+      color: var(--md-sys-color-on-indigo-wash);
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      flex-shrink: 0;
+    }
+
+    .brand-title {
+      margin: 0;
+      font-family: var(--font-display);
+      font-size: 17px;
+      font-weight: 700;
+      letter-spacing: -0.02em;
+      color: var(--md-sys-color-on-surface);
+      white-space: nowrap;
+    }
+
+    .tally-pill {
+      display: inline-flex;
+      align-items: center;
+      gap: 6px;
+      height: 28px;
+      padding: 0 11px;
+      border-radius: 9999px;
+      background: var(--md-sys-color-surface-container);
+      color: var(--md-sys-color-on-surface-variant);
+      font-size: 12.5px;
+      font-weight: 600;
+      white-space: nowrap;
+    }
+
+    .top-actions {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      flex-wrap: wrap;
+    }
+
+    .icon-pill-btn {
+      height: 36px;
+      padding: 0 12px;
+      border: none;
+      border-radius: 9999px;
+      background: var(--md-sys-color-surface-container);
+      color: var(--md-sys-color-on-surface-variant);
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      gap: 6px;
+      font-size: 12.5px;
+      font-weight: 600;
+      transition: background 140ms var(--ease-std), color 140ms var(--ease-std), transform 120ms var(--ease-std);
+    }
+
+    .icon-pill-btn:hover {
+      background: var(--md-sys-color-surface-container-high);
+      color: var(--md-sys-color-on-surface);
+    }
+
+    .icon-pill-btn:active {
+      transform: scale(0.98);
+    }
+
+    .btn-copy-cta {
+      height: 38px;
+      padding: 0 16px;
+      border: none;
+      border-radius: 9999px;
+      background: var(--md-sys-color-primary);
+      color: var(--md-sys-color-on-primary);
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      gap: 7px;
+      font-size: 13px;
+      font-weight: 600;
+      white-space: nowrap;
+      transition: filter 140ms var(--ease-std), transform 120ms var(--ease-std), background 140ms var(--ease-std);
+    }
+
+    .btn-copy-cta:hover {
+      filter: brightness(1.07);
+    }
+
+    .btn-copy-cta:active {
+      transform: scale(0.985);
+    }
+
+    .btn-copy-cta.is-copied {
+      background: var(--md-sys-color-tertiary);
+      color: var(--md-sys-color-on-tertiary);
+    }
+
+    /* Active Player Card */
+    .player-deck {
+      background: var(--md-sys-color-surface-container);
+      border-radius: 20px;
+      padding: 14px 16px 12px;
+      box-shadow: 0 8px 24px -12px color-mix(in srgb, var(--md-sys-color-shadow) 26%, transparent);
+    }
+
+    [data-theme="dark"] .player-deck {
+      background: var(--md-sys-color-surface-container-high);
+      box-shadow: 0 10px 28px -10px color-mix(in srgb, var(--md-sys-color-shadow) 65%, transparent);
+    }
+
+    .deck-head {
+      display: flex;
+      align-items: flex-start;
+      justify-content: space-between;
+      gap: 12px;
+      margin-bottom: 8px;
+    }
+
+    .deck-id-block {
+      min-width: 0;
+      flex: 1;
+    }
+
+    .deck-kicker-row {
+      display: flex;
+      align-items: center;
+      gap: 6px;
+      flex-wrap: wrap;
+      margin-bottom: 4px;
+    }
+
+    .pos-badge {
+      display: inline-flex;
+      align-items: center;
+      height: 22px;
+      padding: 0 9px;
+      border-radius: 9999px;
+      background: var(--md-sys-color-indigo-wash);
+      color: var(--md-sys-color-on-indigo-wash);
+      font-size: 11.5px;
+      font-weight: 700;
+    }
+
+    .reason-pill {
+      display: inline-flex;
+      align-items: center;
+      height: 22px;
+      padding: 0 9px;
+      border-radius: 9999px;
+      font-size: 11.5px;
+      font-weight: 600;
+      background: var(--md-sys-color-secondary-container);
+      color: var(--md-sys-color-on-secondary-container);
+    }
+
+    .reason-pill.tag-lt2 {
+      background: var(--md-sys-color-cyan-tonal);
+      color: var(--md-sys-color-on-cyan-tonal);
+    }
+
+    .reason-pill.tag-sketch {
+      background: var(--md-sys-color-amber-tonal);
+      color: var(--md-sys-color-on-amber-tonal);
+    }
+
+    .reason-pill.tag-test {
+      background: var(--md-sys-color-purple-tonal);
+      color: var(--md-sys-color-on-purple-tonal);
+    }
+
+    .reason-pill.tag-demo,
+    .reason-pill.tag-idea {
+      background: var(--md-sys-color-blue-tonal);
+      color: var(--md-sys-color-on-blue-tonal);
+    }
+
+    .reason-pill.tag-ruff,
+    .reason-pill.tag-loop,
+    .reason-pill.tag-sibling {
+      background: var(--md-sys-color-teal-tonal);
+      color: var(--md-sys-color-on-teal-tonal);
+    }
+
+    .reason-pill.tag-note {
+      background: var(--md-sys-color-green-tonal);
+      color: var(--md-sys-color-on-green-tonal);
+    }
+
+    .hero-title {
+      margin: 0;
+      font-family: var(--font-display);
+      font-size: 21px;
+      font-weight: 700;
+      line-height: 1.2;
+      letter-spacing: -0.02em;
+      color: var(--md-sys-color-on-surface);
+      overflow-wrap: anywhere;
+    }
+
+    .hero-meta {
+      margin-top: 3px;
+      font-size: 13px;
+      line-height: 1.4;
+      color: var(--md-sys-color-on-surface-variant);
+    }
+
+    .status-dot {
+      display: inline-flex;
+      align-items: center;
+      gap: 5px;
+      font-size: 12px;
+      font-weight: 600;
+      padding: 3px 9px;
+      border-radius: 9999px;
+      background: var(--md-sys-color-surface-container-highest);
+      color: var(--md-sys-color-on-surface-variant);
+      flex-shrink: 0;
+    }
+
+    .status-dot.is-playing {
+      background: var(--md-sys-color-green-tonal);
+      color: var(--md-sys-color-on-green-tonal);
+    }
+
+    /* Waveform Scrubber */
+    .scrubber-row {
+      display: flex;
+      align-items: center;
+      gap: 10px;
+      margin: 8px 0 10px;
+    }
+
+    .time-label {
+      font-size: 12.5px;
+      font-weight: 600;
+      color: var(--md-sys-color-on-surface-variant);
+      min-width: 36px;
+      user-select: none;
+    }
+
+    .time-label.end {
+      text-align: right;
+    }
+
+    .wave-wrap {
+      position: relative;
+      flex: 1;
+      height: 44px;
+      border-radius: 12px;
+      background: var(--md-sys-color-surface-container-lowest);
+      cursor: pointer;
+      touch-action: none;
+      user-select: none;
+      overflow: hidden;
+    }
+
+    [data-theme="dark"] .wave-wrap {
+      background: var(--md-sys-color-surface);
+    }
+
+    .wave-canvas {
+      display: block;
+      width: 100%;
+      height: 100%;
+    }
+
+    /* Controls Bar: Transport + Triage */
+    .controls-grid {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 10px;
+      flex-wrap: wrap;
+    }
+
+    .transport-group {
+      display: flex;
+      align-items: center;
+      gap: 6px;
+      flex-wrap: wrap;
+    }
+
+    .ctrl-btn {
+      height: 40px;
+      padding: 0 13px;
+      border: none;
+      border-radius: 9999px;
+      background: var(--md-sys-color-surface-container-highest);
+      color: var(--md-sys-color-on-surface);
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      gap: 5px;
+      font-size: 13px;
+      font-weight: 600;
+      white-space: nowrap;
+      transition: background 140ms var(--ease-std), transform 120ms var(--ease-std), filter 140ms var(--ease-std);
+    }
+
+    .ctrl-btn:hover {
+      filter: brightness(0.96);
+    }
+
+    [data-theme="dark"] .ctrl-btn:hover {
+      filter: brightness(1.12);
+    }
+
+    .ctrl-btn:active {
+      transform: scale(0.97);
+    }
+
+    .ctrl-btn.play-main {
+      height: 42px;
+      padding: 0 20px;
+      background: var(--md-sys-color-primary);
+      color: var(--md-sys-color-on-primary);
+      font-size: 13.5px;
+      font-weight: 700;
+    }
+
+    .ctrl-btn.drop-jump {
+      background: var(--md-sys-color-custom-tonal-bg);
+      color: var(--md-sys-color-custom-tonal-text);
+    }
+
+    .ctrl-btn.drop-jump:hover {
+      background: var(--md-sys-color-custom-tonal-hover-bg);
+      filter: none;
+    }
+
+    /* Verdict Triage Buttons */
+    .verdict-group {
+      display: flex;
+      align-items: center;
+      gap: 7px;
+      flex-wrap: wrap;
+    }
+
+    .verdict-btn {
+      height: 40px;
+      padding: 0 15px;
+      border: none;
+      border-radius: 9999px;
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      gap: 6px;
+      font-size: 13px;
+      font-weight: 700;
+      white-space: nowrap;
+      transition: transform 120ms var(--ease-std), filter 140ms var(--ease-std), background 140ms var(--ease-std), color 140ms var(--ease-std);
+    }
+
+    .verdict-btn:active {
+      transform: scale(0.97);
+    }
+
+    .verdict-btn.v-sketch {
+      background: var(--md-sys-color-amber-tonal);
+      color: var(--md-sys-color-on-amber-tonal);
+    }
+
+    .verdict-btn.v-sketch.is-selected {
+      background: var(--md-sys-color-on-amber-tonal);
+      color: var(--md-sys-color-amber-tonal);
+    }
+
+    .verdict-btn.v-keep {
+      background: var(--md-sys-color-green-tonal);
+      color: var(--md-sys-color-on-green-tonal);
+    }
+
+    .verdict-btn.v-keep.is-selected {
+      background: var(--md-sys-color-tertiary);
+      color: var(--md-sys-color-on-tertiary);
+    }
+
+    .verdict-btn.v-remove {
+      background: var(--md-sys-color-red-tonal);
+      color: var(--md-sys-color-on-red-tonal);
+    }
+
+    .verdict-btn.v-remove.is-selected {
+      background: var(--md-sys-color-error);
+      color: var(--md-sys-color-on-error);
+    }
+
+    .kbd-hint {
+      font-size: 11px;
+      font-weight: 600;
+      opacity: 0.72;
+    }
+
+    /* Filter Pills + Auto-Next Toggle Bar */
+    .subbar {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 10px;
+      margin-top: 10px;
+      flex-wrap: wrap;
+    }
+
+    .filter-pills {
+      display: flex;
+      align-items: center;
+      gap: 6px;
+      overflow-x: auto;
+      scrollbar-width: none;
+      max-width: 100%;
+    }
+
+    .filter-pills::-webkit-scrollbar {
+      display: none;
+    }
+
+    .filter-pill {
+      height: 32px;
+      padding: 0 13px;
+      border: none;
+      border-radius: 9999px;
+      background: var(--md-sys-color-surface-container-low);
+      color: var(--md-sys-color-on-surface-variant);
+      font-size: 12.5px;
+      font-weight: 600;
+      white-space: nowrap;
+      transition: background 140ms var(--ease-std), color 140ms var(--ease-std);
+    }
+
+    .filter-pill:hover {
+      background: var(--md-sys-color-surface-container-high);
+      color: var(--md-sys-color-on-surface);
+    }
+
+    .filter-pill.is-active {
+      background: var(--md-sys-color-primary-container);
+      color: var(--md-sys-color-on-primary-container);
+      font-weight: 700;
+    }
+
+    .toggle-group {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      flex-wrap: wrap;
+    }
+
+    .chip-toggle {
+      height: 32px;
+      padding: 0 12px;
+      border: none;
+      border-radius: 9999px;
+      background: var(--md-sys-color-surface-container-low);
+      color: var(--md-sys-color-on-surface-variant);
+      display: inline-flex;
+      align-items: center;
+      gap: 6px;
+      font-size: 12px;
+      font-weight: 600;
+      white-space: nowrap;
+    }
+
+    .chip-toggle.is-on {
+      background: var(--md-sys-color-secondary-container);
+      color: var(--md-sys-color-on-secondary-container);
+    }
+
+    .chip-dot {
+      width: 8px;
+      height: 8px;
+      border-radius: 9999px;
+      background: var(--md-sys-color-outline);
+    }
+
+    .chip-toggle.is-on .chip-dot {
+      background: var(--md-sys-color-primary);
+    }
+
+    /* Expandable Plain-Text Summary Drawer */
+    .summary-drawer {
+      margin: 8px 0 12px;
+      padding: 14px 16px;
+      border-radius: 16px;
+      background: var(--md-sys-color-surface-container-low);
+    }
+
+    .summary-drawer-head {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 8px;
+      margin-bottom: 8px;
+    }
+
+    .summary-drawer-title {
+      font-size: 13px;
+      font-weight: 700;
+      color: var(--md-sys-color-on-surface);
+    }
+
+    .summary-textarea {
+      width: 100%;
+      min-height: 112px;
+      padding: 10px 12px;
+      border: none;
+      border-radius: 12px;
+      background: var(--md-sys-color-surface-container);
+      color: var(--md-sys-color-on-surface);
+      font-family: var(--font-sans);
+      font-size: 13px;
+      line-height: 1.45;
+      resize: vertical;
+    }
+
+    /* Candidate Queue List */
+    .queue-section-hdr {
+      margin: 18px 4px 8px;
+      display: flex;
+      align-items: baseline;
+      justify-content: space-between;
+      gap: 8px;
+    }
+
+    .queue-section-title {
+      margin: 0;
+      font-family: var(--font-display);
+      font-size: 15px;
+      font-weight: 700;
+      letter-spacing: -0.01em;
+      color: var(--md-sys-color-on-surface);
+    }
+
+    .queue-section-sub {
+      font-size: 12px;
+      color: var(--md-sys-color-on-surface-variant);
+    }
+
+    .track-list {
+      display: flex;
+      flex-direction: column;
+      gap: 6px;
+    }
+
+    .track-row {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 12px;
+      padding: 10px 12px;
+      border-radius: 14px;
+      background: var(--md-sys-color-surface-container-low);
+      transition: background 140ms var(--ease-std);
+    }
+
+    .track-row:hover {
+      background: var(--md-sys-color-surface-container);
+    }
+
+    .track-row.is-active {
+      background: var(--md-sys-color-indigo-wash);
+      color: var(--md-sys-color-on-indigo-wash);
+    }
+
+    [data-theme="dark"] .track-row.is-active {
+      background: color-mix(in srgb, var(--md-sys-color-primary-container) 58%, var(--md-sys-color-surface-container-high));
+      color: var(--md-sys-color-on-surface);
+    }
+
+    .row-main {
+      display: flex;
+      align-items: center;
+      gap: 10px;
+      min-width: 0;
+      flex: 1;
+      cursor: pointer;
+    }
+
+    .row-num {
+      width: 30px;
+      height: 30px;
+      border-radius: 9999px;
+      background: var(--md-sys-color-surface-container-high);
+      color: var(--md-sys-color-on-surface-variant);
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      font-size: 12px;
+      font-weight: 700;
+      flex-shrink: 0;
+    }
+
+    .track-row.is-active .row-num {
+      background: var(--md-sys-color-primary);
+      color: var(--md-sys-color-on-primary);
+    }
+
+    .row-info {
+      min-width: 0;
+      flex: 1;
+    }
+
+    .row-title-line {
+      display: flex;
+      align-items: center;
+      gap: 6px;
+      flex-wrap: wrap;
+    }
+
+    .row-title {
+      font-size: 14.5px;
+      font-weight: 600;
+      color: var(--md-sys-color-on-surface);
+      overflow-wrap: anywhere;
+    }
+
+    .row-sub {
+      margin-top: 2px;
+      font-size: 12.5px;
+      line-height: 1.4;
+      color: var(--md-sys-color-on-surface-variant);
+    }
+
+    .row-verdicts {
+      display: flex;
+      align-items: center;
+      gap: 5px;
+      flex-shrink: 0;
+    }
+
+    .row-v-btn {
+      height: 32px;
+      padding: 0 11px;
+      border: none;
+      border-radius: 9999px;
+      font-size: 12px;
+      font-weight: 600;
+      background: var(--md-sys-color-surface-container-high);
+      color: var(--md-sys-color-on-surface-variant);
+      transition: background 120ms var(--ease-std), color 120ms var(--ease-std), transform 100ms var(--ease-std);
+    }
+
+    .row-v-btn:hover {
+      background: var(--md-sys-color-surface-container-highest);
+      color: var(--md-sys-color-on-surface);
+    }
+
+    .row-v-btn:active {
+      transform: scale(0.96);
+    }
+
+    .row-v-btn.v-sketch.is-selected {
+      background: var(--md-sys-color-on-amber-tonal);
+      color: var(--md-sys-color-amber-tonal);
+      font-weight: 700;
+    }
+
+    .row-v-btn.v-keep.is-selected {
+      background: var(--md-sys-color-tertiary);
+      color: var(--md-sys-color-on-tertiary);
+      font-weight: 700;
+    }
+
+    .row-v-btn.v-remove.is-selected {
+      background: var(--md-sys-color-error);
+      color: var(--md-sys-color-on-error);
+      font-weight: 700;
+    }
+
+    .empty-state {
+      margin-top: 20px;
+      padding: 28px 20px;
+      border-radius: 16px;
+      background: var(--md-sys-color-surface-container-low);
+      text-align: center;
+      color: var(--md-sys-color-on-surface-variant);
+      font-size: 14px;
+    }
+
+    .shortcut-footer {
+      margin-top: 22px;
+      text-align: center;
+      font-size: 12px;
+      color: var(--md-sys-color-on-surface-variant);
+    }
+
+    /* Mobile Responsive Tuning */
+    @media (max-width: 720px) {
+      .app-wrap {
+        padding: 0 10px 48px;
+      }
+
+      .sticky-shell {
+        padding-top: 6px;
+        padding-bottom: 6px;
+      }
+
+      .top-bar {
+        flex-wrap: nowrap;
+        gap: 6px;
+        margin-bottom: 6px;
+      }
+
+      .top-actions {
+        flex-wrap: nowrap;
+        gap: 5px;
+        flex-shrink: 0;
+      }
+
+      .brand-mark {
+        width: 26px;
+        height: 26px;
+        border-radius: 8px;
+      }
+
+      .brand-title {
+        font-size: 14px;
+        overflow: hidden;
+        text-overflow: ellipsis;
+      }
+
+      .tally-pill,
+      #theme-label,
+      #btn-reset,
+      .prev-next-txt {
+        display: none;
+      }
+
+      .icon-pill-btn {
+        height: 32px;
+        padding: 0 9px;
+        font-size: 12px;
+      }
+
+      .btn-copy-cta {
+        height: 32px;
+        padding: 0 11px;
+        font-size: 12px;
+        gap: 5px;
+      }
+
+      .player-deck {
+        padding: 9px 11px 9px;
+        border-radius: 15px;
+      }
+
+      .deck-head {
+        margin-bottom: 4px;
+        gap: 8px;
+      }
+
+      .deck-kicker-row {
+        margin-bottom: 2px;
+      }
+
+      .hero-title {
+        font-size: 16.5px;
+        white-space: nowrap;
+        overflow: hidden;
+        text-overflow: ellipsis;
+      }
+
+      .hero-meta {
+        font-size: 11.5px;
+        margin-top: 2px;
+        white-space: nowrap;
+        overflow: hidden;
+        text-overflow: ellipsis;
+        display: block;
+      }
+
+      .scrubber-row {
+        margin: 5px 0 7px;
+        gap: 7px;
+      }
+
+      .wave-wrap {
+        height: 32px;
+      }
+
+      .controls-grid {
+        flex-direction: column;
+        align-items: stretch;
+        gap: 6px;
+      }
+
+      .transport-group {
+        display: grid;
+        grid-template-columns: 38px 1.15fr 38px 46px 1.35fr 46px;
+        gap: 5px;
+      }
+
+      .ctrl-btn {
+        height: 34px;
+        padding: 0 5px;
+        font-size: 11.5px;
+      }
+
+      .ctrl-btn.play-main {
+        height: 34px;
+        padding: 0 8px;
+        font-size: 12px;
+      }
+
+      .verdict-group {
+        display: grid;
+        grid-template-columns: repeat(3, minmax(0, 1fr));
+        gap: 6px;
+      }
+
+      .verdict-btn {
+        height: 35px;
+        padding: 0 8px;
+        font-size: 12.5px;
+      }
+
+      .kbd-hint {
+        display: none;
+      }
+
+      .subbar {
+        margin-top: 4px;
+        margin-bottom: 4px;
+        gap: 6px;
+      }
+
+      .track-row {
+        flex-direction: column;
+        align-items: stretch;
+        gap: 8px;
+        padding: 10px 11px;
+      }
+
+      .row-verdicts {
+        display: grid;
+        grid-template-columns: repeat(3, minmax(0, 1fr));
+        gap: 6px;
+        padding-left: 40px;
+      }
+
+      .row-v-btn {
+        height: 32px;
+        text-align: center;
+      }
+
+      .shortcut-footer {
+        display: none;
+      }
+    }
+  </style>
+</head>
+<body>
+  <div class="app-wrap">
+    <div class="sticky-shell">
+      <header class="top-bar" role="banner">
+        <div class="brand-row">
+          <span class="brand-mark" aria-hidden="true">
+            <svg width="18" height="18" viewBox="0 0 24 24" fill="none">
+              <path d="M4 10v4M8 7v10M12 4v16M16 8v8M20 10v4" stroke="currentColor" stroke-width="2.2" stroke-linecap="round"/>
+            </svg>
+          </span>
+          <h1 class="brand-title">Sketch Audition</h1>
+          <span id="tally-pill" class="tally-pill tabular-live">0 / 44 decided</span>
+        </div>
+
+        <div class="top-actions">
+          <button id="btn-theme" type="button" class="icon-pill-btn" aria-label="Toggle theme" title="Switch light / dark theme">
+            <svg id="theme-svg" width="15" height="15" viewBox="0 0 24 24" fill="none" aria-hidden="true">
+              <circle cx="12" cy="12" r="4.5" stroke="currentColor" stroke-width="2"/>
+              <path d="M12 2.5v2.5M12 19v2.5M4.9 4.9l1.8 1.8M17.3 17.3l1.8 1.8M2.5 12H5M19 12h2.5M4.9 19.1l1.8-1.8M17.3 6.7l1.8-1.8" stroke="currentColor" stroke-width="2" stroke-linecap="round"/>
+            </svg>
+            <span id="theme-label">Theme</span>
+          </button>
+          <button id="btn-preview-summary" type="button" class="icon-pill-btn" aria-expanded="false" title="Preview plain-text choices">
+            <span>Preview</span>
+          </button>
+          <button id="btn-reset" type="button" class="icon-pill-btn" hidden title="Clear all saved verdicts">
+            <span>Reset</span>
+          </button>
+          <button id="btn-copy-choices" type="button" class="btn-copy-cta" aria-label="Copy choices to clipboard">
+            <svg width="15" height="15" viewBox="0 0 24 24" fill="none" aria-hidden="true">
+              <rect x="9" y="9" width="11" height="11" rx="2.5" stroke="currentColor" stroke-width="2"/>
+              <path d="M6 15H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h8a2 2 0 0 1 2 2v1" stroke="currentColor" stroke-width="2" stroke-linecap="round"/>
+            </svg>
+            <span id="copy-btn-label" class="tabular-live">Copy choices (0)</span>
+          </button>
+        </div>
+      </header>
+
+      <section id="player-deck" class="player-deck" aria-label="Active track player">
+        <div class="deck-head">
+          <div class="deck-id-block">
+            <div id="hero-kicker" class="deck-kicker-row">
+              <span id="hero-pos" class="pos-badge tabular-live">1 / 44</span>
+            </div>
+            <h2 id="hero-title" class="hero-title">Loading tracks…</h2>
+            <div id="hero-meta" class="hero-meta"></div>
+          </div>
+          <div id="audio-status" class="status-dot" aria-live="polite">Ready</div>
+        </div>
+
+        <div class="scrubber-row">
+          <span id="time-cur" class="time-label tabular-live">0:00</span>
+          <div id="wave-wrap" class="wave-wrap" role="slider" tabindex="0" aria-label="Seek audio position" aria-valuemin="0" aria-valuemax="100" aria-valuenow="0">
+            <canvas id="wave-canvas" class="wave-canvas"></canvas>
+          </div>
+          <span id="time-dur" class="time-label end tabular-live">0:00</span>
+        </div>
+
+        <div class="controls-grid">
+          <div class="transport-group" role="group" aria-label="Playback transport">
+            <button id="btn-prev" type="button" class="ctrl-btn" aria-label="Previous track" title="Previous track (Left Arrow)">
+              <svg width="15" height="15" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><path d="M6 6h2v12H6V6zm3.5 6 8.5 6V6l-8.5 6z"/></svg>
+              <span class="prev-next-txt">Prev</span>
+            </button>
+            <button id="btn-play" type="button" class="ctrl-btn play-main" aria-label="Play" title="Play or pause (Space)">
+              <svg id="play-icon" width="16" height="16" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><path d="M8 5v14l11-7z"/></svg>
+              <span id="play-label">Play</span>
+            </button>
+            <button id="btn-next" type="button" class="ctrl-btn" aria-label="Next track" title="Next track (Right Arrow)">
+              <span class="prev-next-txt">Next</span>
+              <svg width="15" height="15" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><path d="m6 18 8.5-6L6 6v12zM16 6v12h2V6h-2z"/></svg>
+            </button>
+            <button id="btn-back-10" type="button" class="ctrl-btn" aria-label="Back 10 seconds" title="Rewind 10 seconds">
+              <span>-10s</span>
+            </button>
+            <button id="btn-drop" type="button" class="ctrl-btn drop-jump" aria-label="Jump to drop" title="Jump to drop or 35% meat of track (D)">
+              <svg width="14" height="14" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><path d="M13 2 4 14h7l-1 8 9-12h-7l1-8z"/></svg>
+              <span id="drop-label" class="tabular-live">Drop</span>
+            </button>
+            <button id="btn-fwd-20" type="button" class="ctrl-btn" aria-label="Forward 20 seconds" title="Skip forward 20 seconds">
+              <span>+20s</span>
+            </button>
+          </div>
+
+          <div class="verdict-group" role="group" aria-label="Triage verdict for current track">
+            <button id="verdict-sketch" type="button" class="verdict-btn v-sketch" data-verdict="sketch" title="Mark as Sketch (1 or S)">
+              <span>Sketch</span>
+              <span class="kbd-hint">1</span>
+            </button>
+            <button id="verdict-keep" type="button" class="verdict-btn v-keep" data-verdict="keep" title="Keep as Full Track (2 or K)">
+              <span>Keep</span>
+              <span class="kbd-hint">2</span>
+            </button>
+            <button id="verdict-remove" type="button" class="verdict-btn v-remove" data-verdict="remove" title="Remove from Catalog (3 or X)">
+              <span>Remove</span>
+              <span class="kbd-hint">3</span>
+            </button>
+          </div>
+        </div>
+      </section>
+    </div>
+
+    <div class="subbar">
+      <div id="filter-pills" class="filter-pills" role="tablist" aria-label="Filter candidate tracks"></div>
+      <div class="toggle-group">
+        <button id="toggle-autonext" type="button" class="chip-toggle is-on" aria-pressed="true" title="Automatically play next track after picking Sketch / Keep / Remove">
+          <span class="chip-dot" aria-hidden="true"></span>
+          <span>Auto-next on verdict</span>
+        </button>
+        <button id="toggle-start-drop" type="button" class="chip-toggle" aria-pressed="false" title="Start each track right at its Drop cue instead of 0:00">
+          <span class="chip-dot" aria-hidden="true"></span>
+          <span>Start at drop</span>
+        </button>
+      </div>
+    </div>
+
+    <section id="summary-drawer" class="summary-drawer" hidden aria-label="Plain-text choices summary">
+      <div class="summary-drawer-head">
+        <span class="summary-drawer-title">Plain-text summary (ready to paste into chat)</span>
+        <div style="display:flex;gap:6px;align-items:center">
+          <button id="btn-drawer-reset" type="button" class="icon-pill-btn" hidden>Reset all</button>
+          <button id="btn-drawer-close" type="button" class="icon-pill-btn">Close</button>
+        </div>
+      </div>
+      <textarea id="summary-textarea" class="summary-textarea" readonly></textarea>
+    </section>
+
+    <main id="queue-root" aria-label="Candidate tracks queue"></main>
+
+    <footer class="shortcut-footer">
+      Shortcuts: <strong>Space</strong> play/pause · <strong>← / →</strong> prev/next · <strong>D</strong> jump to drop · <strong>1 / S</strong> Sketch · <strong>2 / K</strong> Keep · <strong>3 / X</strong> Remove
+    </footer>
+  </div>
+
+  <script src="js/data.js"></script>
+  <script>
+    (function () {
+      "use strict";
+
+      const STORAGE_VERDICTS_KEY = "btmm.sketchReview.verdicts.v1";
+      const STORAGE_AUTONEXT_KEY = "btmm.sketchReview.autoNext.v1";
+      const STORAGE_STARTDROP_KEY = "btmm.sketchReview.startAtDrop.v1";
+      const STORAGE_LAST_ID_KEY = "btmm.sketchReview.lastTrackId.v1";
+
+      // Exact 44 candidate tracks from post-024163 (task-1044):
+      // 18 unreleased < 2:00 (75s-120s) + 20 keyword >= 2:00 + 6 ruff/loop/2:01 siblings
+      const CANDIDATE_SPECS = [
+        // Group A: 18 Unreleased < 2:00 (75s - 120s)
+        { id: "archive_2013_18_139", group: "lt2", tags: ["< 2:00", "sketch"] },
+        { id: "archive_2013_18_12",  group: "lt2", tags: ["< 2:00"] },
+        { id: "hd_2005_31",          group: "lt2", tags: ["< 2:00", "sketch"] },
+        { id: "archive_2013_18_132", group: "lt2", tags: ["< 2:00", "sketch"] },
+        { id: "archive_2013_18_155", group: "lt2", tags: ["< 2:00"] },
+        { id: "archive_2018_23_48",  group: "lt2", tags: ["< 2:00"] },
+        { id: "present_electro_46",  group: "lt2", tags: ["< 2:00"] },
+        { id: "ep_concepts_37",      group: "lt2", tags: ["< 2:00"] },
+        { id: "ep_concepts_8",       group: "lt2", tags: ["< 2:00"] },
+        { id: "hd_2005_49",          group: "lt2", tags: ["< 2:00", "ruff"] },
+        { id: "present_electro_25",  group: "lt2", tags: ["< 2:00"] },
+        { id: "archive_2013_18_123", group: "lt2", tags: ["< 2:00"] },
+        { id: "archive_2013_18_43",  group: "lt2", tags: ["< 2:00"] },
+        { id: "ecstatic_wave_14",    group: "lt2", tags: ["< 2:00"] },
+        { id: "ep_concepts_15",      group: "lt2", tags: ["< 2:00"] },
+        { id: "archive_2013_18_117", group: "lt2", tags: ["< 2:00", "test"] },
+        { id: "ep_concepts_35",      group: "lt2", tags: ["< 2:00"] },
+        { id: "ep_concepts_14",      group: "lt2", tags: ["< 2:00"] },
+
+        // Group B: 20 Keyword >= 2:00 (sketch / test / demo / idea) + 6 Siblings (ruff / loop / 2:01)
+        { id: "archive_2013_18_127", group: "kw", tags: ["sketch"] },
+        { id: "sketches_2026_19",    group: "kw", tags: ["sketch"] },
+        { id: "archive_2013_18_21",  group: "kw", tags: ["sketch"] },
+        { id: "archive_2013_18_59",  group: "kw", tags: ["sketch"] },
+        { id: "archive_2013_18_10",  group: "kw", tags: ["sketch"] },
+        { id: "archive_2013_18_142", group: "kw", tags: ["test"] },
+        { id: "archive_2013_18_114", group: "kw", tags: ["test"] },
+        { id: "archive_2018_23_58",  group: "kw", tags: ["test"] },
+        { id: "archive_2013_18_116", group: "kw", tags: ["test"] },
+        { id: "bands_archive_18",    group: "kw", tags: ["test"], note: "Indie keeper list" },
+        { id: "archive_2013_18_61",  group: "kw", tags: ["test"] },
+        { id: "archive_2013_18_19",  group: "kw", tags: ["test"] },
+        { id: "archive_2013_18_71",  group: "kw", tags: ["demo"] },
+        { id: "archive_2013_18_9",   group: "kw", tags: ["demo"] },
+        { id: "archive_2013_18_20",  group: "kw", tags: ["demo"] },
+        { id: "archive_2013_18_11",  group: "kw", tags: ["demo"] },
+        { id: "hd_2005_46",          group: "kw", tags: ["demo"] },
+        { id: "archive_2013_18_33",  group: "kw", tags: ["idea"] },
+        { id: "sketches_2024_25_4",  group: "kw", tags: ["idea"] },
+        { id: "present_electro_28",  group: "kw", tags: ["idea"] },
+        { id: "archive_2013_18_149", group: "kw", tags: ["2:01 sibling"] },
+        { id: "hd_2005_16",          group: "kw", tags: ["ruff", "2:01"] },
+        { id: "archive_2013_18_89",  group: "kw", tags: ["loop"] },
+        { id: "sketches_2026_10",    group: "kw", tags: ["loop"] },
+        { id: "bands_archive_15",    group: "kw", tags: ["ruff"] },
+        { id: "bands_archive_8",     group: "kw", tags: ["ruff"] }
+      ];
+
+      function clamp(v, lo, hi) {
+        return Math.max(lo, Math.min(hi, v));
+      }
+
+      function esc(s) {
+        return String(s == null ? "" : s)
+          .replace(/&/g, "&amp;")
+          .replace(/</g, "&lt;")
+          .replace(/>/g, "&gt;")
+          .replace(/"/g, "&quot;");
+      }
+
+      function formatClock(sec) {
+        if (!Number.isFinite(sec) || sec < 0) return "0:00";
+        const whole = Math.max(0, Math.floor(sec));
+        const m = Math.floor(whole / 60);
+        const s = whole % 60;
+        return m + ":" + String(s).padStart(2, "0");
+      }
+
+      function formatDurationRounded(sec) {
+        if (!Number.isFinite(sec) || sec <= 0) return "0:00";
+        const whole = Math.max(1, Math.round(sec));
+        const m = Math.floor(whole / 60);
+        const s = whole % 60;
+        return m + ":" + String(s).padStart(2, "0");
+      }
+
+      function resolveTrackUrls(rawTrack) {
+        if (!rawTrack) return [];
+        const candidates = [
+          rawTrack.stream_url,
+          rawTrack.mp3_320_url,
+          rawTrack.mp3_url,
+          rawTrack.preview_url,
+          rawTrack.file
+        ];
+        const out = [];
+        for (let i = 0; i < candidates.length; i++) {
+          const u = candidates[i];
+          if (typeof u === "string" && u.length > 0 && out.indexOf(u) === -1) {
+            out.push(u);
+          }
+        }
+        return out;
+      }
+
+      function tagClass(tag) {
+        if (tag === "< 2:00") return "tag-lt2";
+        if (tag === "sketch") return "tag-sketch";
+        if (tag === "test") return "tag-test";
+        if (tag === "demo") return "tag-demo";
+        if (tag === "idea") return "tag-idea";
+        if (tag === "ruff") return "tag-ruff";
+        if (tag === "loop") return "tag-loop";
+        return "tag-sibling";
+      }
+
+      // Hydrate candidate queue from CORPUS_DATA
+      const corpus = (typeof window !== "undefined" && window.CORPUS_DATA) || { tracks: [], eras: [] };
+      const rawById = new Map((corpus.tracks || []).map((t) => [t.id, t]));
+      const eraById = new Map((corpus.eras || []).map((e) => [e.id, e]));
+
+      const allTracks = [];
+      for (let i = 0; i < CANDIDATE_SPECS.length; i++) {
+        const spec = CANDIDATE_SPECS[i];
+        const t = rawById.get(spec.id);
+        if (!t) continue;
+        const urls = resolveTrackUrls(t);
+        if (!urls.length) continue;
+        const dur = Number(t.full_duration_sec) || Number(t.duration_sec) || 0;
+        const explicitDrop = Number.isFinite(Number(t.drop_sec)) && Number(t.drop_sec) > 0 ? Number(t.drop_sec) : null;
+        const dropTargetSec = explicitDrop !== null
+          ? clamp(explicitDrop, 0, Math.max(0, dur - 2))
+          : clamp(dur * 0.35, 0, Math.max(0, dur - 2));
+        const eraObj = eraById.get(t.era);
+        const eraLabel = (eraObj && eraObj.label) || t.era || "";
+        allTracks.push({
+          index: allTracks.length + 1,
+          id: t.id,
+          title: t.title || t.shortTitle || t.id,
+          durationSec: dur,
+          era: t.era || "",
+          eraLabel: eraLabel,
+          year: t.year || "",
+          vibe: t.cluster_label || t.discogs_top || "",
+          bpm: Number.isFinite(Number(t.effective_bpm || t.bpm)) ? Math.round(Number(t.effective_bpm || t.bpm)) : null,
+          urls: urls,
+          explicitDropSec: explicitDrop,
+          dropTargetSec: dropTargetSec,
+          gainTrim: Number.isFinite(Number(t.gain_trim)) ? clamp(Number(t.gain_trim), 0.25, 1.5) : 1.0,
+          peaks: Array.isArray(t.peaks) && t.peaks.length >= 16 ? t.peaks : null,
+          group: spec.group,
+          tags: spec.tags.slice(),
+          note: spec.note || ""
+        });
+      }
+
+      const trackById = new Map(allTracks.map((item) => [item.id, item]));
+
+      // Persistent state
+      let verdicts = {};
+      let autoNextOnVerdict = true;
+      let startAtDrop = false;
+      let activeFilter = "all"; // 'all' | 'lt2' | 'kw' | 'undecided'
+      let currentTrackId = allTracks.length ? allTracks[0].id : null;
+
+      try {
+        const rawV = localStorage.getItem(STORAGE_VERDICTS_KEY);
+        if (rawV) {
+          const parsed = JSON.parse(rawV);
+          if (parsed && typeof parsed === "object") {
+            for (const [k, v] of Object.entries(parsed)) {
+              if ((v === "sketch" || v === "keep" || v === "remove") && trackById.has(k)) {
+                verdicts[k] = v;
+              }
+            }
+          }
+        }
+        const savedAuto = localStorage.getItem(STORAGE_AUTONEXT_KEY);
+        if (savedAuto === "0") autoNextOnVerdict = false;
+        const savedDrop = localStorage.getItem(STORAGE_STARTDROP_KEY);
+        if (savedDrop === "1") startAtDrop = true;
+        const savedLastId = localStorage.getItem(STORAGE_LAST_ID_KEY);
+        if (savedLastId && trackById.has(savedLastId)) {
+          currentTrackId = savedLastId;
+        }
+      } catch (_) {}
+
+      function saveVerdicts() {
+        try {
+          localStorage.setItem(STORAGE_VERDICTS_KEY, JSON.stringify(verdicts));
+        } catch (_) {}
+      }
+
+      // DOM elements
+      const elTallyPill = document.getElementById("tally-pill");
+      const elBtnTheme = document.getElementById("btn-theme");
+      const elThemeLabel = document.getElementById("theme-label");
+      const elBtnPreview = document.getElementById("btn-preview-summary");
+      const elBtnReset = document.getElementById("btn-reset");
+      const elBtnDrawerReset = document.getElementById("btn-drawer-reset");
+      const elBtnCopy = document.getElementById("btn-copy-choices");
+      const elCopyLabel = document.getElementById("copy-btn-label");
+      const elSummaryDrawer = document.getElementById("summary-drawer");
+      const elSummaryTextarea = document.getElementById("summary-textarea");
+      const elBtnDrawerClose = document.getElementById("btn-drawer-close");
+
+      const elHeroKicker = document.getElementById("hero-kicker");
+      const elHeroTitle = document.getElementById("hero-title");
+      const elHeroMeta = document.getElementById("hero-meta");
+      const elAudioStatus = document.getElementById("audio-status");
+
+      const elTimeCur = document.getElementById("time-cur");
+      const elTimeDur = document.getElementById("time-dur");
+      const elWaveWrap = document.getElementById("wave-wrap");
+      const elWaveCanvas = document.getElementById("wave-canvas");
+
+      const elBtnPrev = document.getElementById("btn-prev");
+      const elBtnPlay = document.getElementById("btn-play");
+      const elPlayIcon = document.getElementById("play-icon");
+      const elPlayLabel = document.getElementById("play-label");
+      const elBtnNext = document.getElementById("btn-next");
+      const elBtnBack10 = document.getElementById("btn-back-10");
+      const elBtnDrop = document.getElementById("btn-drop");
+      const elDropLabel = document.getElementById("drop-label");
+      const elBtnFwd20 = document.getElementById("btn-fwd-20");
+
+      const elVerdictSketch = document.getElementById("verdict-sketch");
+      const elVerdictKeep = document.getElementById("verdict-keep");
+      const elVerdictRemove = document.getElementById("verdict-remove");
+
+      const elFilterPills = document.getElementById("filter-pills");
+      const elToggleAutoNext = document.getElementById("toggle-autonext");
+      const elToggleStartDrop = document.getElementById("toggle-start-drop");
+      const elQueueRoot = document.getElementById("queue-root");
+
+      // Dual pooled HTMLAudioElement decks (strictly NO crossOrigin attribute so GitHub Release
+      // HTTP 206 byte-range redirects stream cleanly without CORS errors)
+      function makeAudioEl() {
+        const a = document.createElement("audio");
+        a.preload = "auto";
+        a.playsInline = true;
+        a.setAttribute("playsinline", "");
+        return a;
+      }
+
+      const decks = [
+        { el: makeAudioEl(), trackId: null, urlIdx: 0, seekPending: null },
+        { el: makeAudioEl(), trackId: null, urlIdx: 0, seekPending: null }
+      ];
+      let activeDeckIdx = 0;
+      let isPlaying = false;
+      let isBuffering = false;
+      let hoverFrac = null;
+      let isScrubbing = false;
+      let copyResetTimer = null;
+
+      function getActiveDeck() {
+        return decks[activeDeckIdx];
+      }
+
+      function getStandbyDeck() {
+        return decks[1 - activeDeckIdx];
+      }
+
+      function getCurrentTrack() {
+        return trackById.get(currentTrackId) || allTracks[0] || null;
+      }
+
+      function getFilteredTracks(filterKey) {
+        const key = filterKey || activeFilter;
+        if (key === "lt2") return allTracks.filter((t) => t.group === "lt2");
+        if (key === "kw") return allTracks.filter((t) => t.group === "kw");
+        if (key === "undecided") return allTracks.filter((t) => !verdicts[t.id]);
+        return allTracks.slice();
+      }
+
+      function applyDeckVolume(deck, track) {
+        const trim = track ? track.gainTrim : 1.0;
+        deck.el.volume = clamp(0.88 * trim, 0, 1);
+      }
+
+      function getEffectiveDuration(track) {
+        const deck = getActiveDeck();
+        if (deck.trackId === (track && track.id) && Number.isFinite(deck.el.duration) && deck.el.duration > 0) {
+          return deck.el.duration;
+        }
+        return track ? track.durationSec : 0;
+      }
+
+      function getEffectiveCurrentTime() {
+        const deck = getActiveDeck();
+        if (!currentTrackId || deck.trackId !== currentTrackId) return 0;
+        if (deck.seekPending !== null && Number.isFinite(deck.seekPending)) {
+          return Math.max(0, deck.seekPending);
+        }
+        return Number.isFinite(deck.el.currentTime) ? Math.max(0, deck.el.currentTime) : 0;
+      }
+
+      function findNextTrackAfter(trackId, listOverride) {
+        const list = listOverride || getFilteredTracks();
+        if (!list.length) return null;
+        const idx = list.findIndex((t) => t.id === trackId);
+        if (idx >= 0 && idx + 1 < list.length) {
+          return list[idx + 1];
+        }
+        if (idx === -1) {
+          const curGlobal = trackById.get(trackId);
+          if (curGlobal) {
+            const after = list.find((t) => t.index > curGlobal.index);
+            if (after) return after;
+          }
+          return list[0];
+        }
+        return null;
+      }
+
+      function findPrevTrackBefore(trackId) {
+        const list = getFilteredTracks();
+        if (!list.length) return null;
+        const idx = list.findIndex((t) => t.id === trackId);
+        if (idx > 0) return list[idx - 1];
+        if (idx === -1) return list[0];
+        return list[list.length - 1];
+      }
+
+      function preloadNextTrack() {
+        const nextTrack = findNextTrackAfter(currentTrackId);
+        if (!nextTrack) return;
+        const standby = getStandbyDeck();
+        if (standby.trackId === nextTrack.id && standby.el.src) return;
+        standby.trackId = nextTrack.id;
+        standby.urlIdx = 0;
+        standby.seekPending = null;
+        standby.el.preload = "auto";
+        standby.el.src = nextTrack.urls[0];
+        applyDeckVolume(standby, nextTrack);
+        try {
+          standby.el.load();
+        } catch (_) {}
+      }
+
+      function setStatusBadge(text, playingFlag) {
+        elAudioStatus.textContent = text;
+        elAudioStatus.classList.toggle("is-playing", Boolean(playingFlag));
+      }
+
+      function syncMediaSession(track) {
+        if (!track || typeof navigator === "undefined" || !("mediaSession" in navigator)) return;
+        try {
+          navigator.mediaSession.metadata = new MediaMetadata({
+            title: track.title,
+            artist: "Bill Tribble",
+            album: track.eraLabel + (track.year ? " (" + track.year + ")" : "")
+          });
+        } catch (_) {}
+      }
+
+      function loadAndSelectTrack(trackId, opts) {
+        const options = opts || {};
+        const track = trackById.get(trackId);
+        if (!track) return;
+
+        const prevId = currentTrackId;
+        currentTrackId = track.id;
+        try {
+          localStorage.setItem(STORAGE_LAST_ID_KEY, track.id);
+        } catch (_) {}
+
+        const shouldAutoPlay = Boolean(options.play);
+        const customStartSec = Number.isFinite(options.startSec)
+          ? options.startSec
+          : (startAtDrop ? track.dropTargetSec : 0);
+
+        let deck = getActiveDeck();
+        const standby = getStandbyDeck();
+
+        // Instant <100ms swap if standby deck already preloaded this exact track!
+        if (standby.trackId === track.id && standby.el.src) {
+          try {
+            deck.el.pause();
+          } catch (_) {}
+          activeDeckIdx = 1 - activeDeckIdx;
+          deck = getActiveDeck();
+        } else if (deck.trackId !== track.id || !deck.el.src) {
+          try {
+            deck.el.pause();
+          } catch (_) {}
+          deck.trackId = track.id;
+          deck.urlIdx = 0;
+          deck.el.src = track.urls[0];
+        }
+
+        applyDeckVolume(deck, track);
+        seekDeckTo(deck, track, customStartSec);
+
+        if (shouldAutoPlay) {
+          isPlaying = true;
+          isBuffering = deck.el.readyState < 3;
+          setStatusBadge(isBuffering ? "Loading…" : "Playing", !isBuffering);
+          const p = deck.el.play();
+          if (p && typeof p.then === "function") {
+            p.then(() => {
+              isPlaying = true;
+              isBuffering = false;
+              updatePlayUi();
+              setStatusBadge("Playing", true);
+            }).catch(() => {
+              isPlaying = false;
+              isBuffering = false;
+              updatePlayUi();
+              setStatusBadge("Tap Play", false);
+            });
+          }
+        } else {
+          try {
+            deck.el.pause();
+          } catch (_) {}
+          isPlaying = false;
+          isBuffering = false;
+          setStatusBadge("Ready", false);
+        }
+
+        syncMediaSession(track);
+        renderHero();
+        updateActiveRowHighlight(prevId, currentTrackId, Boolean(options.scrollIntoView));
+        drawWaveform();
+        preloadNextTrack();
+      }
+
+      function seekDeckTo(deck, track, targetSec) {
+        const dur = getEffectiveDuration(track);
+        const clamped = dur > 0 ? clamp(targetSec, 0, Math.max(0, dur - 0.25)) : Math.max(0, targetSec);
+        if (deck.el.readyState >= 1) {
+          deck.seekPending = null;
+          try {
+            deck.el.currentTime = clamped;
+          } catch (_) {
+            deck.seekPending = clamped;
+          }
+        } else {
+          deck.seekPending = clamped;
+        }
+        updateTimersUi();
+        drawWaveform();
+      }
+
+      function bindDeckEvents(deckIndex) {
+        const deck = decks[deckIndex];
+        const el = deck.el;
+
+        el.addEventListener("loadedmetadata", () => {
+          if (deck.seekPending !== null && Number.isFinite(deck.seekPending)) {
+            const pending = deck.seekPending;
+            deck.seekPending = null;
+            try {
+              el.currentTime = pending;
+            } catch (_) {}
+          }
+          if (deckIndex === activeDeckIdx) {
+            updateTimersUi();
+            drawWaveform();
+          }
+        });
+
+        el.addEventListener("playing", () => {
+          if (deckIndex !== activeDeckIdx) return;
+          isPlaying = true;
+          isBuffering = false;
+          updatePlayUi();
+          setStatusBadge("Playing", true);
+        });
+
+        el.addEventListener("pause", () => {
+          if (deckIndex !== activeDeckIdx || el.ended) return;
+          isPlaying = false;
+          updatePlayUi();
+          setStatusBadge("Paused", false);
+        });
+
+        el.addEventListener("waiting", () => {
+          if (deckIndex !== activeDeckIdx) return;
+          isBuffering = true;
+          setStatusBadge("Buffering…", false);
+        });
+
+        el.addEventListener("canplay", () => {
+          if (deckIndex !== activeDeckIdx) return;
+          if (isPlaying) {
+            isBuffering = false;
+            setStatusBadge("Playing", true);
+          }
+        });
+
+        el.addEventListener("timeupdate", () => {
+          if (deckIndex !== activeDeckIdx || isScrubbing) return;
+          updateTimersUi();
+          drawWaveform();
+        });
+
+        el.addEventListener("ended", () => {
+          if (deckIndex !== activeDeckIdx) return;
+          const next = findNextTrackAfter(currentTrackId);
+          if (next) {
+            loadAndSelectTrack(next.id, { play: true, scrollIntoView: true });
+          } else {
+            isPlaying = false;
+            updatePlayUi();
+            setStatusBadge("Queue finished", false);
+          }
+        });
+
+        el.addEventListener("error", () => {
+          const tr = trackById.get(deck.trackId);
+          if (!tr) return;
+          if (deck.urlIdx + 1 < tr.urls.length) {
+            deck.urlIdx += 1;
+            el.src = tr.urls[deck.urlIdx];
+            try {
+              el.load();
+              if (deckIndex === activeDeckIdx && isPlaying) {
+                el.play().catch(() => {});
+              }
+            } catch (_) {}
+          } else if (deckIndex === activeDeckIdx) {
+            isPlaying = false;
+            updatePlayUi();
+            setStatusBadge("Stream unavailable", false);
+          }
+        });
+      }
+
+      bindDeckEvents(0);
+      bindDeckEvents(1);
+
+      function togglePlayPause() {
+        const track = getCurrentTrack();
+        if (!track) return;
+        const deck = getActiveDeck();
+        if (deck.trackId !== track.id || !deck.el.src) {
+          loadAndSelectTrack(track.id, { play: true });
+          return;
+        }
+        if (!deck.el.paused && !deck.el.ended) {
+          deck.el.pause();
+          isPlaying = false;
+          updatePlayUi();
+        } else {
+          isPlaying = true;
+          updatePlayUi();
+          const p = deck.el.play();
+          if (p && typeof p.then === "function") {
+            p.then(() => {
+              isPlaying = true;
+              updatePlayUi();
+              setStatusBadge("Playing", true);
+            }).catch(() => {
+              isPlaying = false;
+              updatePlayUi();
+            });
+          }
+          preloadNextTrack();
+        }
+      }
+
+      function jumpToDrop() {
+        const track = getCurrentTrack();
+        if (!track) return;
+        const deck = getActiveDeck();
+        if (deck.trackId !== track.id || !deck.el.src) {
+          loadAndSelectTrack(track.id, { play: true, startSec: track.dropTargetSec });
+          return;
+        }
+        seekDeckTo(deck, track, track.dropTargetSec);
+        if (deck.el.paused) {
+          deck.el.play().then(() => {
+            isPlaying = true;
+            updatePlayUi();
+            setStatusBadge("Playing", true);
+          }).catch(() => {});
+        }
+      }
+
+      function scrubRelative(deltaSec) {
+        const track = getCurrentTrack();
+        if (!track) return;
+        const deck = getActiveDeck();
+        if (deck.trackId !== track.id || !deck.el.src) {
+          loadAndSelectTrack(track.id, { play: false, startSec: Math.max(0, deltaSec) });
+          return;
+        }
+        const cur = getEffectiveCurrentTime();
+        seekDeckTo(deck, track, cur + deltaSec);
+      }
+
+      function recordVerdict(trackId, verdictValue, fromHeroOrKeyboard) {
+        if (!trackById.has(trackId)) return;
+        const prevVal = verdicts[trackId] || null;
+        const preMutationQueue = getFilteredTracks();
+
+        let isSettingNewVerdict = false;
+        if (prevVal === verdictValue) {
+          delete verdicts[trackId];
+        } else {
+          verdicts[trackId] = verdictValue;
+          isSettingNewVerdict = true;
+        }
+        saveVerdicts();
+
+        // Determine next track before list re-renders (important when activeFilter === 'undecided')
+        const shouldAdvance = isSettingNewVerdict && autoNextOnVerdict && (fromHeroOrKeyboard || trackId === currentTrackId);
+        let nextTarget = null;
+        if (shouldAdvance) {
+          const idxInPre = preMutationQueue.findIndex((t) => t.id === trackId);
+          if (idxInPre >= 0) {
+            for (let j = idxInPre + 1; j < preMutationQueue.length; j++) {
+              const cand = preMutationQueue[j];
+              if (activeFilter !== "undecided" || !verdicts[cand.id]) {
+                nextTarget = cand;
+                break;
+              }
+            }
+          }
+        }
+
+        renderSummaryAndCounts();
+        renderFilterPills();
+        if (activeFilter === "undecided") {
+          renderQueueList();
+        } else {
+          syncRowVerdictButtons(trackId);
+        }
+        renderHeroVerdictButtons();
+
+        if (shouldAdvance && nextTarget) {
+          loadAndSelectTrack(nextTarget.id, { play: true, scrollIntoView: true });
+        }
+      }
+
+      function buildSummaryText() {
+        const sketchItems = [];
+        const keepItems = [];
+        const removeItems = [];
+        for (let i = 0; i < allTracks.length; i++) {
+          const t = allTracks[i];
+          const v = verdicts[t.id];
+          const label = t.title + " [" + t.id + "]";
+          if (v === "sketch") sketchItems.push(label);
+          else if (v === "keep") keepItems.push(label);
+          else if (v === "remove") removeItems.push(label);
+        }
+        const totalDecided = sketchItems.length + keepItems.length + removeItems.length;
+        const undecidedCount = allTracks.length - totalDecided;
+
+        const lines = [
+          "Sketch Review (" + totalDecided + "/" + allTracks.length + " decided)",
+          "Sketch (" + sketchItems.length + "): " + (sketchItems.length ? sketchItems.join(", ") : "none"),
+          "Keep (" + keepItems.length + "): " + (keepItems.length ? keepItems.join(", ") : "none"),
+          "Remove (" + removeItems.length + "): " + (removeItems.length ? removeItems.join(", ") : "none")
+        ];
+        if (undecidedCount > 0) {
+          lines.push("Undecided: " + undecidedCount);
+        }
+        return lines.join("\n");
+      }
+
+      async function copyChoicesToClipboard() {
+        const summary = buildSummaryText();
+        elSummaryTextarea.value = summary;
+        let copiedOk = false;
+        try {
+          if (navigator.clipboard && typeof navigator.clipboard.writeText === "function") {
+            await navigator.clipboard.writeText(summary);
+            copiedOk = true;
+          }
+        } catch (_) {}
+
+        if (!copiedOk) {
+          try {
+            elSummaryDrawer.hidden = false;
+            elBtnPreview.setAttribute("aria-expanded", "true");
+            elSummaryTextarea.focus();
+            elSummaryTextarea.select();
+            copiedOk = document.execCommand("copy");
+          } catch (_) {}
+        }
+
+        const decidedCount = Object.keys(verdicts).length;
+        elBtnCopy.classList.add("is-copied");
+        elCopyLabel.textContent = copiedOk
+          ? "Copied (" + decidedCount + "/" + allTracks.length + ")!"
+          : "Summary opened below";
+        if (copyResetTimer) clearTimeout(copyResetTimer);
+        copyResetTimer = setTimeout(() => {
+          elBtnCopy.classList.remove("is-copied");
+          renderSummaryAndCounts();
+        }, 2200);
+      }
+
+      // UI Rendering
+      function updatePlayUi() {
+        if (isPlaying) {
+          elPlayIcon.innerHTML = '<path d="M6 5h4v14H6V5zm8 0h4v14h-4V5z"/>';
+          elPlayLabel.textContent = "Pause";
+          elBtnPlay.setAttribute("aria-label", "Pause");
+        } else {
+          elPlayIcon.innerHTML = '<path d="M8 5v14l11-7z"/>';
+          elPlayLabel.textContent = "Play";
+          elBtnPlay.setAttribute("aria-label", "Play");
+        }
+      }
+
+      function updateTimersUi() {
+        const track = getCurrentTrack();
+        const cur = getEffectiveCurrentTime();
+        const dur = getEffectiveDuration(track);
+        elTimeCur.textContent = formatClock(cur);
+        elTimeDur.textContent = formatDurationRounded(dur);
+        elWaveWrap.setAttribute("aria-valuemax", String(Math.round(dur || 100)));
+        elWaveWrap.setAttribute("aria-valuenow", String(Math.round(cur)));
+      }
+
+      function renderHeroVerdictButtons() {
+        const curV = (currentTrackId && verdicts[currentTrackId]) || null;
+        elVerdictSketch.classList.toggle("is-selected", curV === "sketch");
+        elVerdictKeep.classList.toggle("is-selected", curV === "keep");
+        elVerdictRemove.classList.toggle("is-selected", curV === "remove");
+        elVerdictSketch.setAttribute("aria-pressed", curV === "sketch" ? "true" : "false");
+        elVerdictKeep.setAttribute("aria-pressed", curV === "keep" ? "true" : "false");
+        elVerdictRemove.setAttribute("aria-pressed", curV === "remove" ? "true" : "false");
+      }
+
+      function renderHero() {
+        const track = getCurrentTrack();
+        if (!track) {
+          elHeroTitle.textContent = "No candidate tracks found";
+          return;
+        }
+        const kickerParts = [
+          '<span id="hero-pos" class="pos-badge tabular-live">' + track.index + " / " + allTracks.length + "</span>"
+        ];
+        for (let i = 0; i < track.tags.length; i++) {
+          const tg = track.tags[i];
+          kickerParts.push('<span class="reason-pill ' + tagClass(tg) + '">' + esc(tg) + "</span>");
+        }
+        if (track.note) {
+          kickerParts.push('<span class="reason-pill tag-note">' + esc(track.note) + "</span>");
+        }
+        elHeroKicker.innerHTML = kickerParts.join("");
+        elHeroTitle.textContent = track.title;
+
+        const metaBits = [
+          "<strong>" + formatDurationRounded(track.durationSec) + "</strong>",
+          esc(track.eraLabel + (track.year ? " (" + track.year + ")" : ""))
+        ];
+        if (track.vibe) metaBits.push(esc(track.vibe));
+        if (track.bpm) metaBits.push(track.bpm + " BPM");
+        elHeroMeta.innerHTML = metaBits.join(" · ");
+
+        elDropLabel.textContent = "Drop " + formatClock(track.dropTargetSec);
+        updatePlayUi();
+        updateTimersUi();
+        renderHeroVerdictButtons();
+      }
+
+      function renderSummaryAndCounts() {
+        let sCount = 0;
+        let kCount = 0;
+        let rCount = 0;
+        for (const v of Object.values(verdicts)) {
+          if (v === "sketch") sCount++;
+          else if (v === "keep") kCount++;
+          else if (v === "remove") rCount++;
+        }
+        const decided = sCount + kCount + rCount;
+        elTallyPill.textContent = decided === 0
+          ? "0 / " + allTracks.length + " decided"
+          : decided + " / " + allTracks.length + " · S:" + sCount + " K:" + kCount + " R:" + rCount;
+        if (!elBtnCopy.classList.contains("is-copied")) {
+          elCopyLabel.textContent = "Copy choices (" + decided + ")";
+        }
+        elBtnReset.hidden = decided === 0;
+        if (elBtnDrawerReset) elBtnDrawerReset.hidden = decided === 0;
+        elSummaryTextarea.value = buildSummaryText();
+      }
+
+      function renderFilterPills() {
+        const lt2Count = allTracks.filter((t) => t.group === "lt2").length;
+        const kwCount = allTracks.filter((t) => t.group === "kw").length;
+        const undecidedCount = allTracks.filter((t) => !verdicts[t.id]).length;
+
+        const tabs = [
+          { key: "all", label: "All (" + allTracks.length + ")" },
+          { key: "lt2", label: "< 2:00 (" + lt2Count + ")" },
+          { key: "kw", label: "Keywords >= 2:00 (" + kwCount + ")" },
+          { key: "undecided", label: "Undecided (" + undecidedCount + ")" }
+        ];
+
+        elFilterPills.innerHTML = tabs.map((tab) => {
+          const active = activeFilter === tab.key;
+          return (
+            '<button type="button" role="tab" class="filter-pill' +
+            (active ? " is-active" : "") +
+            '" aria-selected="' +
+            (active ? "true" : "false") +
+            '" data-filter="' +
+            tab.key +
+            '">' +
+            esc(tab.label) +
+            "</button>"
+          );
+        }).join("");
+      }
+
+      function buildRowHtml(t) {
+        const isAct = t.id === currentTrackId;
+        const v = verdicts[t.id] || "";
+        const tagPills = t.tags.map((tg) => '<span class="reason-pill ' + tagClass(tg) + '">' + esc(tg) + "</span>").join("");
+        const notePill = t.note ? '<span class="reason-pill tag-note">' + esc(t.note) + "</span>" : "";
+        const subParts = [
+          "<strong>" + formatDurationRounded(t.durationSec) + "</strong>",
+          esc(t.eraLabel + (t.year ? " (" + t.year + ")" : ""))
+        ];
+        if (t.vibe) subParts.push(esc(t.vibe));
+        if (t.explicitDropSec !== null) subParts.push("Drop " + formatClock(t.explicitDropSec));
+
+        return (
+          '<div class="track-row' + (isAct ? " is-active" : "") + '" data-track-id="' + esc(t.id) + '">' +
+            '<div class="row-main" data-play-track="' + esc(t.id) + '">' +
+              '<span class="row-num tabular-live">' + t.index + "</span>" +
+              '<div class="row-info">' +
+                '<div class="row-title-line">' +
+                  '<span class="row-title">' + esc(t.title) + "</span>" +
+                  tagPills +
+                  notePill +
+                "</div>" +
+                '<div class="row-sub">' + subParts.join(" · ") + "</div>" +
+              "</div>" +
+            "</div>" +
+            '<div class="row-verdicts">' +
+              '<button type="button" class="row-v-btn v-sketch' + (v === "sketch" ? " is-selected" : "") + '" data-row-verdict="sketch" data-track-id="' + esc(t.id) + '">Sketch</button>' +
+              '<button type="button" class="row-v-btn v-keep' + (v === "keep" ? " is-selected" : "") + '" data-row-verdict="keep" data-track-id="' + esc(t.id) + '">Keep</button>' +
+              '<button type="button" class="row-v-btn v-remove' + (v === "remove" ? " is-selected" : "") + '" data-row-verdict="remove" data-track-id="' + esc(t.id) + '">Remove</button>' +
+            "</div>" +
+          "</div>"
+        );
+      }
+
+      function renderQueueList() {
+        const list = getFilteredTracks();
+        if (!list.length) {
+          elQueueRoot.innerHTML = '<div class="empty-state">All 44 candidate tracks have a verdict! Click <strong>Copy choices</strong> above to paste into chat.</div>';
+          return;
+        }
+
+        if (activeFilter === "all") {
+          const lt2 = list.filter((t) => t.group === "lt2");
+          const kw = list.filter((t) => t.group === "kw");
+          elQueueRoot.innerHTML =
+            '<div class="queue-section-hdr">' +
+              '<h3 class="queue-section-title">Unreleased Under 2:00 (' + lt2.length + ')</h3>' +
+              '<span class="queue-section-sub">75s–120s tracks missed by the 1:15 cutoff</span>' +
+            "</div>" +
+            '<div class="track-list">' + lt2.map(buildRowHtml).join("") + "</div>" +
+            '<div class="queue-section-hdr">' +
+              '<h3 class="queue-section-title">Keyword &amp; Sibling Candidates &gt;= 2:00 (' + kw.length + ')</h3>' +
+              '<span class="queue-section-sub">sketch / test / demo / idea + ruff / loop / 2:01 siblings</span>' +
+            "</div>" +
+            '<div class="track-list">' + kw.map(buildRowHtml).join("") + "</div>";
+          return;
+        }
+
+        elQueueRoot.innerHTML = '<div class="track-list" style="margin-top:12px">' + list.map(buildRowHtml).join("") + "</div>";
+      }
+
+      function syncRowVerdictButtons(trackId) {
+        const row = elQueueRoot.querySelector('.track-row[data-track-id="' + CSS.escape(trackId) + '"]');
+        if (!row) return;
+        const v = verdicts[trackId] || "";
+        const btns = row.querySelectorAll("[data-row-verdict]");
+        btns.forEach((b) => {
+          b.classList.toggle("is-selected", b.getAttribute("data-row-verdict") === v);
+        });
+      }
+
+      function updateActiveRowHighlight(prevId, nextId, scrollIfNeeded) {
+        if (prevId) {
+          const oldRow = elQueueRoot.querySelector('.track-row[data-track-id="' + CSS.escape(prevId) + '"]');
+          if (oldRow) oldRow.classList.remove("is-active");
+        }
+        if (nextId) {
+          const newRow = elQueueRoot.querySelector('.track-row[data-track-id="' + CSS.escape(nextId) + '"]');
+          if (newRow) {
+            newRow.classList.add("is-active");
+            if (scrollIfNeeded) {
+              const rect = newRow.getBoundingClientRect();
+              const stickyBottom = document.querySelector(".sticky-shell").getBoundingClientRect().bottom;
+              if (rect.top < stickyBottom + 8 || rect.bottom > window.innerHeight - 16) {
+                const targetY = window.scrollY + rect.top - stickyBottom - 14;
+                window.scrollTo({ top: Math.max(0, targetY), behavior: "smooth" });
+              }
+            }
+          }
+        }
+      }
+
+      // HiDPI SoundCloud-style Waveform + Drop Marker Renderer
+      function drawWaveform() {
+        const track = getCurrentTrack();
+        const rect = elWaveWrap.getBoundingClientRect();
+        const w = Math.max(120, Math.floor(rect.width));
+        const h = Math.max(28, Math.floor(rect.height));
+        const dpr = Math.min(window.devicePixelRatio || 1, 2);
+
+        if (elWaveCanvas.width !== w * dpr || elWaveCanvas.height !== h * dpr) {
+          elWaveCanvas.width = w * dpr;
+          elWaveCanvas.height = h * dpr;
+        }
+        const ctx = elWaveCanvas.getContext("2d");
+        if (!ctx) return;
+        ctx.save();
+        ctx.scale(dpr, dpr);
+        ctx.clearRect(0, 0, w, h);
+
+        const styles = getComputedStyle(document.documentElement);
+        const colPlayed = styles.getPropertyValue("--md-sys-color-primary").trim();
+        const colUnplayed = styles.getPropertyValue("--md-sys-color-outline-variant").trim();
+        const colHover = styles.getPropertyValue("--md-sys-color-secondary").trim();
+        const colDrop = styles.getPropertyValue("--md-sys-color-star-active").trim();
+
+        const dur = getEffectiveDuration(track) || 1;
+        const cur = getEffectiveCurrentTime();
+        const progressFrac = clamp(cur / dur, 0, 1);
+        const dropFrac = track ? clamp(track.dropTargetSec / dur, 0, 1) : 0.35;
+
+        const peaks = (track && track.peaks) || [];
+        const barCount = Math.min(120, Math.max(48, Math.floor(w / 5)));
+        const step = w / barCount;
+        const barW = Math.max(2, step * 0.62);
+        const padY = 5;
+        const maxBarH = h - padY * 2;
+
+        for (let i = 0; i < barCount; i++) {
+          let amp = 0.45;
+          if (peaks.length) {
+            const pIdx = Math.min(peaks.length - 1, Math.floor((i / barCount) * peaks.length));
+            amp = clamp((Number(peaks[pIdx]) || 20) / 100, 0.12, 1.0);
+          }
+          const bh = Math.max(3, amp * maxBarH);
+          const x = i * step + (step - barW) * 0.5;
+          const y = (h - bh) * 0.5;
+          const barMidFrac = (i + 0.5) / barCount;
+
+          if (barMidFrac <= progressFrac) {
+            ctx.fillStyle = colPlayed;
+          } else if (hoverFrac !== null && barMidFrac <= hoverFrac) {
+            ctx.fillStyle = colHover;
+          } else {
+            ctx.fillStyle = colUnplayed;
+          }
+          ctx.beginPath();
+          if (typeof ctx.roundRect === "function") {
+            ctx.roundRect(x, y, barW, bh, 1.5);
+          } else {
+            ctx.rect(x, y, barW, bh);
+          }
+          ctx.fill();
+        }
+
+        // Draw Drop cue pin marker
+        const dropX = Math.round(dropFrac * w);
+        ctx.fillStyle = colDrop;
+        ctx.fillRect(dropX - 1, 2, 2, h - 4);
+        ctx.beginPath();
+        ctx.moveTo(dropX - 4, 2);
+        ctx.lineTo(dropX + 4, 2);
+        ctx.lineTo(dropX, 7);
+        ctx.closePath();
+        ctx.fill();
+
+        ctx.restore();
+      }
+
+      // Waveform Pointer Scrubbing
+      function pointerFracFromEvent(e) {
+        const rect = elWaveWrap.getBoundingClientRect();
+        if (!rect.width) return 0;
+        return clamp((e.clientX - rect.left) / rect.width, 0, 1);
+      }
+
+      elWaveWrap.addEventListener("pointerdown", (e) => {
+        const track = getCurrentTrack();
+        if (!track) return;
+        isScrubbing = true;
+        try {
+          elWaveWrap.setPointerCapture(e.pointerId);
+        } catch (_) {}
+        const frac = pointerFracFromEvent(e);
+        const dur = getEffectiveDuration(track);
+        const deck = getActiveDeck();
+        if (deck.trackId !== track.id || !deck.el.src) {
+          loadAndSelectTrack(track.id, { play: true, startSec: frac * dur });
+        } else {
+          seekDeckTo(deck, track, frac * dur);
+        }
+      });
+
+      elWaveWrap.addEventListener("pointermove", (e) => {
+        hoverFrac = pointerFracFromEvent(e);
+        if (isScrubbing) {
+          const track = getCurrentTrack();
+          if (track) {
+            const dur = getEffectiveDuration(track);
+            seekDeckTo(getActiveDeck(), track, hoverFrac * dur);
+          }
+        } else {
+          drawWaveform();
+        }
+      });
+
+      elWaveWrap.addEventListener("pointerup", (e) => {
+        if (!isScrubbing) return;
+        isScrubbing = false;
+        try {
+          elWaveWrap.releasePointerCapture(e.pointerId);
+        } catch (_) {}
+        drawWaveform();
+      });
+
+      elWaveWrap.addEventListener("pointerleave", () => {
+        hoverFrac = null;
+        if (!isScrubbing) drawWaveform();
+      });
+
+      // Button & Keyboard Wiring
+      elBtnPlay.addEventListener("click", togglePlayPause);
+
+      elBtnPrev.addEventListener("click", () => {
+        const prev = findPrevTrackBefore(currentTrackId);
+        if (prev) loadAndSelectTrack(prev.id, { play: true, scrollIntoView: true });
+      });
+
+      elBtnNext.addEventListener("click", () => {
+        const next = findNextTrackAfter(currentTrackId) || getFilteredTracks()[0];
+        if (next) loadAndSelectTrack(next.id, { play: true, scrollIntoView: true });
+      });
+
+      elBtnBack10.addEventListener("click", () => scrubRelative(-10));
+      elBtnDrop.addEventListener("click", jumpToDrop);
+      elBtnFwd20.addEventListener("click", () => scrubRelative(20));
+
+      [elVerdictSketch, elVerdictKeep, elVerdictRemove].forEach((btn) => {
+        btn.addEventListener("click", () => {
+          if (!currentTrackId) return;
+          recordVerdict(currentTrackId, btn.getAttribute("data-verdict"), true);
+        });
+      });
+
+      elFilterPills.addEventListener("click", (e) => {
+        const pill = e.target.closest("[data-filter]");
+        if (!pill) return;
+        const nextFilter = pill.getAttribute("data-filter");
+        if (!nextFilter || nextFilter === activeFilter) return;
+        activeFilter = nextFilter;
+        renderFilterPills();
+        renderQueueList();
+        preloadNextTrack();
+      });
+
+      function syncToggleUi() {
+        elToggleAutoNext.classList.toggle("is-on", autoNextOnVerdict);
+        elToggleAutoNext.setAttribute("aria-pressed", autoNextOnVerdict ? "true" : "false");
+        elToggleStartDrop.classList.toggle("is-on", startAtDrop);
+        elToggleStartDrop.setAttribute("aria-pressed", startAtDrop ? "true" : "false");
+      }
+
+      elToggleAutoNext.addEventListener("click", () => {
+        autoNextOnVerdict = !autoNextOnVerdict;
+        try {
+          localStorage.setItem(STORAGE_AUTONEXT_KEY, autoNextOnVerdict ? "1" : "0");
+        } catch (_) {}
+        syncToggleUi();
+      });
+
+      elToggleStartDrop.addEventListener("click", () => {
+        startAtDrop = !startAtDrop;
+        try {
+          localStorage.setItem(STORAGE_STARTDROP_KEY, startAtDrop ? "1" : "0");
+        } catch (_) {}
+        syncToggleUi();
+      });
+
+      elQueueRoot.addEventListener("click", (e) => {
+        const vBtn = e.target.closest("[data-row-verdict]");
+        if (vBtn) {
+          const tid = vBtn.getAttribute("data-track-id");
+          const v = vBtn.getAttribute("data-row-verdict");
+          if (tid && v) recordVerdict(tid, v, false);
+          return;
+        }
+        const mainArea = e.target.closest("[data-play-track]");
+        if (mainArea) {
+          const tid = mainArea.getAttribute("data-play-track");
+          if (tid) {
+            if (tid === currentTrackId) {
+              togglePlayPause();
+            } else {
+              loadAndSelectTrack(tid, { play: true, scrollIntoView: false });
+            }
+          }
+        }
+      });
+
+      elBtnCopy.addEventListener("click", copyChoicesToClipboard);
+
+      elBtnPreview.addEventListener("click", () => {
+        const nextOpen = elSummaryDrawer.hidden;
+        elSummaryDrawer.hidden = !nextOpen;
+        elBtnPreview.setAttribute("aria-expanded", nextOpen ? "true" : "false");
+        if (nextOpen) {
+          elSummaryTextarea.value = buildSummaryText();
+        }
+      });
+
+      elBtnDrawerClose.addEventListener("click", () => {
+        elSummaryDrawer.hidden = true;
+        elBtnPreview.setAttribute("aria-expanded", "false");
+      });
+
+      function handleResetAll() {
+        if (!window.confirm("Clear all saved Sketch / Keep / Remove choices?")) return;
+        verdicts = {};
+        saveVerdicts();
+        renderSummaryAndCounts();
+        renderFilterPills();
+        renderQueueList();
+        renderHeroVerdictButtons();
+      }
+
+      elBtnReset.addEventListener("click", handleResetAll);
+      if (elBtnDrawerReset) elBtnDrawerReset.addEventListener("click", handleResetAll);
+
+      function syncThemeButtonLabel() {
+        const resolved = document.documentElement.getAttribute("data-theme") || "light";
+        elThemeLabel.textContent = resolved === "dark" ? "Dark" : "Light";
+      }
+
+      elBtnTheme.addEventListener("click", () => {
+        const cur = document.documentElement.getAttribute("data-theme") === "dark" ? "dark" : "light";
+        const next = cur === "dark" ? "light" : "dark";
+        document.documentElement.setAttribute("data-theme", next);
+        document.documentElement.setAttribute("data-theme-mode", next);
+        document.documentElement.style.colorScheme = next;
+        try {
+          localStorage.setItem("btmm.theme", next);
+        } catch (_) {}
+        syncThemeButtonLabel();
+        drawWaveform();
+      });
+
+      // Keyboard Shortcuts: Space play/pause, Left/Right prev/next, D drop, 1/S Sketch, 2/K Keep, 3/X Remove
+      window.addEventListener("keydown", (e) => {
+        if (e.metaKey || e.ctrlKey || e.altKey) return;
+        const tag = (e.target && e.target.tagName) ? e.target.tagName.toLowerCase() : "";
+        if (tag === "input" || tag === "textarea" || tag === "select") return;
+
+        const key = e.key;
+        const lower = key.toLowerCase();
+        if (key === " ") {
+          e.preventDefault();
+          togglePlayPause();
+        } else if (key === "ArrowLeft") {
+          e.preventDefault();
+          if (e.shiftKey) {
+            scrubRelative(-10);
+          } else {
+            const prev = findPrevTrackBefore(currentTrackId);
+            if (prev) loadAndSelectTrack(prev.id, { play: true, scrollIntoView: true });
+          }
+        } else if (key === "ArrowRight") {
+          e.preventDefault();
+          if (e.shiftKey) {
+            scrubRelative(20);
+          } else {
+            const next = findNextTrackAfter(currentTrackId) || getFilteredTracks()[0];
+            if (next) loadAndSelectTrack(next.id, { play: true, scrollIntoView: true });
+          }
+        } else if (lower === "d") {
+          e.preventDefault();
+          jumpToDrop();
+        } else if (key === "1" || lower === "s") {
+          e.preventDefault();
+          if (currentTrackId) recordVerdict(currentTrackId, "sketch", true);
+        } else if (key === "2" || lower === "k") {
+          e.preventDefault();
+          if (currentTrackId) recordVerdict(currentTrackId, "keep", true);
+        } else if (key === "3" || lower === "x") {
+          e.preventDefault();
+          if (currentTrackId) recordVerdict(currentTrackId, "remove", true);
+        }
+      });
+
+      if (typeof navigator !== "undefined" && "mediaSession" in navigator) {
+        try {
+          navigator.mediaSession.setActionHandler("play", togglePlayPause);
+          navigator.mediaSession.setActionHandler("pause", togglePlayPause);
+          navigator.mediaSession.setActionHandler("previoustrack", () => {
+            const prev = findPrevTrackBefore(currentTrackId);
+            if (prev) loadAndSelectTrack(prev.id, { play: true });
+          });
+          navigator.mediaSession.setActionHandler("nexttrack", () => {
+            const next = findNextTrackAfter(currentTrackId);
+            if (next) loadAndSelectTrack(next.id, { play: true });
+          });
+        } catch (_) {}
+      }
+
+      window.addEventListener("resize", () => {
+        drawWaveform();
+      });
+
+      // Boot initial state & warm active + next audio streams immediately
+      syncThemeButtonLabel();
+      syncToggleUi();
+      renderSummaryAndCounts();
+      renderFilterPills();
+      renderQueueList();
+      if (currentTrackId) {
+        loadAndSelectTrack(currentTrackId, { play: false });
+      }
+    })();
+  </script>
+</body>
+</html>
