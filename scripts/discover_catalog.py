@@ -118,6 +118,7 @@ EXCLUDED_PATH_SUBSTRS = (
     "stepper sketches 2012-2018/arps test",
     "chord-ideas (1)-- best",
     "counterpoint-part-2",
+    "infinity & beyond",
     "jamstik",
     "jamstick",
     "minor chord rave riff",
@@ -201,6 +202,8 @@ EXCLUDED_EXACT_REL_PATHS = {
     "music sketches archive. 2012-2020/stepper sketches 2012-2018/take you chords 02-straight.wav",
     "music sketches archive. 2012-2020/stepper sketches 2012-2018/chord-ideas (1)-- best.mp3",
     "music sketches archive. 2012-2020/stepper sketches 2012-2018/counterpoint-part-2.mp3",
+    "music sketches archive. 2012-2020/stepper sketches 2012-2018/epic 4-4 demo.mp3",
+    "music sketches archive. 2012-2020/stepper sketches 2012-2018/infinity & beyond.mp3",
     "music sketches archive. 2012-2020/stepper sketches 2012-2018/jamstik -a7 d7 c7.mp3",
     "music sketches archive. 2012-2020/stepper sketches 2012-2018/jamstik -ambient.mp3",
     "music sketches archive. 2012-2020/stepper sketches 2012-2018/jamstik -crystal bell.mp3",
@@ -215,6 +218,12 @@ TITLE_OVERRIDES_BY_REL_PATH = {
     "me archive/present trax/mid tempo/tripping.wav": "tripping with Raymond and Stanley at cheese and wine parties",
     "me music - 2005 hard drive/grimy ruffmix.m4a": "Grimy",
     "me music - 2005 hard drive/war pr3s3nt mix hard.m4a": "WAR hard mix",
+    "music sketches archive. 2012-2020/stepper sketches 2012-2018/epic 4-4 demo2-.mp3": "Epic Powers",
+    "music sketches archive. 2012-2020/stepper sketches 2012-2018/epic powers (formerly epic 4-4 demo2)/epic powers.mp3": "Epic Powers",
+    "06 - ecstatic wave album/^ export/flowing wave 33 arrange.mp3": "Flowing Wave (Preview)",
+    "06 - ecstatic wave album/^ export/flowing wave 27.flac": "Flowing Wave (Preview)",
+    "06 - ecstatic wave album/flowing wave project/matchering - &me afro version/flowing wave 17 75bpm pt1_(matched).flac": "Flowing Wave (Preview)",
+    "^ remixes and commissions/ripple effect with voidcomplet/ripple effect (120.00 bpm) - main out.m4a": "Voidcomplet - Ripple effect (Bill Tribble vox)",
 }
 EXCLUDED_FILE_TOKENS = ("stem", "backing", "drumloop")
 EXCLUDED_EXACT_FILES = {"bass.wav", "vocals.wav", "perc.wav", "other.wav"}
@@ -554,26 +563,43 @@ def build_manifest(raw_items: list[dict], ffprobe_bin: str | None = None, check_
             or "/ai afrohouse" in w_low
             or "ai_test_kitchen" in w_low
         )
-        # User rules (post-022787, post-023035, post-023356, post-023452, post-023995): 100% of GenAI tracks and full-length (>= 75s) tracks have is_sketch = False unless explicitly overridden
+        # User rules (post-022787, post-023035, post-023356, post-023452, post-023995, post-024088, post-024096, post-024108..024111, post-024126): 100% of GenAI tracks and full-length (>= 75s) tracks have is_sketch = False unless explicitly overridden
         is_forced_sketch = (
             tid in {
                 "archive_2013_18_15",
+                "archive_2013_18_35",
+                "archive_2013_18_87",
                 "archive_2013_18_97",
+                "archive_2013_18_122",
+                "archive_2013_18_137",
+                "archive_2013_18_148",
+                "archive_2013_18_152",
+                "archive_2013_18_154",
                 "sketches_2024_25_24",
                 "sketches_2026_3",
             }
             or title.strip().lower() in {
                 "anjuna",
+                "clean 29 test track",
+                "lazer-sketch",
+                "lazer sketch",
                 "massive dune patch",
                 "granular perc fun",
                 "granular perc fun gamelanish",
                 "granular perc (gamelanish)",
                 "mya moody banger",
+                "reese rumble",
+                "spiral structure",
+                "tryell modsynth",
+                "tyrell modsynth",
+                "weather-reportish",
+                "who-knows 01 blues7th",
             }
         )
         is_psychedailies = str(era or "").strip().lower() == "psychedailies"
         is_sketch = False if (is_ai_track or is_psychedailies) else bool(is_forced_sketch or (not released and dur_sec is not None and dur_sec < 75.0))
-        tier = "released" if released else ("free_download" if is_ai_track else ("archive_dl" if year < 2015 else "request"))
+        is_curated_free_dl = "ripple effect with voidcomplet/" in w_low
+        tier = "released" if released else ("free_download" if (is_ai_track or is_curated_free_dl) else ("archive_dl" if year < 2015 else "request"))
 
         item_out = {
             "id": tid,
@@ -581,7 +607,7 @@ def build_manifest(raw_items: list[dict], ffprobe_bin: str | None = None, check_
             "slot": slot,
             "source": winner["src_kind"],
             "title": title,
-            "shortTitle": title.split(" (")[0][:26],
+            "shortTitle": title.split(" (")[0][:26] if " (" in title and len(title) > 26 else title[:26],
             "rel_path": winner["rel_path"],
             "local_path": winner.get("local_path", ""),
             "remote_path": winner.get("remote_path", ""),
@@ -599,6 +625,8 @@ def build_manifest(raw_items: list[dict], ffprobe_bin: str | None = None, check_
         }
         if is_psychedailies:
             item_out["note"] = "Made in one day, with help from friends on Endlesss."
+        elif title.strip().lower() == "spiral structure":
+            item_out["note"] = "Early sketch that became Kita Narashino."
         selected.append(item_out)
 
     return {

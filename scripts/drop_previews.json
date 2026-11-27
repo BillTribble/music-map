@@ -1,8 +1,8 @@
 {
   "summary": {
-    "total_tracks": 556,
+    "total_tracks": 554,
     "drum_tracks": 407,
-    "drumless_tracks": 149,
+    "drumless_tracks": 147,
     "drop_tracks": 245,
     "clusters": {
       "Generative AI · Afro, house & cumbia": {
@@ -11,7 +11,7 @@
         "drops": 49
       },
       "IDM, glitch & industrial": {
-        "total": 58,
+        "total": 56,
         "drums": 37,
         "drops": 16
       },
@@ -1939,20 +1939,9 @@
       "old_preview_start_sec": 79.41,
       "preview_start_sec": 79.41
     },
-    "archive_2013_18_52": {
-      "id": "archive_2013_18_52",
-      "title": "Epic 4-4 Demo",
-      "cluster_label": "IDM, glitch & industrial",
-      "is_ai": false,
-      "has_drums": false,
-      "drum_score": 0.642,
-      "has_drop": false,
-      "old_preview_start_sec": 66.87,
-      "preview_start_sec": 66.87
-    },
     "archive_2013_18_53": {
       "id": "archive_2013_18_53",
-      "title": "Epic 4-4 Demo2",
+      "title": "Epic Powers",
       "cluster_label": "IDM, glitch & industrial",
       "is_ai": false,
       "drum_score": 0.848,
@@ -2156,17 +2145,6 @@
       "has_drop": false,
       "old_preview_start_sec": 143.69,
       "preview_start_sec": 143.69
-    },
-    "archive_2013_18_73": {
-      "id": "archive_2013_18_73",
-      "title": "Infinity & beyond",
-      "cluster_label": "IDM, glitch & industrial",
-      "is_ai": false,
-      "has_drums": false,
-      "drum_score": 0.0,
-      "has_drop": false,
-      "old_preview_start_sec": 32.7,
-      "preview_start_sec": 32.7
     },
     "archive_2013_18_74": {
       "id": "archive_2013_18_74",
@@ -4745,7 +4723,7 @@
     },
     "remixes_commissions_17": {
       "id": "remixes_commissions_17",
-      "title": "ripple effect",
+      "title": "Voidcomplet - Ripple effect (Bill Tribble vox)",
       "cluster_label": "Hypnotic, dub & microtonal",
       "is_ai": false,
       "has_drums": true,
@@ -5215,7 +5193,7 @@
     },
     "ecstatic_wave_1": {
       "id": "ecstatic_wave_1",
-      "title": "Flowing Wave",
+      "title": "Flowing Wave (Preview)",
       "cluster_label": "Hypnotic, dub & microtonal",
       "is_ai": false,
       "drum_score": 0.979,

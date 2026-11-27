@@ -952,9 +952,17 @@
             const lowerParam = rawTrackParam.toLowerCase();
             const slugify = (s) => String(s || "").toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/^-+|-+$/g, "");
             const targetSlug = slugify(rawTrackParam);
+            const LEGACY_TRACK_SLUGS = {
+              "flowing-wave": "ecstatic_wave_1",
+              "epic-4-4-demo2": "archive_2013_18_53",
+              "epic-4-4-demo": "archive_2013_18_53",
+              "ripple-effect": "remixes_commissions_17",
+            };
+            const legacyId = targetSlug && LEGACY_TRACK_SLUGS[targetSlug];
             deepLinkTrack =
               tracks.find((t) => String(t.id || "").toLowerCase() === lowerParam) ||
               (targetSlug ? tracks.find((t) => slugify(t.title) === targetSlug) : null) ||
+              (legacyId ? byId.get(legacyId) : null) ||
               null;
           }
         }

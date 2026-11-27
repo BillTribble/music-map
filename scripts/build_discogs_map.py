@@ -216,7 +216,7 @@ DEFAULT_EXCLUDED_IDS = {
     # MusicFX AI test — excluded by owner (post-023266)
     "archive_2018_23_45",
     "archive_2018_23_46",
-    # Owner track removals (post-023520, post-023524, post-023576, post-023651, post-023691, post-023696, post-023750, post-023978)
+    # Owner track removals (post-023520, post-023524, post-023576, post-023651, post-023691, post-023696, post-023750, post-023978, post-024072, post-024081)
     "present_electro_7",
     "hd_2005_42",
     "archive_2013_18_146",
@@ -224,6 +224,8 @@ DEFAULT_EXCLUDED_IDS = {
     "archive_2013_18_34",
     "archive_2018_23_66",
     "archive_2013_18_37",
+    "archive_2013_18_52",
+    "archive_2013_18_73",
     "archive_2013_18_76",
     "archive_2013_18_77",
     "archive_2013_18_78",
@@ -235,7 +237,7 @@ DEFAULT_EXCLUDED_IDS = {
 # Tracks genuinely rendered in 2026 move to the '2026' Era column (post-023035),
 # while older timelines being remastered (EP Concepts, Lucid Crystal, Nusrat 2023) stay in their own timelines (post-023037, post-023038).
 RENDERED_2026_ERA_IDS = {
-    "ecstatic_wave_1",      # Flowing Wave (v33 arrange, 2026-11-21)
+    "ecstatic_wave_1",      # Flowing Wave (Preview) (v33 arrange, 2026-11-21)
     "ecstatic_wave_2",      # Mega Dark Bass (v07 flowing, 2026-11-16)
     "ecstatic_wave_3",      # Afro 06 (2026-09-08)
     "ecstatic_wave_4",      # Great Spirit 01 (2026-01-15)
@@ -267,6 +269,9 @@ TITLE_OVERRIDES = {
     "present_electro_61": "tripping with Raymond and Stanley at cheese and wine parties",
     "hd_2005_23": "Grimy",
     "hd_2005_48": "WAR hard mix",
+    "archive_2013_18_53": "Epic Powers",
+    "ecstatic_wave_1": "Flowing Wave (Preview)",
+    "remixes_commissions_17": "Voidcomplet - Ripple effect (Bill Tribble vox)",
 }
 
 INDIE_GUITAR_KEEPER_IDS = {
@@ -300,18 +305,46 @@ FORCE_NON_SKETCH_IDS = INDIE_GUITAR_KEEPER_IDS | SPOKEN_WORD_IDS | {
 }
 
 FORCE_SKETCH_IDS = {
-    "archive_2013_18_15",  # Anjuna (post-023995: sketch despite >= 75s)
-    "archive_2013_18_97",  # Massive Dune Patch (post-023356: sketch despite >= 75s)
+    "archive_2013_18_15",   # Anjuna (post-023995: sketch despite >= 75s)
+    "archive_2013_18_35",   # Clean 29 Test Track (post-024108: sketch despite >= 75s)
+    "archive_2013_18_87",   # Lazer-sketch (post-024096: sketch despite >= 75s)
+    "archive_2013_18_97",   # Massive Dune Patch (post-023356: sketch despite >= 75s)
+    "archive_2013_18_122",  # Reese Rumble (post-024088: sketch despite >= 75s)
+    "archive_2013_18_137",  # Spiral Structure (post-024111: sketch despite >= 75s; became Kita Narashino)
+    "archive_2013_18_148",  # Tryell modsynth (post-024126: sketch despite >= 75s)
+    "archive_2013_18_152",  # Weather-reportish (post-024109: sketch despite >= 75s)
+    "archive_2013_18_154",  # Who-knows 01 Blues7th (post-024110: sketch despite >= 75s)
     "sketches_2024_25_24",  # Granular Perc Fun Gamelanish (post-023452: sketch despite >= 75s)
-    "sketches_2026_3",  # Mya Moody Banger (post-023995: sketch despite >= 75s)
+    "sketches_2026_3",      # Mya Moody Banger (post-023995: sketch despite >= 75s)
 }
 FORCE_SKETCH_TITLES = {
     "anjuna",
+    "clean 29 test track",
+    "lazer-sketch",
+    "lazer sketch",
     "massive dune patch",
     "granular perc fun",
     "granular perc fun gamelanish",
     "granular perc (gamelanish)",
     "mya moody banger",
+    "reese rumble",
+    "spiral structure",
+    "tryell modsynth",
+    "tyrell modsynth",
+    "weather-reportish",
+    "who-knows 01 blues7th",
+}
+TRACK_NOTES = {
+    "archive_2013_18_137": "Early sketch that became Kita Narashino.",
+}
+CURATED_FREE_DOWNLOAD_OVERRIDES = {
+    "remixes_commissions_17": {
+        "tier": "free_download",
+        "dl_ready": True,
+        "mp3_320_url": "https://github.com/BillTribble/music-map/releases/download/archive-downloads-v1/Bill_Tribble_-_Voidcomplet_Ripple_effect_Bill_Tribble_vox.mp3",
+        "mp3_320_bytes": 7123317,
+        "mp3_size_mb": 6.8,
+    },
 }
 
 
@@ -329,6 +362,8 @@ def is_excluded_by_folder_rule(path_str: str) -> bool:
       or low_p.endswith("/arps test.mp3")
       or "chord-ideas (1)-- best" in low_p
       or "counterpoint-part-2" in low_p
+      or low_p.endswith("/epic 4-4 demo.mp3")
+      or "infinity & beyond" in low_p
       or "jamstik" in low_p
       or "jamstick" in low_p
       or "minor chord rave riff" in low_p
@@ -1721,6 +1756,8 @@ def build_dataset(
         or "chord-ideas (1)-- best" in tl
         or tl in ("war machine", "war machine 04")
         or tl == "counterpoint-part-2"
+        or tl == "epic 4-4 demo"
+        or "infinity & beyond" in tl
         or "jamstik" in tl
         or "jamstick" in tl
         or "minor chord rave riff" in tl
@@ -2132,6 +2169,10 @@ def build_dataset(
       if eff_era == "psychedailies" or tid.startswith("psychedailies_"):
         upd["is_sketch"] = False
         upd["note"] = PSYCHEDAILIES_NOTE
+      elif tid in TRACK_NOTES:
+        upd["note"] = TRACK_NOTES[tid]
+      if tid in CURATED_FREE_DOWNLOAD_OVERRIDES:
+        upd.update(CURATED_FREE_DOWNLOAD_OVERRIDES[tid])
 
     drop_entry = drop_previews_by_id.get(tid)
     if isinstance(drop_entry, dict) and drop_entry.get("has_drop"):

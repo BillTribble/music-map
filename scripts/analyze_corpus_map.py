@@ -702,7 +702,7 @@ DEFAULT_EXCLUDED_IDS = {
     # MusicFX AI test — excluded by owner (post-023266)
     "archive_2018_23_45",
     "archive_2018_23_46",
-    # Owner track removals (post-023520, post-023524, post-023576, post-023651, post-023691, post-023696, post-023750, post-023978)
+    # Owner track removals (post-023520, post-023524, post-023576, post-023651, post-023691, post-023696, post-023750, post-023978, post-024072, post-024081)
     "present_electro_7",
     "hd_2005_42",
     "archive_2013_18_146",
@@ -710,6 +710,8 @@ DEFAULT_EXCLUDED_IDS = {
     "archive_2013_18_34",
     "archive_2018_23_66",
     "archive_2013_18_37",
+    "archive_2013_18_52",
+    "archive_2013_18_73",
     "archive_2013_18_76",
     "archive_2013_18_77",
     "archive_2013_18_78",
@@ -1437,17 +1439,33 @@ def enrich_track_tiers(t: dict, rel_repo: str = "BillTribble/music-map") -> None
     is_forced_sketch = (
         tid in {
             "archive_2013_18_15",
+            "archive_2013_18_35",
+            "archive_2013_18_87",
             "archive_2013_18_97",
+            "archive_2013_18_122",
+            "archive_2013_18_137",
+            "archive_2013_18_148",
+            "archive_2013_18_152",
+            "archive_2013_18_154",
             "sketches_2024_25_24",
             "sketches_2026_3",
         }
         or str(t.get("title") or "").strip().lower() in {
             "anjuna",
+            "clean 29 test track",
+            "lazer-sketch",
+            "lazer sketch",
             "massive dune patch",
             "granular perc fun",
             "granular perc fun gamelanish",
             "granular perc (gamelanish)",
             "mya moody banger",
+            "reese rumble",
+            "spiral structure",
+            "tryell modsynth",
+            "tyrell modsynth",
+            "weather-reportish",
+            "who-knows 01 blues7th",
         }
     )
     is_psychedailies = str(era or "").strip().lower() == "psychedailies" or str(tid).startswith("psychedailies_")
@@ -1455,10 +1473,13 @@ def enrich_track_tiers(t: dict, rel_repo: str = "BillTribble/music-map") -> None
         is_forced_sketch
         or (not released and full_dur is not None and float(full_dur) < 75.0)
     )
-    tier = "released" if released else ("free_download" if t.get("is_ai") else ("archive_dl" if year < 2015 else "request"))
+    is_curated_free_dl = tid in {"remixes_commissions_17"}
+    tier = "released" if released else ("free_download" if (t.get("is_ai") or is_curated_free_dl) else ("archive_dl" if year < 2015 else "request"))
     t.update({"year": year, "released": released, "is_sketch": is_sketch, "tier": tier})
     if is_psychedailies:
         t["note"] = "Made in one day, with help from friends on Endlesss."
+    elif tid == "archive_2013_18_137":
+        t["note"] = "Early sketch that became Kita Narashino."
     if is_forced_sketch:
         t["wip_eligible"] = False
     if links:
@@ -1518,6 +1539,8 @@ def is_excluded_by_folder_rule(path_str: str) -> bool:
         or low_p.endswith("/arps test.mp3")
         or "chord-ideas (1)-- best" in low_p
         or "counterpoint-part-2" in low_p
+        or low_p.endswith("/epic 4-4 demo.mp3")
+        or "infinity & beyond" in low_p
         or "jamstik" in low_p
         or "jamstick" in low_p
         or "minor chord rave riff" in low_p

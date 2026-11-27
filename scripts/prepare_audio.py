@@ -92,7 +92,7 @@ TRACK_SPECS = [
     ("corpus", "sketches_2024_25", 3, "Afro Retro", 122.0, "^ music sketches 2025/afro retro/afro retro 2025-01-06 2349.mp3"),
     ("corpus", "sketches_2024_25", 4, "Techno Idea 02", 130.0, "^ music sketches 2025/techno idea 01/techno idea 02 2025-03-19 1300.flac"),
 
-    ("corpus", "ecstatic_wave", 1, "Flowing Wave", 88.64, "06 - Ecstatic Wave Album/^ export/Flowing wave 27.flac", 1369.0),
+    ("corpus", "ecstatic_wave", 1, "Flowing Wave (Preview)", 88.64, "06 - Ecstatic Wave Album/^ export/Flowing wave 27.flac", 1369.0),
     ("corpus", "ecstatic_wave", 2, "Mega Dark Bass", 122.0, "06 - Ecstatic Wave Album/Mega dark bass/Matchered/Bill Tribble - Mega dark bass 06 matchered.flac"),
     ("corpus", "ecstatic_wave", 3, "Afro 06", 122.0, "06 - Ecstatic Wave Album/^ export/Afro 06.flac"),
     ("corpus", "ecstatic_wave", 4, "Great Spirit 01", 122.0, "06 - Ecstatic Wave Album/^ export/Great spirit 01.flac"),

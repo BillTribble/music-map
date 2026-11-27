@@ -131,20 +131,39 @@
   }
 
   const PSYCHEDAILIES_NOTE = "Made in one day, with help from friends on Endlesss.";
+  const TRACK_NOTES = {
+    archive_2013_18_137: "Early sketch that became Kita Narashino.",
+  };
 
   const FORCE_SKETCH_IDS = new Set([
     "archive_2013_18_15",
+    "archive_2013_18_35",
+    "archive_2013_18_87",
     "archive_2013_18_97",
+    "archive_2013_18_122",
+    "archive_2013_18_137",
+    "archive_2013_18_148",
+    "archive_2013_18_152",
+    "archive_2013_18_154",
     "sketches_2024_25_24",
     "sketches_2026_3",
   ]);
   const FORCE_SKETCH_TITLES = new Set([
     "anjuna",
+    "clean 29 test track",
+    "lazer-sketch",
+    "lazer sketch",
     "massive dune patch",
     "granular perc fun",
     "granular perc fun gamelanish",
     "granular perc (gamelanish)",
     "mya moody banger",
+    "reese rumble",
+    "spiral structure",
+    "tryell modsynth",
+    "tyrell modsynth",
+    "weather-reportish",
+    "who-knows 01 blues7th",
   ]);
 
   function isPsychedailiesTrack(t) {
@@ -157,6 +176,7 @@
   function getTrackNote(t) {
     if (!t) return "";
     if (typeof t.note === "string" && t.note.trim()) return t.note.trim();
+    if (t.id && TRACK_NOTES[t.id]) return TRACK_NOTES[t.id];
     if (isPsychedailiesTrack(t)) return PSYCHEDAILIES_NOTE;
     return "";
   }
