@@ -113,17 +113,19 @@
 
   const PULSE_PRESET_KEY_PRIMARY = "btmm.pulsePreset.v1";
   const PULSE_PRESET_KEY_ALT = "btmm.pulseTuning.v1";
+  const PULSE_PRESET_SCHEMA_VERSION = 4;
+  const PULSE_PRESET_PROMOTED_AT_MS = Date.parse("2026-11-27T14:45:05Z");
   const DEFAULT_PULSE_PRESET_API = "https://music-map-events.billtribble.workers.dev/api/pulse-preset";
   const VALID_PULSE_MODES = new Set(["line_dots", "line_sheen"]);
   const DEFAULT_PULSE_TUNING = Object.freeze({
     mode: "line_dots",
-    lineStrength: 1.65,
-    dotSpeed: 0.3,
-    reverseMix: 0.45,
-    colorCount: 2,
+    lineStrength: 1.25,
+    dotSpeed: 0.2,
+    reverseMix: 0.4,
+    colorCount: 3,
     targetPulseSpeed: 0.2,
-    pulseGlow: 0.85,
-    dotSize: 0.85,
+    pulseGlow: 0.35,
+    dotSize: 1.05,
     dotSizePulseAmt: 0.5,
     dotSizePulseFreq: 0.65,
     dotSpacing: 0.9,
@@ -174,10 +176,40 @@
     if (typeof localStorage === "undefined") return;
     try {
       const raw = localStorage.getItem(PULSE_PRESET_KEY_PRIMARY) || localStorage.getItem(PULSE_PRESET_KEY_ALT);
-      if (!raw) return;
+      if (!raw) {
+        pulseTuning = { ...DEFAULT_PULSE_TUNING };
+        return;
+      }
       const parsed = JSON.parse(raw);
-      pulseTuning = sanitizePulseTuning(parsed, DEFAULT_PULSE_TUNING);
-    } catch (_) {}
+      if (!parsed || typeof parsed !== "object" || Array.isArray(parsed)) {
+        pulseTuning = { ...DEFAULT_PULSE_TUNING };
+        return;
+      }
+      const src = parsed.preset && typeof parsed.preset === "object" && !Array.isArray(parsed.preset) ? parsed.preset : parsed;
+      const rawVersion = Number(src.version ?? parsed.version) || 0;
+      const savedAtRaw = typeof (src.savedAt ?? parsed.savedAt) === "string" ? (src.savedAt ?? parsed.savedAt).trim() : "";
+      const savedAtMs = savedAtRaw ? Date.parse(savedAtRaw) : NaN;
+      if (rawVersion < PULSE_PRESET_SCHEMA_VERSION) {
+        if (Number.isFinite(savedAtMs) && savedAtMs > PULSE_PRESET_PROMOTED_AT_MS) {
+          pulseTuning = sanitizePulseTuning(src, DEFAULT_PULSE_TUNING);
+          const migrated = JSON.stringify({
+            version: PULSE_PRESET_SCHEMA_VERSION,
+            ...pulseTuning,
+            savedAt: savedAtRaw,
+          });
+          localStorage.setItem(PULSE_PRESET_KEY_PRIMARY, migrated);
+          localStorage.setItem(PULSE_PRESET_KEY_ALT, migrated);
+        } else {
+          localStorage.removeItem(PULSE_PRESET_KEY_PRIMARY);
+          localStorage.removeItem(PULSE_PRESET_KEY_ALT);
+          pulseTuning = { ...DEFAULT_PULSE_TUNING };
+        }
+        return;
+      }
+      pulseTuning = sanitizePulseTuning(src, DEFAULT_PULSE_TUNING);
+    } catch (_) {
+      pulseTuning = { ...DEFAULT_PULSE_TUNING };
+    }
   }
 
   function resolvePulsePresetEndpoint() {
@@ -2580,7 +2612,7 @@
     if (pulseSaveInFlight) return { ok: false, inFlight: true };
     pulseSaveInFlight = true;
     const payload = {
-      version: 3,
+      version: PULSE_PRESET_SCHEMA_VERSION,
       mode: pulseTuning.mode,
       lineStrength: pulseTuning.lineStrength,
       dotSpeed: pulseTuning.dotSpeed,
