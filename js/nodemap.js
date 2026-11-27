@@ -82,7 +82,31 @@
   let zoom = { k: 1, x: 0, y: 0 };
   let tweenRaf = 0;
   let resizeRaf = 0;
+  let pulseRaf = 0;
+  let pulseLastNow = 0;
+  let pulseTimeSec = 0;
+  let pulseWaveOriginSec = 0;
+  let pulseAlpha = 0;
+  let lastRingSig = "";
+  const pulseState = {
+    fromId: null,
+    toId: null,
+    live: false,
+  };
   let palette = {};
+
+  const GEMINI_STOPS_DARK = [
+    [139, 92, 246],  // #8B5CF6 electric Gemini violet
+    [66, 133, 244],  // #4285F4 Gemini blue
+    [38, 198, 218],  // #26C6DA aqua cyan
+    [232, 113, 168], // #E871A8 warm Gemini rose-magenta
+  ];
+  const GEMINI_STOPS_LIGHT = [
+    [109, 40, 217],  // #6D28D9 royal Gemini violet
+    [37, 99, 235],   // #2563EB vivid cobalt blue
+    [8, 145, 178],   // #0891B2 crisp teal cyan
+    [219, 39, 119],  // #DB2777 vivid rose-magenta
+  ];
 
   function samplePalette() {
     if (typeof document === "undefined" || typeof getComputedStyle !== "function") return;
@@ -667,13 +691,24 @@
 
   function paintRings(playId, pendId) {
     if (!ringG) return;
-    ringG.innerHTML = "";
 
     const targets = [];
     if (hoverId && hoverId !== selectedId && hoverId !== playId) targets.push({ id: hoverId, kind: "hover" });
     if (pendId && pendId !== playId) targets.push({ id: pendId, kind: "queued" });
     if (selectedId) targets.push({ id: selectedId, kind: "selected" });
     if (playId) targets.push({ id: playId, kind: "playing" });
+
+    const nextRingSig = targets.map((item) => {
+      const n = nodeById.get(item.id);
+      if (!n) return "";
+      const sx = Number.isFinite(n.px) ? n.px : n.x * zoom.k + zoom.x;
+      const sy = Number.isFinite(n.py) ? n.py : n.y * zoom.k + zoom.y;
+      return `${item.kind}:${item.id}:${sx.toFixed(1)},${sy.toFixed(1)}:${zoom.k.toFixed(3)}:${trackColor(n.t)}`;
+    }).join("|") + `|${palette.playing}|${palette.queued}|${palette.primary}`;
+
+    if (nextRingSig === lastRingSig) return;
+    lastRingSig = nextRingSig;
+    ringG.innerHTML = "";
 
     targets.forEach((item) => {
       const n = nodeById.get(item.id);
@@ -703,6 +738,427 @@
         ringG.appendChild(ring);
       }
     });
+  }
+
+  function isReducedMotionPreferred() {
+    return Boolean(
+      typeof window !== "undefined" &&
+      window.matchMedia &&
+      window.matchMedia("(prefers-reduced-motion: reduce)").matches
+    );
+  }
+
+  function isNodeRenderedOnMap(n) {
+    if (!n || !n.t) return false;
+    if (isSketchHidden(n.t)) return false;
+    if (starFilter && !isMatch(n.t)) return false;
+    return true;
+  }
+
+  function resolveUpcomingTargetId(playId, pendId) {
+    if (!playId) return null;
+    if (pendId && pendId !== playId && byId.has(pendId)) return pendId;
+    if (hooks && typeof hooks.upcoming === "function") {
+      const upId = hooks.upcoming(playId);
+      if (upId && upId !== playId && byId.has(upId)) return upId;
+    }
+    if (typeof window !== "undefined" && window.ME_AUDIO && typeof window.ME_AUDIO.peekNextTrack === "function") {
+      const nextTr = window.ME_AUDIO.peekNextTrack(playId);
+      if (nextTr && nextTr.id && nextTr.id !== playId && byId.has(nextTr.id)) {
+        return nextTr.id;
+      }
+    }
+    return null;
+  }
+
+  function fract(x) {
+    return x - Math.floor(x);
+  }
+
+  function smoothstep(edge0, edge1, x) {
+    if (edge1 <= edge0) return x >= edge1 ? 1 : 0;
+    const t = Math.max(0, Math.min(1, (x - edge0) / (edge1 - edge0)));
+    return t * t * (3 - 2 * t);
+  }
+
+  function sampleGeminiCyclic(t, isLight) {
+    const stops = isLight ? GEMINI_STOPS_LIGHT : GEMINI_STOPS_DARK;
+    const n = stops.length;
+    const pos = fract(t) * n;
+    const idx = Math.floor(pos) % n;
+    const f = pos - Math.floor(pos);
+    const s = f * f * (3 - 2 * f);
+    const a = stops[idx];
+    const b = stops[(idx + 1) % n];
+    return [
+      Math.round(a[0] + (b[0] - a[0]) * s),
+      Math.round(a[1] + (b[1] - a[1]) * s),
+      Math.round(a[2] + (b[2] - a[2]) * s),
+    ];
+  }
+
+  function rgbaStr(rgb, alpha) {
+    return `rgba(${rgb[0]}, ${rgb[1]}, ${rgb[2]}, ${Math.max(0, Math.min(1, alpha)).toFixed(3)})`;
+  }
+
+  function stepPulseState(playId, pendId) {
+    const reduced = isReducedMotionPreferred();
+    const nextId = playId ? resolveUpcomingTargetId(playId, pendId) : null;
+    const fromNode = playId ? nodeById.get(playId) : null;
+    const toNode = nextId ? nodeById.get(nextId) : null;
+    const liveValid = Boolean(
+      fromNode &&
+      toNode &&
+      fromNode.id !== toNode.id &&
+      isNodeRenderedOnMap(fromNode) &&
+      isNodeRenderedOnMap(toNode)
+    );
+
+    const now = typeof performance !== "undefined" && typeof performance.now === "function"
+      ? performance.now()
+      : Date.now();
+    const rawDt = pulseLastNow > 0 ? (now - pulseLastNow) / 1000 : 0.016;
+    pulseLastNow = now;
+    const dt = Math.max(0, Math.min(0.064, rawDt));
+
+    if (liveValid) {
+      if (pulseState.fromId !== fromNode.id) {
+        pulseWaveOriginSec = pulseTimeSec;
+      }
+      pulseState.fromId = fromNode.id;
+      pulseState.toId = toNode.id;
+      pulseState.live = true;
+      if (reduced) {
+        pulseAlpha = 1;
+      } else {
+        pulseAlpha = Math.min(1, Math.max(pulseAlpha + dt / 0.24, 0.06));
+        pulseTimeSec += dt;
+      }
+      return;
+    }
+
+    pulseState.live = false;
+    const fadeFrom = pulseState.fromId ? nodeById.get(pulseState.fromId) : null;
+    const fadeTo = pulseState.toId ? nodeById.get(pulseState.toId) : null;
+    if (!fadeFrom || !fadeTo || !isNodeRenderedOnMap(fadeFrom) || !isNodeRenderedOnMap(fadeTo) || reduced) {
+      pulseAlpha = 0;
+    } else if (pulseAlpha > 0) {
+      pulseAlpha = Math.max(0, pulseAlpha - dt / 0.28);
+      pulseTimeSec += dt * 0.65;
+    }
+    if (pulseAlpha <= 0.004) {
+      pulseAlpha = 0;
+      pulseLastNow = 0;
+    }
+  }
+
+  function schedulePulseFrameIfNeeded() {
+    const mapHidden = Boolean(
+      !mapWrap ||
+      mapWrap.hidden ||
+      (typeof document !== "undefined" && document.hidden)
+    );
+    const reduced = isReducedMotionPreferred();
+    const wantAnim = !mapHidden && !reduced && (pulseState.live || pulseAlpha > 0.004);
+    if (!wantAnim) {
+      if (pulseRaf && typeof cancelAnimationFrame === "function") {
+        cancelAnimationFrame(pulseRaf);
+        pulseRaf = 0;
+      }
+      if (!pulseState.live && pulseAlpha <= 0.004) pulseLastNow = 0;
+      return;
+    }
+    if (tweenRaf || pulseRaf || typeof requestAnimationFrame !== "function") return;
+    pulseRaf = requestAnimationFrame(() => {
+      pulseRaf = 0;
+      paintCanvas();
+    });
+  }
+
+  function evalQuad(ax, ay, cx, cy, bx, by, u) {
+    const inv = 1 - u;
+    return [
+      inv * inv * ax + 2 * inv * u * cx + u * u * bx,
+      inv * inv * ay + 2 * inv * u * cy + u * u * by,
+    ];
+  }
+
+  function buildPulseGeometry() {
+    if (pulseAlpha <= 0.004 || !pulseState.fromId || !pulseState.toId) return null;
+    const fromNode = nodeById.get(pulseState.fromId);
+    const toNode = nodeById.get(pulseState.toId);
+    if (!fromNode || !toNode || !isNodeRenderedOnMap(fromNode) || !isNodeRenderedOnMap(toNode)) return null;
+
+    const ax = Number.isFinite(fromNode.px) ? fromNode.px : fromNode.x * zoom.k + zoom.x;
+    const ay = Number.isFinite(fromNode.py) ? fromNode.py : fromNode.y * zoom.k + zoom.y;
+    const bx = Number.isFinite(toNode.px) ? toNode.px : toNode.x * zoom.k + zoom.x;
+    const by = Number.isFinite(toNode.py) ? toNode.py : toNode.y * zoom.k + zoom.y;
+
+    const minX = Math.min(ax, bx) - 48;
+    const maxX = Math.max(ax, bx) + 48;
+    const minY = Math.min(ay, by) - 64;
+    const maxY = Math.max(ay, by) + 64;
+    if (maxX < 0 || minX > vw || maxY < 0 || minY > vh) return null;
+
+    const dx = bx - ax;
+    const dy = by - ay;
+    const chord = Math.hypot(dx, dy);
+    if (chord < 1.5) return null;
+
+    const mx = (ax + bx) * 0.5;
+    const my = (ay + by) * 0.5;
+    let cx = mx;
+    let cy = my;
+    if (layout === "era") {
+      if (Math.abs(dx) < 14 && chord > 24) {
+        cx = mx + Math.min(18, chord * 0.14);
+      } else if (Math.abs(dx) >= 14) {
+        const lift = Math.min(32, Math.max(8, Math.abs(dx) * 0.17 + chord * 0.04));
+        cy = my + (Math.min(ay, by) < 88 ? lift : -lift);
+      }
+    }
+
+    const SEG = 16;
+    const cumLen = new Float64Array(SEG + 1);
+    let px0 = ax;
+    let py0 = ay;
+    let totalLen = 0;
+    for (let i = 1; i <= SEG; i++) {
+      const [qx, qy] = evalQuad(ax, ay, cx, cy, bx, by, i / SEG);
+      totalLen += Math.hypot(qx - px0, qy - py0);
+      cumLen[i] = totalLen;
+      px0 = qx;
+      py0 = qy;
+    }
+    if (totalLen < 1.5) return null;
+
+    function uAtArcLen(s) {
+      if (s <= 0) return 0;
+      if (s >= totalLen) return 1;
+      let lo = 0;
+      let hi = SEG;
+      while (lo + 1 < hi) {
+        const mid = (lo + hi) >> 1;
+        if (cumLen[mid] <= s) lo = mid;
+        else hi = mid;
+      }
+      const segSpan = cumLen[hi] - cumLen[lo];
+      const fracSeg = segSpan > 1e-4 ? (s - cumLen[lo]) / segSpan : 0;
+      return (lo + fracSeg) / SEG;
+    }
+
+    const curR = nodeScreenRadius(fromNode.t) + 1.3;
+    const nextR = nodeScreenRadius(toNode.t);
+    const numWaves = totalLen >= 340 ? 2 : 1;
+    const wavePeriodSec = Math.max(0.95, Math.min(1.65, totalLen / 165));
+    const elapsedWave = Math.max(0, pulseTimeSec - pulseWaveOriginSec);
+
+    function waveBoostAt(u) {
+      if (isReducedMotionPreferred()) return 0.35;
+      let best = 0;
+      for (let w = 0; w < numWaves; w++) {
+        const front = fract(elapsedWave / wavePeriodSec + w / numWaves);
+        let du = u - front;
+        if (du > 0.5) du -= 1;
+        else if (du < -0.5) du += 1;
+        const sigma = du > 0 ? 0.055 : 0.135;
+        const pkt = Math.exp(-(du * du) / (2 * sigma * sigma));
+        if (pkt > best) best = pkt;
+      }
+      return best;
+    }
+
+    const arrivalBoost = waveBoostAt(0.96);
+
+    return {
+      fromNode,
+      toNode,
+      ax,
+      ay,
+      bx,
+      by,
+      cx,
+      cy,
+      totalLen,
+      curR,
+      nextR,
+      arrivalBoost,
+      uAtArcLen,
+      waveBoostAt,
+    };
+  }
+
+  function drawNextPulseUnderlay(geom, isLight) {
+    if (!geom || !ctx) return;
+    const { ax, ay, bx, by, cx, cy, totalLen, curR, nextR, arrivalBoost, uAtArcLen } = geom;
+    const master = pulseAlpha;
+    const phaseShift = -pulseTimeSec * 0.18;
+
+    ctx.save();
+    ctx.setLineDash([]);
+
+    // 1. Subtle Gemini violet-blue emitter aura underneath the currently playing node
+    if (ax >= -36 && ax <= vw + 36 && ay >= -36 && ay <= vh + 36) {
+      const emitR = curR + 10.5;
+      const emitGrad = ctx.createRadialGradient(ax, ay, curR * 0.4, ax, ay, emitR);
+      emitGrad.addColorStop(0, rgbaStr(sampleGeminiCyclic(0.05 + phaseShift, isLight), (isLight ? 0.20 : 0.28) * master));
+      emitGrad.addColorStop(0.58, rgbaStr(sampleGeminiCyclic(0.28 + phaseShift, isLight), (isLight ? 0.10 : 0.14) * master));
+      emitGrad.addColorStop(1, "rgba(66, 133, 244, 0)");
+      ctx.beginPath();
+      ctx.arc(ax, ay, emitR, 0, Math.PI * 2);
+      ctx.fillStyle = emitGrad;
+      ctx.globalAlpha = 1;
+      ctx.fill();
+    }
+
+    // 2. Soft breathing Gemini destination aura underneath the upcoming Next node
+    if (bx >= -42 && bx <= vw + 42 && by >= -42 && by <= vh + 42) {
+      const destAuraR = nextR + 12 + 4.2 * arrivalBoost;
+      const destGrad = ctx.createRadialGradient(bx, by, nextR * 0.4, bx, by, destAuraR);
+      destGrad.addColorStop(0, rgbaStr(sampleGeminiCyclic(0.62 + phaseShift, isLight), ((isLight ? 0.20 : 0.26) + 0.15 * arrivalBoost) * master));
+      destGrad.addColorStop(0.55, rgbaStr(sampleGeminiCyclic(0.86 + phaseShift, isLight), ((isLight ? 0.10 : 0.14) + 0.10 * arrivalBoost) * master));
+      destGrad.addColorStop(1, "rgba(232, 113, 168, 0)");
+      ctx.beginPath();
+      ctx.arc(bx, by, destAuraR, 0, Math.PI * 2);
+      ctx.fillStyle = destGrad;
+      ctx.globalAlpha = 1;
+      ctx.fill();
+    }
+
+    // 3. Soft Gemini aurora ambient mist along currentNode -> nextNode (no solid wire, pure luminous glow)
+    const sStart = Math.min(totalLen * 0.45, curR + 5.0);
+    const sEnd = Math.max(totalLen * 0.55, totalLen - (nextR + 5.4));
+    if (sEnd > sStart + 2) {
+      const u0 = uAtArcLen(sStart);
+      const u1 = uAtArcLen(sEnd);
+      const lineGrad = ctx.createLinearGradient(ax, ay, bx, by);
+      lineGrad.addColorStop(0, rgbaStr(sampleGeminiCyclic(0.0 + phaseShift, isLight), 1));
+      lineGrad.addColorStop(0.34, rgbaStr(sampleGeminiCyclic(0.28 + phaseShift, isLight), 1));
+      lineGrad.addColorStop(0.68, rgbaStr(sampleGeminiCyclic(0.56 + phaseShift, isLight), 1));
+      lineGrad.addColorStop(1, rgbaStr(sampleGeminiCyclic(0.84 + phaseShift, isLight), 1));
+
+      ctx.beginPath();
+      const STEPS = 14;
+      for (let i = 0; i <= STEPS; i++) {
+        const u = u0 + (u1 - u0) * (i / STEPS);
+        const [px, py] = evalQuad(ax, ay, cx, cy, bx, by, u);
+        if (i === 0) ctx.moveTo(px, py);
+        else ctx.lineTo(px, py);
+      }
+      ctx.lineCap = "round";
+      ctx.strokeStyle = lineGrad;
+      ctx.lineWidth = 6.5;
+      ctx.globalAlpha = (isLight ? 0.07 : 0.11) * master;
+      ctx.stroke();
+    }
+
+    ctx.restore();
+  }
+
+  function drawNextPulseOverlay(geom, isLight) {
+    if (!geom || !ctx) return;
+    const { ax, ay, bx, by, cx, cy, totalLen, curR, nextR, arrivalBoost, uAtArcLen, waveBoostAt } = geom;
+    const master = pulseAlpha;
+    const phaseShift = -pulseTimeSec * 0.18;
+
+    ctx.save();
+    ctx.setLineDash([]);
+
+    // 1. Shimmering Gemini gradient halo ring around the upcoming Next node
+    if (bx >= -32 && bx <= vw + 32 && by >= -32 && by <= vh + 32) {
+      const haloR = nextR + 4.4 + 1.45 * arrivalBoost;
+      const rot = pulseTimeSec * 1.35;
+      const gx = Math.cos(rot) * haloR;
+      const gy = Math.sin(rot) * haloR;
+      const ringGrad = ctx.createLinearGradient(bx - gx, by - gy, bx + gx, by + gy);
+      ringGrad.addColorStop(0, rgbaStr(sampleGeminiCyclic(0.0, isLight), 1));
+      ringGrad.addColorStop(0.35, rgbaStr(sampleGeminiCyclic(0.30, isLight), 1));
+      ringGrad.addColorStop(0.70, rgbaStr(sampleGeminiCyclic(0.60, isLight), 1));
+      ringGrad.addColorStop(1, rgbaStr(sampleGeminiCyclic(0.90, isLight), 1));
+
+      ctx.beginPath();
+      ctx.arc(bx, by, haloR, 0, Math.PI * 2);
+      ctx.strokeStyle = ringGrad;
+      ctx.lineWidth = 1.85 + 0.45 * arrivalBoost;
+      ctx.globalAlpha = ((isLight ? 0.82 : 0.88) + 0.12 * arrivalBoost) * master;
+      ctx.stroke();
+    }
+
+    // 2. Continuously marching & pulsing Gemini gradient dots flowing from currentNode -> nextNode
+    const sStart = curR + 5.2;
+    const sEnd = totalLen - (nextR + 5.6);
+    const usableLen = sEnd - sStart;
+    const dotStep = Math.max(8.8, Math.min(12.4, 9.6 * Math.pow(Math.max(1, zoom.k), 0.14)));
+    const marchSpeed = 44;
+    const reduced = isReducedMotionPreferred();
+
+    if (usableLen >= 6.5) {
+      const phaseOffset = reduced ? (dotStep * 0.5) : ((pulseTimeSec * marchSpeed) % dotStep);
+      const fadeSpan = Math.min(13, usableLen * 0.25);
+
+      for (let s = sStart + phaseOffset; s <= sEnd; s += dotStep) {
+        const u = uAtArcLen(s);
+        const [px, py] = evalQuad(ax, ay, cx, cy, bx, by, u);
+        if (px < -24 || px > vw + 24 || py < -24 || py > vh + 24) continue;
+
+        const inFade = fadeSpan > 0.5 ? smoothstep(0, fadeSpan, s - sStart) : 1;
+        const outFade = fadeSpan > 0.5 ? smoothstep(0, fadeSpan, sEnd - s) : 1;
+        const endEnv = inFade * outFade;
+        if (endEnv <= 0.02) continue;
+
+        const waveBoost = waveBoostAt(u);
+        const rgb = sampleGeminiCyclic(u * 0.88 + phaseShift, isLight);
+        const dotR = (1.45 + 1.65 * waveBoost) * (0.58 + 0.42 * endEnv);
+
+        // Feather-soft radial aurora bloom (decays smoothly to 0 alpha — zero hard soap-bubble rim!)
+        if (waveBoost > 0.16) {
+          const glowR = dotR * (isLight ? 2.6 : 3.2);
+          const bloom = ctx.createRadialGradient(px, py, dotR * 0.25, px, py, glowR);
+          const peakGlow = (isLight ? 0.28 : 0.42) * waveBoost * endEnv * master;
+          bloom.addColorStop(0, rgbaStr(rgb, peakGlow));
+          bloom.addColorStop(0.48, rgbaStr(rgb, peakGlow * 0.36));
+          bloom.addColorStop(1, rgbaStr(rgb, 0));
+          ctx.beginPath();
+          ctx.arc(px, py, glowR, 0, Math.PI * 2);
+          ctx.fillStyle = bloom;
+          ctx.globalAlpha = 1;
+          ctx.fill();
+        }
+
+        ctx.beginPath();
+        ctx.arc(px, py, dotR, 0, Math.PI * 2);
+        ctx.fillStyle = rgbaStr(rgb, 1);
+        ctx.globalAlpha = ((isLight ? 0.56 : 0.52) + (isLight ? 0.42 : 0.46) * waveBoost) * endEnv * master;
+        ctx.fill();
+
+        if (!isLight && waveBoost > 0.62) {
+          const coreStrength = (waveBoost - 0.62) / 0.38;
+          ctx.beginPath();
+          ctx.arc(px, py, Math.max(0.65, dotR * 0.44), 0, Math.PI * 2);
+          ctx.fillStyle = "#FFFFFF";
+          ctx.globalAlpha = 0.88 * coreStrength * endEnv * master;
+          ctx.fill();
+        }
+      }
+    } else if (totalLen > curR + nextR + 1.5) {
+      // Ultra-close neighbor bridge: two sequential pulsing micro-dots between adjacent rims
+      const uMidA = Math.min(0.46, (curR + 1.6) / totalLen);
+      const uMidB = Math.max(0.54, 1 - (nextR + 1.8) / totalLen);
+      const microUs = [uMidA, uMidB];
+      for (let m = 0; m < microUs.length; m++) {
+        const u = microUs[m];
+        const [px, py] = evalQuad(ax, ay, cx, cy, bx, by, u);
+        const w = reduced ? 0.6 : (0.5 + 0.5 * Math.sin(pulseTimeSec * 6.2 - m * 1.35));
+        const rgb = sampleGeminiCyclic(u * 0.8 + phaseShift, isLight);
+        ctx.beginPath();
+        ctx.arc(px, py, 1.35 + 0.85 * w, 0, Math.PI * 2);
+        ctx.fillStyle = rgbaStr(rgb, 1);
+        ctx.globalAlpha = (0.48 + 0.45 * w) * master;
+        ctx.fill();
+      }
+    }
+
+    ctx.restore();
   }
 
   function paintCanvas() {
@@ -746,6 +1202,8 @@
     }
 
     computeScreenPositions();
+    stepPulseState(playId, pendId);
+    const pulseGeom = buildPulseGeometry();
 
     const isLight = document.documentElement.getAttribute("data-theme") === "light";
     const zoomScale = Math.max(1, zoom.k);
@@ -759,6 +1217,14 @@
       const b = nodeById.get(e.b);
       if (!a || !b) return;
       if (isSketchHidden(a.t) || isSketchHidden(b.t)) return;
+      const isPulseEdge = Boolean(
+        pulseGeom &&
+        pulseAlpha > 0.01 &&
+        ((e.a === pulseState.fromId && e.b === pulseState.toId) ||
+         (e.a === pulseState.toId && e.b === pulseState.fromId))
+      );
+      if (isPulseEdge && pulseAlpha >= 0.96) return;
+      const edgeFade = isPulseEdge ? (1 - pulseAlpha) : 1;
       const selLit = Boolean(selectedId && (e.a === selectedId || e.b === selectedId));
       const hovLit = Boolean(!selLit && hoverId && (e.a === hoverId || e.b === hoverId));
       const lit = selLit || hovLit;
@@ -808,12 +1274,12 @@
 
       if (lit) {
         ctx.strokeStyle = palette.primary;
-        ctx.globalAlpha = selLit ? 0.90 : 0.78;
+        ctx.globalAlpha = (selLit ? 0.90 : 0.78) * edgeFade;
         ctx.lineWidth = e.weak ? 1.55 : 1.9;
         ctx.setLineDash([]);
       } else {
         ctx.strokeStyle = isLight ? (palette.edgeLine || palette.outline) : (palette.edgeLineDark || palette.edgeLine);
-        ctx.globalAlpha = edgeAlpha;
+        ctx.globalAlpha = edgeAlpha * edgeFade;
         ctx.lineWidth = edgeWidth;
         ctx.setLineDash([]);
       }
@@ -855,7 +1321,9 @@
       });
     };
     drawPass(false);
+    if (pulseGeom) drawNextPulseUnderlay(pulseGeom, isLight);
     drawPass(true);
+    if (pulseGeom) drawNextPulseOverlay(pulseGeom, isLight);
 
     if (window.BTMM_MAP_LABELS) {
       window.BTMM_MAP_LABELS.drawScreenTrackLabels(ctx, {
@@ -885,6 +1353,7 @@
     ctx.restore();
     paintRings(playId, pendId);
     updateHoverPill();
+    schedulePulseFrameIfNeeded();
   }
 
   function paint() {
@@ -915,7 +1384,7 @@
       });
       paintCanvas();
       if (u < 1) tweenRaf = requestAnimationFrame(step);
-      else { tweenRaf = 0; drawFloatingLabels(); }
+      else { tweenRaf = 0; drawFloatingLabels(); schedulePulseFrameIfNeeded(); }
     }
     tweenRaf = requestAnimationFrame(step);
   }
@@ -1179,6 +1648,17 @@
       eraGenAiBtn.addEventListener("blur", () => { if (hudHoverTarget === "genai") { hudHoverTarget = null; updateHudHint(); } });
     }
 
+    if (typeof document !== "undefined") {
+      document.addEventListener("visibilitychange", () => {
+        if (document.hidden) {
+          schedulePulseFrameIfNeeded();
+        } else if (hooks && hooks.playing && hooks.playing()) {
+          pulseLastNow = 0;
+          paintCanvas();
+        }
+      });
+    }
+
     if (typeof ResizeObserver !== "undefined") {
       const ro = new ResizeObserver((entries) => {
         const cr = entries[0] && entries[0].contentRect;
@@ -1393,6 +1873,7 @@
     resizeCanvas();
 
     svg.innerHTML = "";
+    lastRingSig = "";
     groupG = elSvg("g", "map-groups");
     ringG = elSvg("g", "map-rings");
     svg.append(ringG, groupG);
@@ -1445,6 +1926,17 @@
     getEdges: () => edges.slice(),
     getEdgesCountFor: (tid) => edges.filter((e) => e.a === tid || e.b === tid).length,
     getNodeScreenPos: (tid) => { const n = nodeById.get(tid); return n && Number.isFinite(n.px) ? [n.px, n.py] : null; },
+    isMapVisible: () => Boolean(mapWrap && !mapWrap.hidden),
+    isTrackMatched: (tid) => { const t = byId.get(tid); return Boolean(t && isMatch(t)); },
+    isTrackVisible: (tid) => { const n = nodeById.get(tid); return Boolean(n && isNodeRenderedOnMap(n)); },
+    getNextPulseState: () => ({
+      fromId: pulseState.fromId,
+      toId: pulseState.toId,
+      live: pulseState.live,
+      alpha: pulseAlpha,
+      timeSec: pulseTimeSec,
+      rafActive: Boolean(pulseRaf),
+    }),
     setColorMode(mode) { colorMode = mode; paint(); },
     getColorMode: () => colorMode,
     refreshTheme() { samplePalette(); paint(); },

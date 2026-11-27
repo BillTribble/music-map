@@ -199,6 +199,16 @@
 
   function isActiveViewFilterMatch(cand) {
     if (!cand) return false;
+    if (typeof window !== "undefined" && window.ME_NODEMAP) {
+      const nm = window.ME_NODEMAP;
+      if (
+        typeof nm.isMapVisible === "function" &&
+        nm.isMapVisible() &&
+        typeof nm.isTrackMatched === "function"
+      ) {
+        return Boolean(nm.isTrackMatched(cand.id));
+      }
+    }
     if (typeof document !== "undefined") {
       const starBtn = document.getElementById("star-filter-btn");
       if (
@@ -273,15 +283,19 @@
     return true;
   }
 
-  function collectSimilarCandidatePool(currentId, curTrack, effectiveVisited, extraExclude) {
+  function collectSimilarCandidatePool(currentId, curTrack, effectiveVisited, extraExclude, allowIgnoreFilter = true) {
     const curIsAi = Boolean(curTrack && curTrack.is_ai);
     const curSpoken = Boolean(curTrack && curTrack.is_spoken_word);
     const passes = [
       { allowSpoken: curSpoken, anyTerritory: false, ignoreViewFilter: false },
       { allowSpoken: curSpoken, anyTerritory: true, ignoreViewFilter: false },
-      { allowSpoken: curSpoken, anyTerritory: false, ignoreViewFilter: true },
-      { allowSpoken: true, anyTerritory: true, ignoreViewFilter: true },
     ];
+    if (allowIgnoreFilter) {
+      passes.push(
+        { allowSpoken: curSpoken, anyTerritory: false, ignoreViewFilter: true },
+        { allowSpoken: true, anyTerritory: true, ignoreViewFilter: true }
+      );
+    }
     for (let p = 0; p < passes.length; p++) {
       const pOpts = passes[p];
       const out = [];
@@ -309,16 +323,32 @@
     const extraExclude = opts.excludeIds instanceof Set ? opts.excludeIds : null;
     let effectiveVisited = visitedIds;
 
+    // 1. Prefer unvisited candidates matching the active view/map filters first
     let { pool: unvisited, eligOpts } = collectSimilarCandidatePool(
       currentId,
       curTrack,
       effectiveVisited,
-      extraExclude
+      extraExclude,
+      false
     );
+    if (unvisited.length === 0 && extraExclude && extraExclude.size > 0) {
+      const noHistTry = collectSimilarCandidatePool(currentId, curTrack, effectiveVisited, null, false);
+      unvisited = noHistTry.pool;
+      eligOpts = noHistTry.eligOpts;
+    }
 
+    // 2. If all view-filtered tracks were visited, loop cleanly inside the active filter/territory before widening
     if (unvisited.length === 0) {
       if (peekOnly) {
-        effectiveVisited = new Set(currentId && byId.has(currentId) ? [currentId] : []);
+        const nextVisited = new Set();
+        visitedIds.forEach((vid) => {
+          const vt = byId.get(vid);
+          if (!(vt && Boolean(vt.is_ai) === curIsAi && vid !== currentId)) {
+            nextVisited.add(vid);
+          }
+        });
+        if (currentId && byId.has(currentId)) nextVisited.add(currentId);
+        effectiveVisited = nextVisited;
       } else {
         // Clear visited history within this territory so the walk loops cleanly inside its territory
         Array.from(visitedIds).forEach((vid) => {
@@ -330,9 +360,14 @@
         if (currentId && byId.has(currentId)) visitedIds.add(currentId);
         effectiveVisited = visitedIds;
       }
-      const retry = collectSimilarCandidatePool(currentId, curTrack, effectiveVisited, null);
-      unvisited = retry.pool;
-      eligOpts = retry.eligOpts;
+      const retryFiltered = collectSimilarCandidatePool(currentId, curTrack, effectiveVisited, null, false);
+      unvisited = retryFiltered.pool;
+      eligOpts = retryFiltered.eligOpts;
+      if (unvisited.length === 0) {
+        const retryUnfiltered = collectSimilarCandidatePool(currentId, curTrack, effectiveVisited, null, true);
+        unvisited = retryUnfiltered.pool;
+        eligOpts = retryUnfiltered.eligOpts;
+      }
       if (!unvisited.length) return curTrack || tracksList[0];
     }
 
@@ -763,7 +798,7 @@
   function maybePrewarmNext(currentTrackId) {
     if (!autoPlay || fadingOut || !ensureDecks()) return;
     const standbyIdx = active ? (1 - active.deckIdx) : 1;
-    const nextTrack = pickNextSimilarTrack(currentTrackId, { peekOnly: true });
+    const nextTrack = peekNextTrack(currentTrackId);
     if (!nextTrack) return;
     if (prewarm && prewarm.trackId === nextTrack.id && prewarm.deckIdx === standbyIdx && !prewarm.disposed) {
       return;
@@ -965,34 +1000,91 @@
     return targetTrack.id;
   }
 
-  function nextSimilarTrack(opts = {}) {
+  function resolveNextSimilarDecision(opts = {}) {
     if (!tracksList.length) return null;
-    const curId = resolveHistoryAnchorId();
-    if (curId && (historyCursor < 0 || playHistory[historyCursor] !== curId)) {
-      recordHistoryVisit(curId);
-    }
+    const consume = Boolean(opts.consume);
+    const curId = opts.anchorId && byId.has(opts.anchorId)
+      ? opts.anchorId
+      : resolveHistoryAnchorId();
+    const curTrack = curId ? byId.get(curId) : null;
+    const curIsAi = Boolean(curTrack && curTrack.is_ai);
 
-    while (historyCursor >= 0 && historyCursor + 1 < playHistory.length) {
-      historyCursor += 1;
-      const forwardId = playHistory[historyCursor];
-      if (forwardId && byId.has(forwardId) && forwardId !== curId) {
-        return applyManualHistorySkip(byId.get(forwardId), opts);
+    let effHistory = playHistory;
+    let effCursor = historyCursor;
+    if (curId && (effCursor < 0 || effHistory[effCursor] !== curId)) {
+      if (consume) {
+        recordHistoryVisit(curId);
+        effHistory = playHistory;
+        effCursor = historyCursor;
+      } else {
+        effHistory = playHistory.slice();
+        if (effCursor >= 0 && effCursor + 1 < effHistory.length && effHistory[effCursor + 1] === curId) {
+          effCursor += 1;
+        } else {
+          if (effCursor >= 0 && effCursor + 1 < effHistory.length) {
+            effHistory.splice(effCursor + 1);
+          }
+          if (effHistory[effHistory.length - 1] !== curId) {
+            effHistory.push(curId);
+          }
+          if (effHistory.length > 500) effHistory.shift();
+          effCursor = effHistory.length - 1;
+        }
       }
     }
 
+    if (effCursor >= 0 && effCursor + 1 < effHistory.length) {
+      for (let idx = effCursor + 1; idx < effHistory.length; idx++) {
+        const forwardId = effHistory[idx];
+        if (!forwardId || !byId.has(forwardId) || forwardId === curId) continue;
+        const forwardTrack = byId.get(forwardId);
+        if (!isWalkEligible(forwardTrack, curIsAi, { allowSpoken: true, anyTerritory: true, ignoreViewFilter: false })) {
+          continue;
+        }
+        if (consume) {
+          historyCursor = idx;
+        }
+        return { track: forwardTrack, fromForwardHistory: true };
+      }
+      if (consume && historyCursor >= 0 && historyCursor + 1 < playHistory.length) {
+        playHistory.splice(historyCursor + 1);
+      }
+      effHistory = effHistory.slice(0, effCursor + 1);
+    }
+
     const nextTrack = pickNextSimilarTrack(curId, {
-      peekOnly: false,
+      peekOnly: !consume,
       allowSpoken: true,
-      excludeIds: new Set(playHistory),
+      excludeIds: new Set(effHistory),
     });
     if (!nextTrack) return null;
-    if (playHistory[playHistory.length - 1] !== nextTrack.id) {
-      playHistory.push(nextTrack.id);
+    if (consume) {
+      if (playHistory[playHistory.length - 1] !== nextTrack.id) {
+        playHistory.push(nextTrack.id);
+      }
+      if (playHistory.length > 500) playHistory.shift();
+      historyCursor = playHistory.length - 1;
+      visitedIds.add(nextTrack.id);
     }
-    if (playHistory.length > 500) playHistory.shift();
-    historyCursor = playHistory.length - 1;
-    visitedIds.add(nextTrack.id);
-    return applyManualHistorySkip(nextTrack, opts);
+    return { track: nextTrack, fromForwardHistory: false };
+  }
+
+  function peekNextTrack(anchorId) {
+    if (pending && pending.trackId && byId.has(pending.trackId)) {
+      const activeId = active && !active.disposed ? active.trackId : null;
+      if (pending.trackId !== activeId) return byId.get(pending.trackId);
+    }
+    const dec = resolveNextSimilarDecision({
+      consume: false,
+      anchorId: anchorId || null,
+    });
+    return dec ? dec.track : null;
+  }
+
+  function nextSimilarTrack(opts = {}) {
+    const dec = resolveNextSimilarDecision({ consume: true });
+    if (!dec || !dec.track) return null;
+    return applyManualHistorySkip(dec.track, opts);
   }
 
   function prevSimilarTrack(opts = {}) {
@@ -1024,8 +1116,9 @@
   function advanceToNextSimilar(opts = {}) {
     if (!active || active.disposed) return null;
     const prevId = active.trackId;
-    const nextTrack = pickNextSimilarTrack(prevId, { peekOnly: false });
-    if (!nextTrack) return null;
+    const dec = resolveNextSimilarDecision({ consume: true, anchorId: prevId });
+    if (!dec || !dec.track) return null;
+    const nextTrack = dec.track;
 
     const fadeMs = opts.crossfadeMs === 0
       ? 0
@@ -1033,6 +1126,7 @@
     const nextHasDrop = Boolean(nextTrack.has_drop) && Number(nextTrack.preview_start_sec) > 0.02;
     playTrack(nextTrack, {
       fromAutoPlay: true,
+      fromHistoryNav: Boolean(dec.fromForwardHistory),
       fromStart: !nextHasDrop,
       crossfadeMs: fadeMs,
     });
@@ -1788,6 +1882,7 @@
     prevSimilarTrack: (opts) => prevSimilarTrack(opts),
     skipNextSimilar: (opts) => nextSimilarTrack(opts),
     skipPrevSimilar: (opts) => prevSimilarTrack(opts),
+    peekNextTrack: (id) => peekNextTrack(id),
     pickNextSimilarTrack: (id, opts) => pickNextSimilarTrack(id, opts),
     pickPrevSimilarTrack: (id, opts) => pickPrevSimilarTrack(id, opts),
     getPlayHistory: () => ({ ids: playHistory.slice(), cursor: historyCursor }),

@@ -926,6 +926,11 @@
         trackNear: trackNearData,
         playing: () => window.ME_AUDIO.playing(),
         pending: () => window.ME_AUDIO.pending(),
+        upcoming: (playId) => {
+          if (!window.ME_AUDIO || typeof window.ME_AUDIO.peekNextTrack !== "function") return null;
+          const nextTr = window.ME_AUDIO.peekNextTrack(playId);
+          return nextTr && nextTr.id ? nextTr.id : null;
+        },
         onTap: (tid) => window.ME_AUDIO.toggleTrack(tid),
         onLayoutChange: () => renderModeSwitchers(),
       });
