@@ -2132,10 +2132,109 @@ async function handlePurgeOwnSession(request, env, corsHeaders) {
   );
 }
 
+const AUDIO_ROUTE_RE = /^\/api\/audio\/([a-zA-Z0-9._-]{1,80})\/([a-zA-Z0-9._%+-]{1,220}\.(?:mp3|m4a|ogg|wav|flac))$/i;
+
+function isAudioOriginAllowed(origin, env) {
+  if (!origin) return true;
+  if (isOriginAllowed(origin, env)) return true;
+  return /^https?:\/\/(127\.0\.0\.1|localhost)(:\d+)?$/i.test(origin);
+}
+
+function audioMimeFromAsset(assetName) {
+  const low = String(assetName || "").toLowerCase();
+  if (low.endsWith(".mp3")) return "audio/mpeg";
+  if (low.endsWith(".m4a")) return "audio/mp4";
+  if (low.endsWith(".ogg")) return "audio/ogg";
+  if (low.endsWith(".wav")) return "audio/wav";
+  if (low.endsWith(".flac")) return "audio/flac";
+  return "application/octet-stream";
+}
+
+function buildAudioCorsHeaders(origin) {
+  return {
+    "Access-Control-Allow-Origin": origin || "*",
+    "Access-Control-Allow-Methods": "GET, HEAD, OPTIONS",
+    "Access-Control-Allow-Headers": "Range, If-Range, Content-Type",
+    "Access-Control-Expose-Headers": "Content-Length, Content-Range, Accept-Ranges, Content-Type, ETag",
+    "Access-Control-Max-Age": "86400",
+    Vary: "Origin",
+  };
+}
+
+async function handleAudioRangeStream(request, url, origin, env) {
+  if (!isAudioOriginAllowed(origin, env)) {
+    return new Response(null, { status: 403 });
+  }
+  const cors = buildAudioCorsHeaders(origin);
+  if (request.method === "OPTIONS") {
+    return new Response(null, { status: 204, headers: cors });
+  }
+  if (request.method !== "GET" && request.method !== "HEAD") {
+    return new Response("Method Not Allowed", { status: 405, headers: cors });
+  }
+  const m = AUDIO_ROUTE_RE.exec(url.pathname);
+  if (!m) {
+    return new Response("Not Found", { status: 404, headers: cors });
+  }
+  const tag = m[1];
+  const rawAsset = m[2];
+  let decodedAsset = rawAsset;
+  try {
+    decodedAsset = decodeURIComponent(rawAsset);
+  } catch (_) {
+    return new Response("Bad Request", { status: 400, headers: cors });
+  }
+  if (
+    tag.includes("..") ||
+    decodedAsset.includes("..") ||
+    decodedAsset.includes("/") ||
+    decodedAsset.includes("\\")
+  ) {
+    return new Response("Bad Request", { status: 400, headers: cors });
+  }
+
+  const ghUrl = `https://github.com/BillTribble/music-map/releases/download/${encodeURIComponent(tag)}/${encodeURIComponent(decodedAsset)}`;
+  const upHeaders = { "User-Agent": "music-map-audio-stream/1.0" };
+  const rangeHdr = request.headers.get("range");
+  const ifRangeHdr = request.headers.get("if-range");
+  if (rangeHdr) upHeaders.Range = rangeHdr;
+  if (ifRangeHdr) upHeaders["If-Range"] = ifRangeHdr;
+
+  const upstream = await fetch(ghUrl, {
+    method: request.method,
+    headers: upHeaders,
+    redirect: "follow",
+    cf: { cacheTtl: 86400, cacheEverything: true },
+  });
+
+  if (!upstream.ok && upstream.status !== 206 && upstream.status !== 304 && upstream.status !== 416) {
+    return new Response("Upstream Audio Unavailable", { status: upstream.status || 502, headers: cors });
+  }
+
+  const outHeaders = new Headers(cors);
+  outHeaders.set("Content-Type", audioMimeFromAsset(decodedAsset));
+  outHeaders.set("Accept-Ranges", upstream.headers.get("accept-ranges") || "bytes");
+  outHeaders.set("Cache-Control", "public, max-age=31536000, immutable");
+  for (const h of ["content-length", "content-range", "etag", "last-modified"]) {
+    const v = upstream.headers.get(h);
+    if (v) outHeaders.set(h, v);
+  }
+
+  return new Response(request.method === "HEAD" ? null : upstream.body, {
+    status: upstream.status,
+    headers: outHeaders,
+  });
+}
+
 export default {
   async fetch(request, env, ctx) {
     const url = new URL(request.url);
     const origin = request.headers.get("origin") || "";
+
+    if (url.pathname.startsWith("/api/audio/")) {
+      return handleAudioRangeStream(request, url, origin, env);
+    }
+
     const corsHeaders = buildCorsHeaders(origin, env);
 
     if (request.method === "OPTIONS") {
