@@ -231,7 +231,6 @@ DEFAULT_EXCLUDED_IDS = {
     "archive_2013_18_78",
     "archive_2013_18_103",
     "hd_2005_33",
-    "sketches_2024_25_32",
 }
 
 # Tracks genuinely rendered in 2026 move to the '2026' Era column (post-023035),
@@ -272,6 +271,10 @@ TITLE_OVERRIDES = {
     "archive_2013_18_53": "Epic Powers",
     "ecstatic_wave_1": "Flowing Wave (Preview)",
     "remixes_commissions_17": "Voidcomplet - Ripple effect (Bill Tribble vox)",
+    "sketches_2024_25_32": "Wireless (feat. Sasha Jacques)",
+}
+SHORT_TITLE_OVERRIDES = {
+    "sketches_2024_25_32": "Wireless (Sasha Jacques)",
 }
 
 INDIE_GUITAR_KEEPER_IDS = {
@@ -336,6 +339,7 @@ FORCE_SKETCH_TITLES = {
 }
 TRACK_NOTES = {
     "archive_2013_18_137": "Early sketch that became Kita Narashino.",
+    "sketches_2024_25_32": "Live sound healing & voice activation with Sasha Jacques at Ecstatic Dance UK (The Baths, Hackney, 17 Mar 2024).",
 }
 CURATED_FREE_DOWNLOAD_OVERRIDES = {
     "remixes_commissions_17": {
@@ -369,7 +373,6 @@ def is_excluded_by_folder_rule(path_str: str) -> bool:
       or "minor chord rave riff" in low_p
       or "not 2 l8" in low_p
       or "war machine/war machine 04" in low_p
-      or "wireless-bounce-1" in low_p
   ):
     return True
   parts = [p.strip() for p in low_p.split("/") if p.strip()]
@@ -1761,7 +1764,7 @@ def build_dataset(
         or "jamstik" in tl
         or "jamstick" in tl
         or "minor chord rave riff" in tl
-        or tl in ("not 2 l8", "not 2 l8 comp", "wireless", "wireless-bounce-1")
+        or tl in ("not 2 l8", "not 2 l8 comp")
     )
 
   feats = np.load(features_path)
@@ -2119,10 +2122,11 @@ def build_dataset(
     else:
       upd["title"] = bd.clean_track_title(str(t.get("title") or ""))
     ct_disp = upd["title"]
-    upd["shortTitle"] = (
+    upd["shortTitle"] = SHORT_TITLE_OVERRIDES.get(
+        tid,
         ct_disp.split(" (")[0][:26]
         if " (" in ct_disp and len(ct_disp) > 26
-        else ct_disp[:26]
+        else ct_disp[:26],
     )
     if not is_ai:
       res_era, res_yr, res_slot = bd.resolve_present_1997_2004_era(

@@ -1,8 +1,8 @@
 {
   "summary": {
-    "total_tracks": 554,
+    "total_tracks": 555,
     "drum_tracks": 407,
-    "drumless_tracks": 147,
+    "drumless_tracks": 148,
     "drop_tracks": 245,
     "clusters": {
       "Generative AI · Afro, house & cumbia": {
@@ -16,7 +16,7 @@
         "drops": 16
       },
       "Ambient & soundscapes": {
-        "total": 59,
+        "total": 60,
         "drums": 0,
         "drops": 0
       },
@@ -5190,6 +5190,17 @@
       "has_drop": false,
       "old_preview_start_sec": 12.82,
       "preview_start_sec": 12.82
+    },
+    "sketches_2024_25_32": {
+      "id": "sketches_2024_25_32",
+      "title": "Wireless (feat. Sasha Jacques)",
+      "cluster_label": "Ambient & soundscapes",
+      "is_ai": false,
+      "has_drums": false,
+      "drum_score": 0.0,
+      "has_drop": false,
+      "old_preview_start_sec": 82.94,
+      "preview_start_sec": 82.94
     },
     "ecstatic_wave_1": {
       "id": "ecstatic_wave_1",

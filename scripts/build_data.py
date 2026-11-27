@@ -187,6 +187,7 @@ FORCE_SKETCH_TITLES = {
 }
 TRACK_NOTES = {
     "archive_2013_18_137": "Early sketch that became Kita Narashino.",
+    "sketches_2024_25_32": "Live sound healing & voice activation with Sasha Jacques at Ecstatic Dance UK (The Baths, Hackney, 17 Mar 2024).",
 }
 CURATED_FREE_DOWNLOAD_OVERRIDES = {
     "remixes_commissions_17": {
@@ -1061,7 +1062,6 @@ DEFAULT_EXCLUDED_IDS = {
     "archive_2013_18_78",
     "archive_2013_18_103",
     "hd_2005_33",
-    "sketches_2024_25_32",
 }
 
 TITLE_OVERRIDES = {
@@ -1073,6 +1073,10 @@ TITLE_OVERRIDES = {
     "archive_2013_18_53": "Epic Powers",
     "ecstatic_wave_1": "Flowing Wave (Preview)",
     "remixes_commissions_17": "Voidcomplet - Ripple effect (Bill Tribble vox)",
+    "sketches_2024_25_32": "Wireless (feat. Sasha Jacques)",
+}
+SHORT_TITLE_OVERRIDES = {
+    "sketches_2024_25_32": "Wireless (Sasha Jacques)",
 }
 
 _PRESENT_LEET_MAP = str.maketrans({
@@ -1307,7 +1311,6 @@ def is_excluded_by_folder_rule(path_str: str) -> bool:
         or "minor chord rave riff" in low_p
         or "not 2 l8" in low_p
         or "war machine/war machine 04" in low_p
-        or "wireless-bounce-1" in low_p
     ):
         return True
     parts = [p.strip() for p in low_p.split("/") if p.strip()]
@@ -1456,10 +1459,11 @@ def build_from_full_analysis(
             t["title"] = strip_present_references(TITLE_OVERRIDES[tid])
         else:
             t["title"] = clean_track_title(str(t.get("title") or ""))
-        t["shortTitle"] = (
+        t["shortTitle"] = SHORT_TITLE_OVERRIDES.get(
+            tid,
             t["title"].split(" (")[0][:26]
             if " (" in t["title"] and len(t["title"]) > 26
-            else t["title"][:26]
+            else t["title"][:26],
         )
 
         # Merge Tier B 320k MP3 / lossless FLAC download metadata when available
@@ -1502,9 +1506,12 @@ def build_from_full_analysis(
             if str(t.get("era") or "").strip().lower() == "psychedailies" or str(t.get("id") or "").startswith("psychedailies_"):
                 t["is_sketch"] = False
                 t["note"] = "Made in one day, with help from friends on Endlesss."
-            elif str(t.get("id") or "") in FORCE_SKETCH_IDS or str(t.get("title") or "").strip().lower() in FORCE_SKETCH_TITLES:
-                t["is_sketch"] = True
-                t["wip_eligible"] = False
+            else:
+                if str(t.get("id") or "") in TRACK_NOTES:
+                    t["note"] = TRACK_NOTES[str(t["id"])]
+                if str(t.get("id") or "") in FORCE_SKETCH_IDS or str(t.get("title") or "").strip().lower() in FORCE_SKETCH_TITLES:
+                    t["is_sketch"] = True
+                    t["wip_eligible"] = False
 
         merged_tracks.append(t)
 

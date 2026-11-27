@@ -717,7 +717,6 @@ DEFAULT_EXCLUDED_IDS = {
     "archive_2013_18_78",
     "archive_2013_18_103",
     "hd_2005_33",
-    "sketches_2024_25_32",
 }
 
 CANONICAL_ARCHETYPES: list[tuple[str, str, int]] = [
@@ -1480,6 +1479,8 @@ def enrich_track_tiers(t: dict, rel_repo: str = "BillTribble/music-map") -> None
         t["note"] = "Made in one day, with help from friends on Endlesss."
     elif tid == "archive_2013_18_137":
         t["note"] = "Early sketch that became Kita Narashino."
+    elif tid == "sketches_2024_25_32":
+        t["note"] = "Live sound healing & voice activation with Sasha Jacques at Ecstatic Dance UK (The Baths, Hackney, 17 Mar 2024)."
     if is_forced_sketch:
         t["wip_eligible"] = False
     if links:
@@ -1546,7 +1547,6 @@ def is_excluded_by_folder_rule(path_str: str) -> bool:
         or "minor chord rave riff" in low_p
         or "not 2 l8" in low_p
         or "war machine/war machine 04" in low_p
-        or "wireless-bounce-1" in low_p
     ):
         return True
     parts = [p.strip() for p in low_p.split("/") if p.strip()]

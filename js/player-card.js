@@ -133,6 +133,7 @@
   const PSYCHEDAILIES_NOTE = "Made in one day, with help from friends on Endlesss.";
   const TRACK_NOTES = {
     archive_2013_18_137: "Early sketch that became Kita Narashino.",
+    sketches_2024_25_32: "Live sound healing & voice activation with Sasha Jacques at Ecstatic Dance UK (The Baths, Hackney, 17 Mar 2024).",
   };
 
   const FORCE_SKETCH_IDS = new Set([
