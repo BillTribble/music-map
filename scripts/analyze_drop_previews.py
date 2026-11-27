@@ -34,6 +34,7 @@ from __future__ import annotations
 import argparse
 import concurrent.futures
 import json
+import math
 import multiprocessing
 import os
 import pickle
@@ -54,8 +55,14 @@ from scipy.signal import stft
 
 ROOT = Path(__file__).resolve().parent.parent
 DEFAULT_DATA_JS = ROOT / "js" / "data.js"
+DEFAULT_BEATGRIDS_JS = ROOT / "js" / "beatgrids.js"
 DEFAULT_OUT_JSON = ROOT / "scripts" / "drop_previews.json"
 DEFAULT_AUDIO_CACHE = Path(os.environ.get("DROP_AUDIO_CACHE") or (Path(tempfile.gettempdir()) / "drop_audio_cache"))
+
+# Strict catalog-wide first-half preview bounds (post-024837: never start > halfway through any track)
+SEARCH_MAX_FRAC = 0.45
+HARD_MAX_PREVIEW_FRAC = 0.48
+MIN_REMAINING_SEC_60 = 25.0
 
 # Curated drop/preview overrides for bass-looper / ambient-build tracks that bypass the HPSS drum gate
 DROP_PREVIEW_OVERRIDES: dict[str, dict] = {
@@ -134,12 +141,54 @@ def ensure_local_audio(track: dict, cache_dir: Path) -> Path:
     raise RuntimeError(f"Could not fetch audio for {tid}: {last_err}")
 
 
+def load_beatgrids_map(beatgrids_js: Path | None = None) -> dict[str, dict]:
+    bg_path = beatgrids_js or DEFAULT_BEATGRIDS_JS
+    if not bg_path.exists():
+        return {}
+    try:
+        raw = bg_path.read_text(encoding="utf-8")
+        idx = raw.index("{")
+        ridx = raw.rfind("}")
+        obj = json.loads(raw[idx : ridx + 1])
+        return dict(obj.get("tracks") or obj) if isinstance(obj, dict) else {}
+    except Exception:
+        return {}
+
+
+def compute_audible_limit(t: dict, g: dict | None = None, decoded_dur: float | None = None) -> tuple[float, float]:
+    cat_dur = float(t.get("full_duration_sec") or t.get("duration_sec") or 0.0)
+    if decoded_dur and decoded_dur < 899.0 and cat_dur > 0:
+        full_dur = min(cat_dur, decoded_dur)
+    else:
+        full_dur = float(cat_dur or decoded_dur or 0.0)
+    aud_end = float((g or {}).get("audible_end_sec") or full_dur)
+    eff_end = min(full_dur, aud_end) if aud_end > 0 else full_dur
+    if t.get("has_mush") and t.get("mush_onset_sec"):
+        mush_lim = float(t["mush_onset_sec"]) + 3.0
+        if 12.0 < mush_lim < eff_end:
+            eff_end = mush_lim
+    return full_dur, eff_end
+
+
+def compute_max_preview_start(full_dur: float, eff_end: float, frac: float = HARD_MAX_PREVIEW_FRAC) -> float:
+    if eff_end <= 4.0 or full_dur <= 4.0:
+        return 0.0
+    cap = min(frac * eff_end, frac * full_dur)
+    if eff_end >= 60.0:
+        cap = min(cap, eff_end - MIN_REMAINING_SEC_60)
+    elif eff_end >= 32.0:
+        cap = min(cap, eff_end - 16.0)
+    else:
+        cap = min(cap, eff_end * 0.40)
+    return max(0.0, round(cap, 3))
+
+
 def decode_mono(path: Path) -> tuple[np.ndarray, float]:
     ffmpeg_bin = "/usr/bin/ffmpeg" if os.path.exists("/usr/bin/ffmpeg") else "ffmpeg"
     raw = subprocess.check_output(
         [
             ffmpeg_bin, "-nostdin", "-v", "error",
-            "-t", "540", "-i", str(path),
+            "-t", "900", "-i", str(path),
             "-ac", "1", "-ar", str(SR), "-f", "f32le", "-",
         ]
     )
@@ -444,26 +493,32 @@ def snap_to_beat_grid(sec: float, beat_times: np.ndarray | None, beat_sec: float
     return max(0.0, sec)
 
 
-def detect_drop(t: dict, f: dict) -> dict | None:
-    """Step B & C: Detect genuine drop `t_drop` and compute beat-aligned `t_preview = t_drop - 4 bars`."""
+def detect_drop(t: dict, f: dict, g: dict | None = None) -> dict | None:
+    """Step B & C: Detect genuine drop `t_drop` in the first half and compute `t_preview = t_drop - 4 bars`."""
     dur = float(f["dur"])
     dec_dur = float(f.get("decoded_dur") or dur)
     eff_dur = min(dur, dec_dur)
     if eff_dur < 36.0:
         return None
 
+    full_dur, eff_end = compute_audible_limit(t, g, eff_dur)
+    max_prev_search = compute_max_preview_start(full_dur, eff_end, SEARCH_MAX_FRAC)
+    max_prev_hard = compute_max_preview_start(full_dur, eff_end, HARD_MAX_PREVIEW_FRAC)
+
     bpm = resolve_musical_bpm(t, f)
     beat_sec = 60.0 / bpm
     bar_sec = 4.0 * beat_sec  # 1 musical 4/4 bar
 
     mush_onset = float(t["mush_onset_sec"]) if t.get("has_mush") and t.get("mush_onset_sec") else eff_dur
-    valid_end = min(eff_dur - 2.0, mush_onset)
+    valid_end = min(eff_end, eff_dur - 2.0, mush_onset)
 
     post_bars = 8.0
     post_sec = post_bars * bar_sec
+    lead_in_sec = 4.0 * bar_sec
     min_drop_sec = max(6.5, 3.75 * bar_sec)
-    max_drop_sec = valid_end - post_sec
-    if max_drop_sec <= min_drop_sec + 2.0:
+    # Constrain drop scan strictly so t_preview = t_drop - 4*bar_sec stays <= SEARCH_MAX_FRAC of track
+    max_drop_sec = min(valid_end - post_sec, max_prev_search + lead_in_sec)
+    if max_drop_sec <= min_drop_sec + 1.5:
         return None
 
     hz = ENV_HZ
@@ -640,9 +695,10 @@ def detect_drop(t: dict, f: dict) -> dict | None:
 
     t_drop_raw = best_r / hz
     t_drop = snap_to_beat_grid(t_drop_raw, f.get("beat_times"), beat_sec)
-    lead_in_sec = 4.0 * bar_sec
     t_prev_raw = max(0.0, t_drop - lead_in_sec)
     t_preview = snap_to_beat_grid(t_prev_raw, f.get("beat_times"), beat_sec)
+    if t_preview > max_prev_hard + 1e-6:
+        return None
 
     prev_dur = float(np.clip(12.0 * bar_sec, 16.0, 32.0))
     if t_preview + prev_dur > valid_end:
@@ -665,33 +721,172 @@ def detect_drop(t: dict, f: dict) -> dict | None:
     }
 
 
+def select_first_half_musical_cue(
+    t: dict,
+    f: dict,
+    g: dict | None,
+    has_drums: bool,
+) -> tuple[float, float]:
+    """Select the strongest bar/phrase-aligned musical entry in `[0, SEARCH_MAX_FRAC * eff_end]`."""
+    g = g or {}
+    dur, eff_end = compute_audible_limit(t, g, float(f.get("decoded_dur") or f["dur"]))
+    max_prev = compute_max_preview_start(dur, eff_end, SEARCH_MAX_FRAC)
+    hard_max = compute_max_preview_start(dur, eff_end, HARD_MAX_PREVIEW_FRAC)
+
+    raw_bpm = float(g.get("bpm") or t.get("bpm") or 120.0)
+    bpm = raw_bpm
+    while bpm < 55.0:
+        bpm *= 2.0
+    while bpm > 185.0:
+        bpm *= 0.5
+    beat_sec = 60.0 / bpm
+    bar_sec = 4.0 * beat_sec
+    first_beat = float(g.get("first_beat_sec") or 0.0)
+    bar_offset = int(g.get("bar_offset") or 0) % 4
+    phrase_bar = int(g.get("phrase_bar") or 0) % 4
+    first_bar = first_beat + bar_offset * beat_sec
+
+    orig_pdur = float(t.get("preview_dur_sec") or t.get("duration_sec") or 16.0)
+    target_bars_dur = 5.0 * bar_sec if not has_drums else 8.0 * bar_sec
+    prev_dur = float(np.clip(max(orig_pdur, min(20.0, target_bars_dur)), 12.0, 28.0))
+    if max_prev <= 1.0:
+        return 0.0, round(min(prev_dur, eff_end), 2)
+
+    hz = ENV_HZ
+    n_cap = min(len(f["full_rms_10hz"]), max(20, int(min(eff_end, max_prev + prev_dur + 6.0) * hz)))
+    full = f["full_rms_10hz"][:n_cap].astype(np.float64)
+    sub = f["sub_rms_10hz"][:n_cap].astype(np.float64)
+    perc = f["perc_rms_10hz"][:n_cap].astype(np.float64)
+    kick = f["kick_rms_10hz"][:n_cap].astype(np.float64)
+    pflux = f["perc_flux_10hz"][:n_cap].astype(np.float64)
+
+    bar_bins = max(6, int(round(bar_sec * hz)))
+    full_ref = float(np.percentile(uniform_filter1d(full, size=bar_bins, mode="nearest"), 92)) + 1e-9
+    sub_ref = float(np.percentile(uniform_filter1d(sub, size=bar_bins, mode="nearest"), 92)) + 1e-9
+    perc_ref = float(np.percentile(uniform_filter1d(perc, size=bar_bins, mode="nearest"), 92)) + 1e-9
+    kick_ref = float(np.percentile(uniform_filter1d(kick, size=bar_bins, mode="nearest"), 92)) + 1e-9
+    flux_ref = float(np.percentile(pflux, 90)) + 1e-9
+
+    L = np.clip(full / full_ref, 0.0, 1.3)
+    B = np.clip(sub / sub_ref, 0.0, 1.3)
+    D = np.clip(0.55 * (perc / perc_ref) + 0.45 * (kick / kick_ref), 0.0, 1.3)
+    E = (0.42 * L + 0.34 * D + 0.24 * B) if has_drums else (0.72 * L + 0.28 * B)
+
+    cs_E = np.concatenate([[0.0], np.cumsum(E)])
+    cs_L = np.concatenate([[0.0], np.cumsum(L)])
+
+    def wmean(cs: np.ndarray, s0: float, s1: float) -> float:
+        i0 = max(0, min(len(cs) - 1, int(round(s0 * hz))))
+        i1 = max(i0 + 1, min(len(cs) - 1, int(round(s1 * hz))))
+        return float((cs[i1] - cs[i0]) / (i1 - i0))
+
+    min_start = min(max_prev * 0.45, max(bar_sec, 0.08 * eff_end))
+    m_lo = int(math.ceil((min_start - first_bar) / bar_sec)) if min_start > first_bar else 0
+    m_hi = max(m_lo, int(math.floor((max_prev - first_bar) / bar_sec)))
+
+    win_sec = min(prev_dur, max(8.0, 4.0 * bar_sec))
+    best_sec = min(max_prev, max(0.0, first_bar + m_lo * bar_sec))
+    best_score = -1e9
+
+    for m in range(m_lo, m_hi + 1):
+        c_sec = first_bar + m * bar_sec
+        if c_sec < 0.0 or c_sec > max_prev + 1e-6:
+            continue
+        body_E = wmean(cs_E, c_sec, min(eff_end, c_sec + win_sec))
+        body_L = wmean(cs_L, c_sec, min(eff_end, c_sec + win_sec))
+        if body_L < 0.18:
+            continue
+
+        # Reward starting 1-2 bars before a major harmonic/dynamic swell OR right on a crisp entry
+        lead1 = wmean(cs_E, c_sec + bar_sec, c_sec + 3.0 * bar_sec) - wmean(cs_E, c_sec, c_sec + bar_sec)
+        lead2 = wmean(cs_E, c_sec + 2.0 * bar_sec, c_sec + 4.0 * bar_sec) - wmean(cs_E, c_sec, c_sec + 2.0 * bar_sec)
+        entry0 = wmean(cs_E, c_sec, c_sec + 2.0 * bar_sec) - wmean(cs_E, max(0.0, c_sec - 2.0 * bar_sec), c_sec)
+        pre_swell = 0.48 * max(0.0, lead1) if (not has_drums and lead1 >= 0.18) else (0.30 * max(0.0, lead1, lead2))
+        arrival_bonus = max(pre_swell, 0.24 * max(0.0, entry0))
+
+        is_phrase = ((m - phrase_bar) % 4) == 0
+        phrase_bonus = 0.05 if is_phrase else 0.0
+
+        frac = c_sec / max(1.0, eff_end)
+        earliness_bonus = 0.04 * (1.0 - abs(frac - 0.26) / 0.26)
+
+        idx_b = max(0, min(len(pflux) - 1, int(round(c_sec * hz))))
+        downbeat_flux = float(pflux[idx_b] / flux_ref) * (0.05 if has_drums else 0.015)
+
+        sc = 0.58 * body_E + arrival_bonus + phrase_bonus + earliness_bonus + downbeat_flux
+        if sc > best_score:
+            best_score = sc
+            best_sec = c_sec
+
+    best_sec = min(hard_max, max(0.0, round(best_sec, 2)))
+    out_dur = round(min(prev_dur, max(8.0, eff_end - best_sec)), 2)
+    return best_sec, out_dur
+
+
 def is_psychedailies_track(t: dict) -> bool:
     era = str(t.get("era") or t.get("era_id") or "").strip().lower()
     tid = str(t.get("id") or "").strip().lower()
     return era == "psychedailies" or tid.startswith("psychedailies_")
 
 
-def apply_drop_previews_to_corpus(data: dict, drop_map: dict[str, dict]) -> int:
-    """Surgically update preview cues on drop tracks across `tracks`, `eras`, and `phases`."""
+def apply_drop_previews_to_corpus(
+    data: dict,
+    drop_map: dict[str, dict],
+    beatgrids_map: dict[str, dict] | None = None,
+) -> int:
+    """Surgically update preview cues across `tracks`, `eras`, and `phases`, enforcing <= 48% first-half rule."""
+    bg_map = beatgrids_map or {}
     updated_ids = set()
 
     def _patch_track_obj(tr: dict) -> None:
         tid = str(tr.get("id") or "")
         is_psy = is_psychedailies_track(tr)
+        is_ai = bool(tr.get("is_ai"))
+        g = bg_map.get(tid) or {}
+        full_dur, eff_end = compute_audible_limit(tr, g)
+        hard_max = compute_max_preview_start(full_dur, eff_end, HARD_MAX_PREVIEW_FRAC)
+
         entry = DROP_PREVIEW_OVERRIDES.get(tid) or drop_map.get(tid)
         if entry and entry.get("has_drop"):
-            tr["has_drop"] = True
-            tr["drop_sec"] = float(entry["drop_sec"])
-            tr["preview_start_sec"] = 0.0 if is_psy else float(entry["preview_start_sec"])
-            tr["preview_dur_sec"] = float(entry["preview_dur_sec"])
-            updated_ids.add(tid)
+            cand_start = 0.0 if is_psy else float(entry["preview_start_sec"])
+            if cand_start <= hard_max + 1e-6:
+                tr["has_drop"] = True
+                tr["drop_sec"] = float(entry["drop_sec"])
+                tr["preview_start_sec"] = round(cand_start, 2)
+                tr["preview_dur_sec"] = float(entry["preview_dur_sec"])
+                updated_ids.add(tid)
+            else:
+                tr.pop("has_drop", None)
+                tr.pop("drop_sec", None)
+                tr["preview_start_sec"] = 0.0 if (is_psy or is_ai) else round(hard_max, 2)
+                updated_ids.add(tid)
         else:
+            if tr.get("has_drop") or tr.get("drop_sec") is not None:
+                updated_ids.add(tid)
             tr.pop("has_drop", None)
             tr.pop("drop_sec", None)
+            if entry and entry.get("reanchored_first_half"):
+                tr["preview_start_sec"] = 0.0 if (is_psy or is_ai) else round(min(hard_max, float(entry["preview_start_sec"])), 2)
+                if entry.get("preview_dur_sec"):
+                    tr["preview_dur_sec"] = round(float(entry["preview_dur_sec"]), 2)
+                updated_ids.add(tid)
+            elif is_ai:
+                if float(tr.get("preview_start_sec") or 0.0) != 0.0:
+                    updated_ids.add(tid)
+                tr["preview_start_sec"] = 0.0
+
         if is_psy:
             tr["preview_start_sec"] = 0.0
             tr["cue_sec"] = 0.0
             updated_ids.add(tid)
+        else:
+            cur_p = float(tr.get("preview_start_sec") or 0.0)
+            if cur_p > hard_max + 1e-6:
+                tr["preview_start_sec"] = 0.0 if is_ai else round(hard_max, 2)
+                updated_ids.add(tid)
+            if float(tr.get("cue_sec") or 0.0) != 0.0:
+                tr["cue_sec"] = 0.0
+                updated_ids.add(tid)
 
     for tr in data.get("tracks", []):
         if isinstance(tr, dict):
@@ -710,17 +905,37 @@ def apply_drop_previews_to_corpus(data: dict, drop_map: dict[str, dict]) -> int:
 def main() -> None:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--data-js", type=Path, default=DEFAULT_DATA_JS)
+    parser.add_argument("--beatgrids-js", type=Path, default=DEFAULT_BEATGRIDS_JS)
     parser.add_argument("--cache-dir", type=Path, default=DEFAULT_AUDIO_CACHE)
     parser.add_argument("--features-cache", type=Path, default=None)
     parser.add_argument("--out", type=Path, default=DEFAULT_OUT_JSON)
     parser.add_argument("--extra-out", type=Path, default=None)
     parser.add_argument("--apply-data-js", action="store_true")
+    parser.add_argument("--apply-only", action="store_true", help="Apply existing --out JSON directly to --data-js without audio DSP")
+    parser.add_argument("--recompute-all", action="store_true", help="Re-run drop scoring even on tracks already <= 48%%")
     parser.add_argument("--workers", type=int, default=16)
     args = parser.parse_args()
 
     t0 = time.time()
     header, data = load_corpus_data(args.data_js)
+    beatgrids_map = load_beatgrids_map(args.beatgrids_js)
+
+    if args.apply_only:
+        payload = json.loads(args.out.read_text(encoding="utf-8"))
+        out_records = payload.get("tracks", payload)
+        updated_n = apply_drop_previews_to_corpus(data, out_records, beatgrids_map)
+        out_js = header + json.dumps(data, separators=(",", ":"), ensure_ascii=False) + ";\n"
+        args.data_js.write_text(out_js, encoding="utf-8")
+        print(f"Applied drop/first-half preview cues to {updated_n} tracks in {args.data_js} ({args.data_js.stat().st_size / 1e6:.2f} MB)")
+        return
+
     tracks = data.get("tracks", [])
+    existing_dp: dict[str, dict] = {}
+    if args.out.exists():
+        try:
+            existing_dp = json.loads(args.out.read_text(encoding="utf-8")).get("tracks", {})
+        except Exception:
+            existing_dp = {}
 
     feats: dict[str, dict] = {}
     if args.features_cache and args.features_cache.exists():
@@ -742,19 +957,51 @@ def main() -> None:
             args.features_cache.parent.mkdir(parents=True, exist_ok=True)
             args.features_cache.write_bytes(pickle.dumps(feats, protocol=pickle.HIGHEST_PROTOCOL))
 
-    out_records: dict[str, dict] = {}
+    out_records = {}
     drum_count = 0
     drop_count = 0
+    reanchored_count = 0
     cluster_stats: dict[str, list[int]] = defaultdict(lambda: [0, 0, 0])
 
     for t in tracks:
         tid = str(t["id"])
         is_psy = is_psychedailies_track(t)
+        is_ai = bool(t.get("is_ai"))
         cl = str(t.get("cluster_label") or "Unknown")
         cluster_stats[cl][0] += 1
         f = feats[tid]
+        g = beatgrids_map.get(tid) or {}
+        full_dur, eff_end = compute_audible_limit(t, g, float(f.get("decoded_dur") or f["dur"]))
+        hard_max = compute_max_preview_start(full_dur, eff_end, HARD_MAX_PREVIEW_FRAC)
+
         has_drums, drum_score = evaluate_drum_gate(t, f)
-        prev_before = 0.0 if is_psy else round(float(t.get("preview_start_sec") or 0.0), 2)
+        prev_ep = existing_dp.get(tid)
+        prev_hist = prev_ep.get("old_preview_start_sec") if isinstance(prev_ep, dict) else None
+        prev_cur = 0.0 if is_psy else round(float(t.get("preview_start_sec") or 0.0), 2)
+        prev_before = 0.0 if is_psy else round(float(prev_hist if prev_hist is not None else prev_cur), 2)
+
+        # Preserve already-valid first-half entries (<= hard_max) unless --recompute-all is passed
+        if (
+            not args.recompute_all
+            and tid not in DROP_PREVIEW_OVERRIDES
+            and isinstance(prev_ep, dict)
+            and float(prev_ep.get("preview_start_sec") or 0.0) <= hard_max + 1e-6
+            and prev_cur <= hard_max + 1e-6
+        ):
+            rec_keep = dict(prev_ep)
+            if is_psy:
+                rec_keep["preview_start_sec"] = 0.0
+            if has_drums:
+                drum_count += 1
+                cluster_stats[cl][1] += 1
+            if rec_keep.get("has_drop"):
+                drop_count += 1
+                cluster_stats[cl][2] += 1
+            if rec_keep.get("reanchored_first_half"):
+                reanchored_count += 1
+            out_records[tid] = rec_keep
+            continue
+
         if not has_drums:
             ov = DROP_PREVIEW_OVERRIDES.get(tid)
             if ov and ov.get("has_drop"):
@@ -764,7 +1011,7 @@ def main() -> None:
                     "id": tid,
                     "title": t.get("title", tid),
                     "cluster_label": cl,
-                    "is_ai": bool(t.get("is_ai")),
+                    "is_ai": is_ai,
                     "has_drums": False,
                     "drum_score": drum_score,
                     "old_preview_start_sec": prev_before,
@@ -773,23 +1020,42 @@ def main() -> None:
                 if is_psy:
                     rec["preview_start_sec"] = 0.0
                 out_records[tid] = rec
+            elif not is_psy and (prev_cur > hard_max + 1e-6 or prev_before > hard_max + 1e-6):
+                reanchored_count += 1
+                if is_ai:
+                    new_prev, new_dur = 0.0, float(t.get("preview_dur_sec") or 20.0)
+                else:
+                    new_prev, new_dur = select_first_half_musical_cue(t, f, g, has_drums=False)
+                out_records[tid] = {
+                    "id": tid,
+                    "title": t.get("title", tid),
+                    "cluster_label": cl,
+                    "is_ai": is_ai,
+                    "has_drums": False,
+                    "drum_score": drum_score,
+                    "has_drop": False,
+                    "reanchored_first_half": True,
+                    "old_preview_start_sec": prev_before,
+                    "preview_start_sec": new_prev,
+                    "preview_dur_sec": new_dur,
+                }
             else:
                 out_records[tid] = {
                     "id": tid,
                     "title": t.get("title", tid),
                     "cluster_label": cl,
-                    "is_ai": bool(t.get("is_ai")),
+                    "is_ai": is_ai,
                     "has_drums": False,
                     "drum_score": drum_score,
                     "has_drop": False,
                     "old_preview_start_sec": prev_before,
-                    "preview_start_sec": 0.0 if is_psy else prev_before,
+                    "preview_start_sec": 0.0 if is_psy else prev_cur,
                 }
             continue
 
         drum_count += 1
         cluster_stats[cl][1] += 1
-        drop_info = DROP_PREVIEW_OVERRIDES.get(tid) or detect_drop(t, f)
+        drop_info = DROP_PREVIEW_OVERRIDES.get(tid) or detect_drop(t, f, g)
         if drop_info:
             drop_count += 1
             cluster_stats[cl][2] += 1
@@ -797,7 +1063,7 @@ def main() -> None:
                 "id": tid,
                 "title": t.get("title", tid),
                 "cluster_label": cl,
-                "is_ai": bool(t.get("is_ai")),
+                "is_ai": is_ai,
                 "drum_score": drum_score,
                 "old_preview_start_sec": prev_before,
                 **drop_info,
@@ -805,17 +1071,36 @@ def main() -> None:
             if is_psy:
                 rec["preview_start_sec"] = 0.0
             out_records[tid] = rec
+        elif not is_psy and (prev_cur > hard_max + 1e-6 or prev_before > hard_max + 1e-6):
+            reanchored_count += 1
+            if is_ai:
+                new_prev, new_dur = 0.0, float(t.get("preview_dur_sec") or 20.0)
+            else:
+                new_prev, new_dur = select_first_half_musical_cue(t, f, g, has_drums=True)
+            out_records[tid] = {
+                "id": tid,
+                "title": t.get("title", tid),
+                "cluster_label": cl,
+                "is_ai": is_ai,
+                "has_drums": True,
+                "drum_score": drum_score,
+                "has_drop": False,
+                "reanchored_first_half": True,
+                "old_preview_start_sec": prev_before,
+                "preview_start_sec": new_prev,
+                "preview_dur_sec": new_dur,
+            }
         else:
             out_records[tid] = {
                 "id": tid,
                 "title": t.get("title", tid),
                 "cluster_label": cl,
-                "is_ai": bool(t.get("is_ai")),
+                "is_ai": is_ai,
                 "has_drums": True,
                 "drum_score": drum_score,
                 "has_drop": False,
                 "old_preview_start_sec": prev_before,
-                "preview_start_sec": 0.0 if is_psy else prev_before,
+                "preview_start_sec": 0.0 if (is_psy or is_ai) else prev_cur,
             }
 
     payload = {
@@ -824,6 +1109,9 @@ def main() -> None:
             "drum_tracks": drum_count,
             "drumless_tracks": len(tracks) - drum_count,
             "drop_tracks": drop_count,
+            "reanchored_first_half_tracks": reanchored_count,
+            "search_max_frac": SEARCH_MAX_FRAC,
+            "hard_max_preview_frac": HARD_MAX_PREVIEW_FRAC,
             "clusters": {
                 cl: {"total": st[0], "drums": st[1], "drops": st[2]}
                 for cl, st in sorted(cluster_stats.items(), key=lambda kv: -kv[1][0])
@@ -841,14 +1129,15 @@ def main() -> None:
 
     print(
         f"Analyzed {len(tracks)} tracks in {time.time() - t0:.2f}s -> "
-        f"drums={drum_count}, drumless={len(tracks) - drum_count}, drops_updated={drop_count}"
+        f"drums={drum_count}, drumless={len(tracks) - drum_count}, "
+        f"drops_updated={drop_count}, reanchored_first_half={reanchored_count}"
     )
 
     if args.apply_data_js:
-        updated_n = apply_drop_previews_to_corpus(data, out_records)
+        updated_n = apply_drop_previews_to_corpus(data, out_records, beatgrids_map)
         out_js = header + json.dumps(data, separators=(",", ":"), ensure_ascii=False) + ";\n"
         args.data_js.write_text(out_js, encoding="utf-8")
-        print(f"Applied drop preview cues to {updated_n} tracks in {args.data_js} ({args.data_js.stat().st_size / 1e6:.2f} MB)")
+        print(f"Applied drop/first-half preview cues to {updated_n} tracks in {args.data_js} ({args.data_js.stat().st_size / 1e6:.2f} MB)")
 
 
 if __name__ == "__main__":

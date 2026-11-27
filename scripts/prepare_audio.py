@@ -218,11 +218,11 @@ def analyze_source_groove(ffmpeg_bin: str, src_path: Path, bpm: float, fixed_cue
             b_scores.append(float(np.mean(flux_smooth[idxs])))
     downbeat_off = int(np.argmax(b_scores))
 
-    win_lo = max(bar_sec * 2.0, dur_sec * 0.12)
-    win_hi = min(dur_sec - bar_sec * 10.0, dur_sec * 0.58)
+    win_lo = max(bar_sec * 2.0, dur_sec * 0.10)
+    win_hi = min(dur_sec - bar_sec * 10.0, dur_sec * 0.46, (dur_sec - 25.0) if dur_sec >= 60.0 else dur_sec * 0.46)
     if win_hi <= win_lo:
         win_lo = min(bar_sec, dur_sec * 0.08)
-        win_hi = max(win_lo + 1.0, dur_sec - bar_sec * 4.0)
+        win_hi = max(win_lo + 1.0, min(dur_sec * 0.46, dur_sec - bar_sec * 4.0))
 
     k_start_idx = int(math.ceil((win_lo - best_phase - downbeat_off * beat_sec) / bar_sec))
     k_end_idx = int(math.floor((win_hi - best_phase - downbeat_off * beat_sec) / bar_sec))

@@ -1197,13 +1197,10 @@
 
       function resolveTrackUrls(rawTrack) {
         if (!rawTrack) return [];
-        const candidates = [
-          rawTrack.stream_url,
-          rawTrack.mp3_320_url,
-          rawTrack.mp3_url,
-          rawTrack.preview_url,
-          rawTrack.file
-        ];
+        const hasFullStream = Boolean(rawTrack.stream_url || rawTrack.mp3_320_url || rawTrack.mp3_url);
+        const candidates = hasFullStream
+          ? [rawTrack.stream_url, rawTrack.mp3_320_url, rawTrack.mp3_url]
+          : [rawTrack.preview_url, rawTrack.file];
         const out = [];
         for (let i = 0; i < candidates.length; i++) {
           const u = candidates[i];

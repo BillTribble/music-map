@@ -741,8 +741,11 @@ def analyze_beatgrid_and_groove(
     first_bar_sec = first_beat_sec + bar_offset * beat_sec
     first_phrase_sec = first_bar_sec + phrase_bar * bar_sec
 
+    # Audible end: detect trailing silence / near-silence across `full_dur` (post-024701)
+    audible_end = compute_audible_end_sec(track, full_dur)
+
     # Cue-in: Psychedailies & ambient tracks always fade in right from 0.0s (post-024688);
-    # other rhythmic tracks find the first bar/phrase downbeat past dead silence.
+    # other rhythmic tracks find the first bar/phrase downbeat past dead silence, strictly <= 0.45 * audible_end.
     win_arr = env["win"]
     cue_in_sec = 0.0 if (is_psy or groove == "ambient") else round(first_bar_sec, 3)
     if not is_psy and groove != "ambient" and len(win_arr) >= 4:
@@ -750,22 +753,19 @@ def analyze_beatgrid_and_groove(
         body_db = float(np.percentile(win_db, 80))
         audible_win = np.flatnonzero(win_db >= body_db - 20.0)
         earliest_audible_s = float(audible_win[0] * WIN_S) if len(audible_win) else 0.0
-        max_intro_s = min(24.0, max(bar_sec * 2.0, 0.18 * full_dur))
+        max_intro_s = min(24.0, 0.45 * audible_end, max(bar_sec * 2.0, 0.18 * audible_end))
         target_s = min(max_intro_s, max(0.0, earliest_audible_s))
         # Snap forward to nearest bar downbeat (preferring phrase downbeat if within 1 bar)
         if target_s <= first_bar_sec + 0.05:
-            cue_in_sec = round(first_bar_sec, 3)
+            cue_in_sec = round(min(first_bar_sec, 0.45 * audible_end), 3)
         else:
             m_bar = max(0, int(math.ceil((target_s - first_bar_sec - 0.08) / bar_sec)))
             cand_bar = first_bar_sec + m_bar * bar_sec
             # If next 4-bar phrase downbeat is <= 1 bar away and still <= max_intro_s, snap to phrase!
             rem_to_phrase = (phrase_bar - (m_bar % 4)) % 4
-            if rem_to_phrase == 1 and (cand_bar + bar_sec) <= max_intro_s + 0.5:
+            if rem_to_phrase == 1 and (cand_bar + bar_sec) <= max_intro_s + 0.5 and (cand_bar + bar_sec) <= 0.45 * audible_end:
                 cand_bar += bar_sec
-            cue_in_sec = round(min(cand_bar, max(0.0, full_dur - 8.0)), 3)
-
-    # Audible end: detect trailing silence / near-silence across `full_dur` (post-024701)
-    audible_end = compute_audible_end_sec(track, full_dur)
+            cue_in_sec = round(min(cand_bar, 0.45 * audible_end, max(0.0, audible_end - 8.0)), 3)
 
     bpm_out = round(bpm, 2)
     fb_out = round(first_beat_sec, 4)

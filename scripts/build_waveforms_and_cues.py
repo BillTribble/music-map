@@ -111,11 +111,12 @@ def fallback_groove_cue(samples: np.ndarray, bpm: float) -> tuple[float, float]:
 
     env = _envelope_feature(samples)
     env_sr = DEC_SR / float(ENV_HOP)
-    lo = int(max(bar_sec, dur_sec * 0.12) * env_sr)
-    hi = int(min(dur_sec - clip_dur - 0.1, dur_sec * 0.58) * env_sr)
+    search_max_sec = min(dur_sec - clip_dur - 0.1, dur_sec * 0.46, (dur_sec - 25.0) if dur_sec >= 60.0 else dur_sec * 0.46)
+    lo = int(max(bar_sec, dur_sec * 0.10) * env_sr)
+    hi = int(max(0.0, search_max_sec) * env_sr)
     win = max(10, int(clip_dur * env_sr))
     if hi <= lo:
-        return round(max(0.0, dur_sec * 0.15), 3), round(clip_dur, 3)
+        return round(max(0.0, min(dur_sec * 0.15, dur_sec * 0.45)), 3), round(clip_dur, 3)
 
     csum = np.concatenate([[0.0], np.cumsum(env)])
     best_i = lo
@@ -185,6 +186,10 @@ def align_preview_to_full(
 
     start_sec = max(0.0, (best_idx - trim) / env_sr)
     start_sec = min(start_sec, max(0.0, full_dur - prev_dur))
+    max_first_half = min(0.48 * full_dur, (full_dur - 25.0) if full_dur >= 60.0 else 0.48 * full_dur)
+    if start_sec > max_first_half:
+        st, _ = fallback_groove_cue(y_full, bpm)
+        return st, round(min(prev_dur, full_dur - st), 3), round(best_r, 4)
     return round(start_sec, 3), round(min(prev_dur, full_dur - start_sec), 3), round(best_r, 4)
 
 

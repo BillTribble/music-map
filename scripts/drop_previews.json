@@ -3,77 +3,85 @@
     "total_tracks": 554,
     "drum_tracks": 406,
     "drumless_tracks": 148,
-    "drop_tracks": 246,
+    "drop_tracks": 236,
+    "reanchored_first_half_tracks": 30,
+    "search_max_frac": 0.45,
+    "hard_max_preview_frac": 0.48,
     "clusters": {
       "Generative AI · Afro, house & cumbia": {
-        "total": 70,
-        "drums": 69,
-        "drops": 49
+        "total": 72,
+        "drums": 71,
+        "drops": 50
+      },
+      "IDM, glitch & industrial": {
+        "total": 51,
+        "drums": 33,
+        "drops": 15
       },
       "Ambient & soundscapes": {
-        "total": 59,
+        "total": 48,
         "drums": 0,
         "drops": 0
       },
-      "IDM, glitch & industrial": {
-        "total": 55,
-        "drums": 36,
-        "drops": 16
-      },
       "Hypnotic, dub & microtonal": {
-        "total": 44,
-        "drums": 40,
+        "total": 45,
+        "drums": 41,
         "drops": 21
       },
-      "Electro, acid & techno": {
-        "total": 37,
-        "drums": 31,
-        "drops": 18
-      },
       "House & deep groove": {
+        "total": 39,
+        "drums": 36,
+        "drops": 20
+      },
+      "Electro, acid & techno": {
         "total": 36,
-        "drums": 33,
-        "drops": 18
+        "drums": 30,
+        "drops": 17
       },
       "Generative AI · UK bass & dubstep": {
         "total": 34,
         "drums": 34,
-        "drops": 27
+        "drops": 25
       },
       "Meditative beats": {
-        "total": 33,
-        "drums": 20,
-        "drops": 10
+        "total": 32,
+        "drums": 19,
+        "drops": 9
       },
       "Jungle, DnB & breakcore": {
         "total": 31,
         "drums": 29,
-        "drops": 15
+        "drops": 14
       },
       "Generative AI · Downtempo & melodic": {
         "total": 31,
         "drums": 31,
-        "drops": 23
+        "drops": 20
       },
       "UK bass, dubstep & juke": {
-        "total": 30,
-        "drums": 27,
-        "drops": 14
+        "total": 29,
+        "drums": 26,
+        "drops": 13
+      },
+      "Downtempo & leftfield": {
+        "total": 21,
+        "drums": 15,
+        "drops": 10
       },
       "Generative AI · Orchestral & choir": {
         "total": 21,
         "drums": 4,
-        "drops": 3
+        "drops": 2
       },
       "Generative AI · Gamelan & ambient": {
         "total": 20,
         "drums": 12,
-        "drops": 5
+        "drops": 3
       },
-      "Downtempo & leftfield": {
-        "total": 19,
-        "drums": 13,
-        "drops": 8
+      "Dark & experimental ambient": {
+        "total": 13,
+        "drums": 0,
+        "drops": 1
       },
       "Indie, post-punk & guitar": {
         "total": 13,
@@ -86,14 +94,9 @@
         "drops": 9
       },
       "Generative AI · IDM & experimental": {
-        "total": 8,
-        "drums": 7,
-        "drops": 5
-      },
-      "Dark & experimental ambient": {
-        "total": 1,
-        "drums": 0,
-        "drops": 1
+        "total": 6,
+        "drums": 5,
+        "drops": 3
       }
     }
   },
@@ -137,10 +140,12 @@
       "cluster_label": "Meditative beats",
       "is_ai": false,
       "has_drums": false,
-      "drum_score": 0.475,
+      "drum_score": 0.457,
       "has_drop": false,
+      "reanchored_first_half": true,
       "old_preview_start_sec": 408.43,
-      "preview_start_sec": 408.43
+      "preview_start_sec": 181.34,
+      "preview_dur_sec": 19.67
     },
     "present_ambient_5": {
       "id": "present_ambient_5",
@@ -661,21 +666,13 @@
       "title": "4 D",
       "cluster_label": "Jungle, DnB & breakcore",
       "is_ai": false,
-      "drum_score": 1.107,
-      "old_preview_start_sec": 101.86,
       "has_drums": true,
-      "has_drop": true,
-      "drop_sec": 192.18,
-      "preview_start_sec": 184.18,
-      "preview_dur_sec": 23.96,
-      "lead_in_sec": 8.0,
-      "musical_bpm": 120.18,
-      "bar_sec": 1.997,
-      "drop_score": 1.365,
-      "post_drum_norm": 0.75,
-      "post_sub_norm": 0.78,
-      "pre4_combo_norm": 0.04,
-      "min_pre3_norm": 0.04
+      "drum_score": 1.107,
+      "has_drop": false,
+      "reanchored_first_half": true,
+      "old_preview_start_sec": 101.86,
+      "preview_start_sec": 128.15,
+      "preview_dur_sec": 23.96
     },
     "present_electro_34": {
       "id": "present_electro_34",
@@ -1010,13 +1007,15 @@
     "hd_2005_2": {
       "id": "hd_2005_2",
       "title": "Sine Mix",
-      "cluster_label": "IDM, glitch & industrial",
+      "cluster_label": "Dark & experimental ambient",
       "is_ai": false,
       "has_drums": false,
       "drum_score": 0.0,
       "has_drop": false,
+      "reanchored_first_half": true,
       "old_preview_start_sec": 149.98,
-      "preview_start_sec": 149.98
+      "preview_start_sec": 92.72,
+      "preview_dur_sec": 20.0
     },
     "hd_2005_3": {
       "id": "hd_2005_3",
@@ -1300,14 +1299,16 @@
     },
     "hd_2005_48": {
       "id": "hd_2005_48",
-      "title": "pr3s3nt - WAR hard mix",
+      "title": "WAR hard mix",
       "cluster_label": "UK bass, dubstep & juke",
       "is_ai": false,
       "has_drums": true,
       "drum_score": 0.873,
       "has_drop": false,
+      "reanchored_first_half": true,
       "old_preview_start_sec": 279.45,
-      "preview_start_sec": 279.45
+      "preview_start_sec": 64.97,
+      "preview_dur_sec": 26.75
     },
     "hd_2005_49": {
       "id": "hd_2005_49",
@@ -1574,8 +1575,10 @@
       "has_drums": true,
       "drum_score": 0.804,
       "has_drop": false,
+      "reanchored_first_half": true,
       "old_preview_start_sec": 172.36,
-      "preview_start_sec": 172.36
+      "preview_start_sec": 70.8,
+      "preview_dur_sec": 13.81
     },
     "archive_2013_18_12": {
       "id": "archive_2013_18_12",
@@ -1908,8 +1911,10 @@
       "has_drums": true,
       "drum_score": 0.734,
       "has_drop": false,
+      "reanchored_first_half": true,
       "old_preview_start_sec": 81.96,
-      "preview_start_sec": 81.96
+      "preview_start_sec": 46.52,
+      "preview_dur_sec": 22.29
     },
     "archive_2013_18_50": {
       "id": "archive_2013_18_50",
@@ -2115,8 +2120,10 @@
       "has_drums": true,
       "drum_score": 0.949,
       "has_drop": false,
+      "reanchored_first_half": true,
       "old_preview_start_sec": 150.42,
-      "preview_start_sec": 150.42
+      "preview_start_sec": 54.83,
+      "preview_dur_sec": 18.46
     },
     "archive_2013_18_71": {
       "id": "archive_2013_18_71",
@@ -2773,8 +2780,10 @@
       "has_drums": false,
       "drum_score": 0.0,
       "has_drop": false,
+      "reanchored_first_half": true,
       "old_preview_start_sec": 70.83,
-      "preview_start_sec": 70.83
+      "preview_start_sec": 27.61,
+      "preview_dur_sec": 17.8
     },
     "archive_2013_18_147": {
       "id": "archive_2013_18_147",
@@ -3053,8 +3062,10 @@
       "has_drums": false,
       "drum_score": 0.0,
       "has_drop": false,
+      "reanchored_first_half": true,
       "old_preview_start_sec": 156.75,
-      "preview_start_sec": 156.75
+      "preview_start_sec": 125.02,
+      "preview_dur_sec": 28.0
     },
     "ep_concepts_2": {
       "id": "ep_concepts_2",
@@ -3096,8 +3107,10 @@
       "has_drums": true,
       "drum_score": 1.056,
       "has_drop": false,
+      "reanchored_first_half": true,
       "old_preview_start_sec": 129.1,
-      "preview_start_sec": 129.1
+      "preview_start_sec": 63.65,
+      "preview_dur_sec": 14.55
     },
     "ep_concepts_5": {
       "id": "ep_concepts_5",
@@ -3269,8 +3282,10 @@
       "has_drums": true,
       "drum_score": 0.911,
       "has_drop": false,
+      "reanchored_first_half": true,
       "old_preview_start_sec": 96.6,
-      "preview_start_sec": 96.6
+      "preview_start_sec": 14.11,
+      "preview_dur_sec": 14.22
     },
     "ep_concepts_28": {
       "id": "ep_concepts_28",
@@ -3484,8 +3499,10 @@
       "has_drums": true,
       "drum_score": 0.94,
       "has_drop": false,
+      "reanchored_first_half": true,
       "old_preview_start_sec": 130.64,
-      "preview_start_sec": 130.64
+      "preview_start_sec": 60.34,
+      "preview_dur_sec": 13.24
     },
     "le_garage_4": {
       "id": "le_garage_4",
@@ -3495,8 +3512,10 @@
       "has_drums": false,
       "drum_score": 0.0,
       "has_drop": false,
+      "reanchored_first_half": true,
       "old_preview_start_sec": 91.21,
-      "preview_start_sec": 91.21
+      "preview_start_sec": 32.6,
+      "preview_dur_sec": 19.5
     },
     "le_garage_5": {
       "id": "le_garage_5",
@@ -4291,8 +4310,10 @@
       "has_drums": true,
       "drum_score": 1.365,
       "has_drop": false,
+      "reanchored_first_half": true,
       "old_preview_start_sec": 119.65,
-      "preview_start_sec": 119.65
+      "preview_start_sec": 55.79,
+      "preview_dur_sec": 19.46
     },
     "archive_2018_23_44": {
       "id": "archive_2018_23_44",
@@ -4480,8 +4501,10 @@
       "has_drums": false,
       "drum_score": 0.0,
       "has_drop": false,
+      "reanchored_first_half": true,
       "old_preview_start_sec": 210.82,
-      "preview_start_sec": 210.82
+      "preview_start_sec": 140.34,
+      "preview_dur_sec": 28.0
     },
     "lucid_crystal_2": {
       "id": "lucid_crystal_2",
@@ -4524,8 +4547,10 @@
       "has_drums": true,
       "drum_score": 0.793,
       "has_drop": false,
+      "reanchored_first_half": true,
       "old_preview_start_sec": 115.72,
-      "preview_start_sec": 115.72
+      "preview_start_sec": 98.97,
+      "preview_dur_sec": 12.0
     },
     "remixes_commissions_2": {
       "id": "remixes_commissions_2",
@@ -4811,8 +4836,10 @@
       "has_drums": true,
       "drum_score": 0.781,
       "has_drop": false,
+      "reanchored_first_half": true,
       "old_preview_start_sec": 176.61,
-      "preview_start_sec": 176.61
+      "preview_start_sec": 77.92,
+      "preview_dur_sec": 15.48
     },
     "sketches_2024_25_5": {
       "id": "sketches_2024_25_5",
@@ -4851,21 +4878,13 @@
       "title": "Abstract Mid Tempo - Some Good Cover",
       "cluster_label": "Generative AI · Afro, house & cumbia",
       "is_ai": true,
-      "drum_score": 1.317,
-      "old_preview_start_sec": 0.0,
       "has_drums": true,
-      "has_drop": true,
-      "drop_sec": 195.1,
-      "preview_start_sec": 187.1,
-      "preview_dur_sec": 23.96,
-      "lead_in_sec": 8.0,
-      "musical_bpm": 120.18,
-      "bar_sec": 1.997,
-      "drop_score": 1.272,
-      "post_drum_norm": 0.7,
-      "post_sub_norm": 0.81,
-      "pre4_combo_norm": 0.17,
-      "min_pre3_norm": 0.09
+      "drum_score": 1.317,
+      "has_drop": false,
+      "reanchored_first_half": true,
+      "old_preview_start_sec": 0.0,
+      "preview_start_sec": 0.0,
+      "preview_dur_sec": 23.96
     },
     "sketches_2024_25_8": {
       "id": "sketches_2024_25_8",
@@ -5420,8 +5439,10 @@
       "has_drums": true,
       "drum_score": 0.722,
       "has_drop": false,
+      "reanchored_first_half": true,
       "old_preview_start_sec": 155.01,
-      "preview_start_sec": 155.01
+      "preview_start_sec": 65.44,
+      "preview_dur_sec": 17.46
     },
     "sketches_2026_2": {
       "id": "sketches_2026_2",
@@ -5442,8 +5463,10 @@
       "has_drums": true,
       "drum_score": 1.08,
       "has_drop": false,
+      "reanchored_first_half": true,
       "old_preview_start_sec": 82.0,
-      "preview_start_sec": 82.0
+      "preview_start_sec": 24.34,
+      "preview_dur_sec": 21.33
     },
     "sketches_2026_4": {
       "id": "sketches_2026_4",
@@ -5474,8 +5497,10 @@
       "has_drums": true,
       "drum_score": 0.866,
       "has_drop": false,
+      "reanchored_first_half": true,
       "old_preview_start_sec": 117.78,
-      "preview_start_sec": 117.78
+      "preview_start_sec": 52.23,
+      "preview_dur_sec": 16.69
     },
     "sketches_2026_6": {
       "id": "sketches_2026_6",
@@ -5485,8 +5510,10 @@
       "has_drums": true,
       "drum_score": 1.227,
       "has_drop": false,
+      "reanchored_first_half": true,
       "old_preview_start_sec": 29.38,
-      "preview_start_sec": 29.38
+      "preview_start_sec": 22.7,
+      "preview_dur_sec": 21.74
     },
     "sketches_2026_7": {
       "id": "sketches_2026_7",
@@ -5703,17 +5730,17 @@
       "old_preview_start_sec": 0.0,
       "has_drums": true,
       "has_drop": true,
-      "drop_sec": 148.98,
-      "preview_start_sec": 141.0,
-      "preview_dur_sec": 23.96,
-      "lead_in_sec": 7.98,
-      "musical_bpm": 120.18,
-      "bar_sec": 1.997,
-      "drop_score": 1.252,
-      "post_drum_norm": 0.94,
-      "post_sub_norm": 0.84,
-      "pre4_combo_norm": 0.21,
-      "min_pre3_norm": 0.14
+      "drop_sec": 81.0,
+      "preview_start_sec": 73.0,
+      "preview_dur_sec": 24.0,
+      "lead_in_sec": 8.0,
+      "musical_bpm": 120.0,
+      "bar_sec": 2.0,
+      "drop_score": 1.287,
+      "post_drum_norm": 0.63,
+      "post_sub_norm": 0.72,
+      "pre4_combo_norm": 0.09,
+      "min_pre3_norm": 0.05
     },
     "ai_music_007_3f33e9": {
       "id": "ai_music_007_3f33e9",
@@ -5768,17 +5795,17 @@
       "old_preview_start_sec": 0.0,
       "has_drums": true,
       "has_drop": true,
-      "drop_sec": 79.84,
-      "preview_start_sec": 70.22,
-      "preview_dur_sec": 28.98,
-      "lead_in_sec": 9.62,
-      "musical_bpm": 99.39,
-      "bar_sec": 2.415,
-      "drop_score": 1.146,
-      "post_drum_norm": 0.81,
-      "post_sub_norm": 0.85,
-      "pre4_combo_norm": 0.28,
-      "min_pre3_norm": 0.04
+      "drop_sec": 34.3,
+      "preview_start_sec": 24.76,
+      "preview_dur_sec": 28.82,
+      "lead_in_sec": 9.54,
+      "musical_bpm": 99.93,
+      "bar_sec": 2.402,
+      "drop_score": 0.741,
+      "post_drum_norm": 0.56,
+      "post_sub_norm": 0.72,
+      "pre4_combo_norm": 0.31,
+      "min_pre3_norm": 0.07
     },
     "ai_music_012_ce5c99": {
       "id": "ai_music_012_ce5c99",
@@ -6540,17 +6567,17 @@
       "old_preview_start_sec": 0.0,
       "has_drums": true,
       "has_drop": true,
-      "drop_sec": 116.72,
-      "preview_start_sec": 109.22,
-      "preview_dur_sec": 22.29,
+      "drop_sec": 21.78,
+      "preview_start_sec": 14.28,
+      "preview_dur_sec": 22.5,
       "lead_in_sec": 7.5,
-      "musical_bpm": 129.2,
-      "bar_sec": 1.858,
-      "drop_score": 1.221,
-      "post_drum_norm": 0.83,
-      "post_sub_norm": 1.06,
-      "pre4_combo_norm": 0.23,
-      "min_pre3_norm": 0.13
+      "musical_bpm": 127.99,
+      "bar_sec": 1.875,
+      "drop_score": 0.988,
+      "post_drum_norm": 0.69,
+      "post_sub_norm": 0.67,
+      "pre4_combo_norm": 0.19,
+      "min_pre3_norm": 0.14
     },
     "ai_music_083_6b2df6": {
       "id": "ai_music_083_6b2df6",
@@ -7413,21 +7440,13 @@
       "title": "After 1'30'' waow",
       "cluster_label": "Generative AI · Gamelan & ambient",
       "is_ai": true,
-      "drum_score": 0.911,
-      "old_preview_start_sec": 0.0,
       "has_drums": true,
-      "has_drop": true,
-      "drop_sec": 124.8,
-      "preview_start_sec": 118.42,
-      "preview_dur_sec": 19.2,
-      "lead_in_sec": 6.38,
-      "musical_bpm": 150.0,
-      "bar_sec": 1.6,
-      "drop_score": 0.628,
-      "post_drum_norm": 0.76,
-      "post_sub_norm": 0.94,
-      "pre4_combo_norm": 0.43,
-      "min_pre3_norm": 0.33
+      "drum_score": 0.911,
+      "has_drop": false,
+      "reanchored_first_half": true,
+      "old_preview_start_sec": 0.0,
+      "preview_start_sec": 0.0,
+      "preview_dur_sec": 19.2
     },
     "ai_music_130_55bf2b": {
       "id": "ai_music_130_55bf2b",
@@ -7616,21 +7635,13 @@
       "title": "Weird vocal. intro mainly",
       "cluster_label": "Generative AI · Gamelan & ambient",
       "is_ai": true,
-      "drum_score": 0.97,
-      "old_preview_start_sec": 0.0,
       "has_drums": true,
-      "has_drop": true,
-      "drop_sec": 32.86,
-      "preview_start_sec": 24.86,
-      "preview_dur_sec": 23.96,
-      "lead_in_sec": 8.0,
-      "musical_bpm": 120.18,
-      "bar_sec": 1.997,
-      "drop_score": 0.728,
-      "post_drum_norm": 0.68,
-      "post_sub_norm": 0.65,
-      "pre4_combo_norm": 0.46,
-      "min_pre3_norm": 0.22
+      "drum_score": 0.97,
+      "has_drop": false,
+      "reanchored_first_half": true,
+      "old_preview_start_sec": 0.0,
+      "preview_start_sec": 0.0,
+      "preview_dur_sec": 23.96
     },
     "ai_music_143_2d4323": {
       "id": "ai_music_143_2d4323",
@@ -7902,21 +7913,13 @@
       "title": "Moombahton Stop Making Sense Cover",
       "cluster_label": "Generative AI · UK bass & dubstep",
       "is_ai": true,
-      "drum_score": 1.125,
-      "old_preview_start_sec": 0.0,
       "has_drums": true,
-      "has_drop": true,
-      "drop_sec": 88.9,
-      "preview_start_sec": 82.16,
-      "preview_dur_sec": 20.06,
-      "lead_in_sec": 6.74,
-      "musical_bpm": 143.56,
-      "bar_sec": 1.672,
-      "drop_score": 1.008,
-      "post_drum_norm": 0.76,
-      "post_sub_norm": 0.88,
-      "pre4_combo_norm": 0.23,
-      "min_pre3_norm": 0.17
+      "drum_score": 1.125,
+      "has_drop": false,
+      "reanchored_first_half": true,
+      "old_preview_start_sec": 0.0,
+      "preview_start_sec": 0.0,
+      "preview_dur_sec": 20.06
     },
     "ai_music_159_24c189": {
       "id": "ai_music_159_24c189",
@@ -7955,21 +7958,13 @@
       "title": "Indian Chillstep from Suno",
       "cluster_label": "Generative AI · Downtempo & melodic",
       "is_ai": true,
-      "drum_score": 0.878,
-      "old_preview_start_sec": 0.0,
       "has_drums": true,
-      "has_drop": true,
-      "drop_sec": 153.3,
-      "preview_start_sec": 146.1,
-      "preview_dur_sec": 21.6,
-      "lead_in_sec": 7.2,
-      "musical_bpm": 133.33,
-      "bar_sec": 1.8,
-      "drop_score": 1.237,
-      "post_drum_norm": 0.73,
-      "post_sub_norm": 1.16,
-      "pre4_combo_norm": 0.22,
-      "min_pre3_norm": 0.18
+      "drum_score": 0.878,
+      "has_drop": false,
+      "reanchored_first_half": true,
+      "old_preview_start_sec": 0.0,
+      "preview_start_sec": 0.0,
+      "preview_dur_sec": 21.6
     },
     "ai_music_162_d373e6": {
       "id": "ai_music_162_d373e6",
@@ -8393,42 +8388,26 @@
       "title": "Spiro Vapourer disguised (Cover)",
       "cluster_label": "Generative AI · Downtempo & melodic",
       "is_ai": true,
-      "drum_score": 0.752,
-      "old_preview_start_sec": 0.0,
       "has_drums": true,
-      "has_drop": true,
-      "drop_sec": 60.68,
-      "preview_start_sec": 53.62,
-      "preview_dur_sec": 21.18,
-      "lead_in_sec": 7.06,
-      "musical_bpm": 136.0,
-      "bar_sec": 1.765,
-      "drop_score": 1.196,
-      "post_drum_norm": 0.88,
-      "post_sub_norm": 0.78,
-      "pre4_combo_norm": 0.22,
-      "min_pre3_norm": 0.13
+      "drum_score": 0.752,
+      "has_drop": false,
+      "reanchored_first_half": true,
+      "old_preview_start_sec": 0.0,
+      "preview_start_sec": 0.0,
+      "preview_dur_sec": 21.18
     },
     "ai_music_190_26d13e": {
       "id": "ai_music_190_26d13e",
       "title": "Spiro Vapourer disguised (Cover)",
       "cluster_label": "Generative AI · Downtempo & melodic",
       "is_ai": true,
-      "drum_score": 0.726,
-      "old_preview_start_sec": 0.0,
       "has_drums": true,
-      "has_drop": true,
-      "drop_sec": 70.72,
-      "preview_start_sec": 60.96,
-      "preview_dur_sec": 28.98,
-      "lead_in_sec": 9.76,
-      "musical_bpm": 99.39,
-      "bar_sec": 2.415,
-      "drop_score": 1.279,
-      "post_drum_norm": 0.56,
-      "post_sub_norm": 0.81,
-      "pre4_combo_norm": 0.19,
-      "min_pre3_norm": 0.06
+      "drum_score": 0.726,
+      "has_drop": false,
+      "reanchored_first_half": true,
+      "old_preview_start_sec": 0.0,
+      "preview_start_sec": 0.0,
+      "preview_dur_sec": 28.98
     },
     "ai_music_191_cabb43": {
       "id": "ai_music_191_cabb43",
@@ -8467,21 +8446,13 @@
       "title": "Dia de Muertos Music",
       "cluster_label": "Generative AI · Orchestral & choir",
       "is_ai": true,
-      "drum_score": 0.795,
-      "old_preview_start_sec": 0.0,
       "has_drums": true,
-      "has_drop": true,
-      "drop_sec": 74.68,
-      "preview_start_sec": 67.26,
-      "preview_dur_sec": 22.29,
-      "lead_in_sec": 7.42,
-      "musical_bpm": 129.2,
-      "bar_sec": 1.858,
-      "drop_score": 0.802,
-      "post_drum_norm": 0.85,
-      "post_sub_norm": 0.78,
-      "pre4_combo_norm": 0.3,
-      "min_pre3_norm": 0.26
+      "drum_score": 0.795,
+      "has_drop": false,
+      "reanchored_first_half": true,
+      "old_preview_start_sec": 0.0,
+      "preview_start_sec": 0.0,
+      "preview_dur_sec": 22.29
     },
     "ai_music_194_c2389e": {
       "id": "ai_music_194_c2389e",
@@ -8510,21 +8481,13 @@
       "title": "Amanati pt 1 (pt 4 Cover)",
       "cluster_label": "Generative AI · UK bass & dubstep",
       "is_ai": true,
-      "drum_score": 0.748,
-      "old_preview_start_sec": 0.0,
       "has_drums": true,
-      "has_drop": true,
-      "drop_sec": 105.74,
-      "preview_start_sec": 98.36,
-      "preview_dur_sec": 22.29,
-      "lead_in_sec": 7.38,
-      "musical_bpm": 129.2,
-      "bar_sec": 1.858,
-      "drop_score": 1.339,
-      "post_drum_norm": 0.88,
-      "post_sub_norm": 0.76,
-      "pre4_combo_norm": 0.42,
-      "min_pre3_norm": 0.13
+      "drum_score": 0.748,
+      "has_drop": false,
+      "reanchored_first_half": true,
+      "old_preview_start_sec": 0.0,
+      "preview_start_sec": 0.0,
+      "preview_dur_sec": 22.29
     },
     "ai_music_197_0bc468": {
       "id": "ai_music_197_0bc468",

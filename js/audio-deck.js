@@ -109,15 +109,33 @@
       last -= 1;
     }
     const audEnd = Math.min(effEnd, ((last + 1) / n) * dur);
-    return effEnd - audEnd < 0.5 ? effEnd : Number(audEnd.toFixed(3));
+    const peakAudEnd = effEnd - audEnd < 0.5 ? effEnd : Number(audEnd.toFixed(3));
+    const store = typeof window !== "undefined" ? (window.BEAT_GRIDS || window.MUSIC_MAP_BEATGRIDS) : null;
+    const g = store && track.id ? store[track.id] : null;
+    if (g && Number.isFinite(Number(g.audible_end_sec)) && Number(g.audible_end_sec) > 0) {
+      const catDur = Number(track.full_duration_sec) || Number(track.duration_sec) || 0;
+      const gridAudEnd = catDur > 0 && Math.abs(dur - catDur) > 1.5
+        ? Math.min(dur, (Number(g.audible_end_sec) / catDur) * dur)
+        : Math.min(dur, Number(g.audible_end_sec));
+      return Number(clamp(Math.min(peakAudEnd, gridAudEnd), Math.min(dur, 3.5), dur).toFixed(3));
+    }
+    return peakAudEnd;
   }
 
   function resolveTrackUrls(t) {
     if (!t) return [];
+    if (typeof window !== "undefined" && typeof window.BTMM_LOCAL_AUDIO_MAP === "object" && window.BTMM_LOCAL_AUDIO_MAP) {
+      const mapped = window.BTMM_LOCAL_AUDIO_MAP[t.id];
+      if (typeof mapped === "string" && mapped.length > 0) {
+        return [mapped];
+      }
+    }
     const hasFullStream = Boolean(t.stream_url || t.mp3_320_url || t.mp3_url);
-    const raw = (isPsychedailiesTrack(t) && hasFullStream)
+    // Never fall back to pre-sliced `audio-previews-v1` clips when a full stream exists,
+    // so Preview/Loop and Auto-Play always seek the full stream to `preview_start_sec` (post-024837).
+    const raw = hasFullStream
       ? [t.stream_url, t.mp3_320_url, t.mp3_url]
-      : [t.stream_url, t.mp3_320_url, t.mp3_url, t.preview_url, t.file];
+      : [t.preview_url, t.file];
     const out = [];
     for (let i = 0; i < raw.length; i++) {
       const u = raw[i];
@@ -130,6 +148,9 @@
 
   function isUrlFullTrack(t, url) {
     if (!t || !url) return false;
+    if (typeof window !== "undefined" && window.BTMM_LOCAL_AUDIO_MAP && window.BTMM_LOCAL_AUDIO_MAP[t.id] === url) {
+      return true;
+    }
     return Boolean(
       (t.stream_url && url === t.stream_url) ||
       (t.mp3_320_url && url === t.mp3_320_url) ||
@@ -562,14 +583,30 @@
     return decks[0] && decks[1];
   }
 
+  function getMaxFirstHalfPreviewStart(track, estDur) {
+    const dur = Number(estDur) || Number(track && track.full_duration_sec) || Number(track && track.duration_sec) || 0;
+    if (!(dur > 4.0)) return Infinity;
+    const audEnd = getAudibleEndSec(track, dur) || dur;
+    const effEnd = audEnd > 0 ? Math.min(dur, audEnd) : dur;
+    if (!(effEnd > 4.0)) return 0;
+    const tailReserve = effEnd >= 60.0 ? effEnd - 20.0 : (effEnd >= 32.0 ? effEnd - 12.0 : 0.45 * effEnd);
+    return Math.max(0, Math.min(0.50 * effEnd, 0.50 * dur, tailReserve, dur - 1.5));
+  }
+
   function computeTrackBounds(track, isFullTrack, knownDur) {
     if (!track) return { duration: 0, previewStart: 0, previewEnd: 0, previewDur: 20 };
     const isAi = Boolean(track.is_ai);
     const isPsy = isPsychedailiesTrack(track);
-    const hasDropCue = !isPsy && Boolean(track.has_drop) && Number.isFinite(track.preview_start_sec) && Number(track.preview_start_sec) > 0;
     const finiteKnown = Number.isFinite(knownDur) && knownDur > 0 ? knownDur : 0;
     if (isFullTrack) {
       const estDur = finiteKnown || Number(track.full_duration_sec) || Number(track.duration_sec) || 0;
+      const maxFirstHalf = getMaxFirstHalfPreviewStart(track, estDur);
+      const hasDropCue =
+        !isPsy &&
+        Boolean(track.has_drop) &&
+        Number.isFinite(track.preview_start_sec) &&
+        Number(track.preview_start_sec) > 0 &&
+        Number(track.preview_start_sec) <= maxFirstHalf + 1e-6;
       if (isAi && !hasDropCue) {
         const fullSpanDur = Math.max(4, estDur || Number(track.duration_sec) || 22);
         return { duration: estDur, previewStart: 0, previewEnd: estDur, previewDur: fullSpanDur };
@@ -580,14 +617,17 @@
           ? Number(track.preview_start_sec)
           : (Number.isFinite(track.cue_in_sec) ? Number(track.cue_in_sec) : (Number(track.cue_sec) || 0)));
       const rawStart = Math.max(0, rawCueVal);
-      const previewStart = estDur > 1.5 ? Math.min(rawStart, Math.max(0, estDur - 1.5)) : rawStart;
+      const previewStart = Number.isFinite(maxFirstHalf)
+        ? Math.min(rawStart, maxFirstHalf)
+        : (estDur > 1.5 ? Math.min(rawStart, Math.max(0, estDur - 1.5)) : rawStart);
       const previewDur = Math.max(4, Number(track.preview_dur_sec) || Number(track.duration_sec) || 22);
       const previewEnd = estDur > 0 ? Math.min(estDur, previewStart + previewDur) : (previewStart + previewDur);
       return { duration: estDur, previewStart, previewEnd, previewDur };
     }
     const clipDur = finiteKnown || Number(track.duration_sec) || Number(track.preview_dur_sec) || 0;
     const rawCue = (isAi || isPsy) ? 0 : Math.max(0, Number(track.cue_sec) || 0);
-    const previewStart = clipDur > 1.0 ? Math.min(rawCue, Math.max(0, clipDur - 1.0)) : rawCue;
+    const maxClipStart = clipDur > 2.0 ? Math.min(0.50 * clipDur, Math.max(0, clipDur - 1.0)) : Math.max(0, clipDur - 1.0);
+    const previewStart = clipDur > 1.0 ? Math.min(rawCue, maxClipStart) : rawCue;
     const previewEnd = clipDur > 0 ? clipDur : Math.max(previewStart + 16, 20);
     return { duration: clipDur, previewStart, previewEnd, previewDur: Math.max(4, previewEnd - previewStart) };
   }
@@ -1988,6 +2028,11 @@
     },
     getVolume: () => volume,
     getTrackLoudnessGain,
+    getAudibleEndSec: (trackOrId, _gridOpt, knownDur) => {
+      const tr = typeof trackOrId === "object" && trackOrId ? trackOrId : byId.get(String(trackOrId || ""));
+      const dur = Number(knownDur) || Number(tr && tr.full_duration_sec) || Number(tr && tr.duration_sec) || 0;
+      return getAudibleEndSec(tr, dur);
+    },
     setOnStateChange(fn) { onStateChangeCb = typeof fn === "function" ? fn : () => {}; },
     setOnAutoAdvance(fn) { onAutoAdvanceCb = typeof fn === "function" ? fn : null; },
     setOnBeat(fn) { onBeatCb = typeof fn === "function" ? fn : () => {}; },

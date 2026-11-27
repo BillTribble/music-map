@@ -2460,21 +2460,55 @@ def build_dataset(
 
     drop_entry = DROP_PREVIEW_OVERRIDES.get(tid) or drop_previews_by_id.get(tid)
     is_psychedailies_era = eff_era == "psychedailies" or tid.startswith("psychedailies_")
+    g_bg = beatgrids_by_id.get(tid) if isinstance(beatgrids_by_id, dict) else None
+    full_dur_val = float(upd.get("full_duration_sec") or t.get("full_duration_sec") or upd.get("duration_sec") or t.get("duration_sec") or 0.0)
+    aud_end_val = float((g_bg or {}).get("audible_end_sec") or full_dur_val)
+    eff_end_val = min(full_dur_val, aud_end_val) if aud_end_val > 0 else full_dur_val
+    if upd.get("has_mush") and upd.get("mush_onset_sec"):
+      mush_lim_val = float(upd["mush_onset_sec"]) + 3.0
+      if 12.0 < mush_lim_val < eff_end_val:
+        eff_end_val = mush_lim_val
+    hard_max_prev = 0.0
+    if eff_end_val > 4.0 and full_dur_val > 4.0:
+      cap_v = min(0.48 * eff_end_val, 0.48 * full_dur_val)
+      if eff_end_val >= 60.0:
+        cap_v = min(cap_v, eff_end_val - 25.0)
+      elif eff_end_val >= 32.0:
+        cap_v = min(cap_v, eff_end_val - 16.0)
+      else:
+        cap_v = min(cap_v, eff_end_val * 0.40)
+      hard_max_prev = max(0.0, round(cap_v, 2))
+
     if isinstance(drop_entry, dict) and drop_entry.get("has_drop"):
-      upd["has_drop"] = True
-      upd["drop_sec"] = round(float(drop_entry["drop_sec"]), 2)
-      upd["preview_start_sec"] = 0.0 if is_psychedailies_era else round(float(drop_entry["preview_start_sec"]), 2)
-      upd["preview_dur_sec"] = round(float(drop_entry["preview_dur_sec"]), 2)
-      if "duration_sec" in drop_entry:
-        upd["duration_sec"] = round(float(drop_entry["duration_sec"]), 3)
-      if "bytes" in drop_entry:
-        upd["bytes"] = int(drop_entry["bytes"])
+      cand_p = 0.0 if is_psychedailies_era else round(float(drop_entry["preview_start_sec"]), 2)
+      if cand_p <= hard_max_prev + 1e-6:
+        upd["has_drop"] = True
+        upd["drop_sec"] = round(float(drop_entry["drop_sec"]), 2)
+        upd["preview_start_sec"] = cand_p
+        upd["preview_dur_sec"] = round(float(drop_entry["preview_dur_sec"]), 2)
+        if "duration_sec" in drop_entry:
+          upd["duration_sec"] = round(float(drop_entry["duration_sec"]), 3)
+        if "bytes" in drop_entry:
+          upd["bytes"] = int(drop_entry["bytes"])
+      else:
+        t.pop("has_drop", None)
+        t.pop("drop_sec", None)
+        upd["preview_start_sec"] = 0.0 if (is_psychedailies_era or is_ai) else hard_max_prev
     else:
       t.pop("has_drop", None)
       t.pop("drop_sec", None)
+      if isinstance(drop_entry, dict) and drop_entry.get("reanchored_first_half"):
+        upd["preview_start_sec"] = 0.0 if (is_psychedailies_era or is_ai) else round(min(hard_max_prev, float(drop_entry["preview_start_sec"])), 2)
+        if drop_entry.get("preview_dur_sec"):
+          upd["preview_dur_sec"] = round(float(drop_entry["preview_dur_sec"]), 2)
     if is_psychedailies_era:
       # Start all Psychedailies previews at 0:00 (post-024689)
       upd["preview_start_sec"] = 0.0
+      upd["cue_sec"] = 0.0
+    else:
+      cur_prev = float(upd.get("preview_start_sec") if "preview_start_sec" in upd else (t.get("preview_start_sec") or 0.0))
+      if cur_prev > hard_max_prev + 1e-6:
+        upd["preview_start_sec"] = 0.0 if is_ai else hard_max_prev
       upd["cue_sec"] = 0.0
 
     t.update(upd)

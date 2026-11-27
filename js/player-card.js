@@ -366,11 +366,30 @@
   function getPreviewStart(t) {
     if (!t) return 0;
     if (isPsychedailiesTrack(t)) return 0;
-    const hasDropCue = Boolean(t.has_drop) && Number.isFinite(t.preview_start_sec) && Number(t.preview_start_sec) > 0;
+    const fullDur = Number(t.full_duration_sec) || Number(t.duration_sec) || 0;
+    const audEnd = fullDur > 0 ? (getAudibleEndSec(t, fullDur) || fullDur) : 0;
+    const effEnd = audEnd > 0 && fullDur > 0 ? Math.min(fullDur, audEnd) : (audEnd || fullDur);
+    const maxFirstHalf = effEnd > 4.0
+      ? Math.max(
+          0,
+          Math.min(
+            0.50 * effEnd,
+            fullDur > 0 ? 0.50 * fullDur : 0.50 * effEnd,
+            effEnd >= 60.0 ? effEnd - 20.0 : (effEnd >= 32.0 ? effEnd - 12.0 : 0.45 * effEnd)
+          )
+        )
+      : Infinity;
+    const hasDropCue =
+      Boolean(t.has_drop) &&
+      Number.isFinite(t.preview_start_sec) &&
+      Number(t.preview_start_sec) > 0 &&
+      Number(t.preview_start_sec) <= maxFirstHalf + 1e-6;
     if (t.is_ai && !hasDropCue) return 0;
-    if (Number.isFinite(t.preview_start_sec)) return Math.max(0, Number(t.preview_start_sec));
-    if (Number.isFinite(t.cue_in_sec)) return Math.max(0, Number(t.cue_in_sec));
-    return Math.max(0, Number(t.cue_sec) || 0);
+    let raw = 0;
+    if (Number.isFinite(t.preview_start_sec)) raw = Math.max(0, Number(t.preview_start_sec));
+    else if (Number.isFinite(t.cue_in_sec)) raw = Math.max(0, Number(t.cue_in_sec));
+    else raw = Math.max(0, Number(t.cue_sec) || 0);
+    return Number.isFinite(maxFirstHalf) ? Math.min(raw, maxFirstHalf) : raw;
   }
 
   function getAudibleEndSec(trackOrId, knownDur) {
@@ -664,8 +683,7 @@
     const aiHasDropCue = Boolean(
       t.is_ai &&
       t.has_drop &&
-      Number.isFinite(t.preview_start_sec) &&
-      Number(t.preview_start_sec) > 0.05
+      getPreviewStart(t) > 0.05
     );
     if (t.is_ai && !aiHasDropCue) {
       winStart = 0;

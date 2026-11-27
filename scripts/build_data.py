@@ -338,6 +338,76 @@ def apply_canonical_bpm_override(t: dict, beatgrids_map: dict[str, dict]) -> Non
         t["rhythm_tag"] = "Driven 4/4 house pulse"
 
 
+def load_drop_previews_map(drop_json: Path | None = None) -> dict[str, dict]:
+    dp = drop_json or (ROOT / "scripts" / "drop_previews.json")
+    if not dp.exists():
+        return {}
+    try:
+        obj = json.loads(dp.read_text(encoding="utf-8"))
+        return dict(obj.get("tracks") or {}) if isinstance(obj, dict) else {}
+    except Exception:
+        return {}
+
+
+def apply_canonical_preview_first_half(
+    t: dict,
+    drop_previews_map: dict[str, dict],
+    beatgrids_map: dict[str, dict],
+) -> None:
+    tid = str(t.get("id") or "")
+    era = str(t.get("era") or "").strip().lower()
+    is_psy = era == "psychedailies" or tid.startswith("psychedailies_")
+    is_ai = bool(t.get("is_ai"))
+    g = beatgrids_map.get(tid) or {}
+    full_dur = float(t.get("full_duration_sec") or t.get("duration_sec") or 0.0)
+    aud_end = float(g.get("audible_end_sec") or full_dur)
+    eff_end = min(full_dur, aud_end) if aud_end > 0 else full_dur
+    if t.get("has_mush") and t.get("mush_onset_sec"):
+        mush_lim = float(t["mush_onset_sec"]) + 3.0
+        if 12.0 < mush_lim < eff_end:
+            eff_end = mush_lim
+    hard_max = 0.0
+    if eff_end > 4.0 and full_dur > 4.0:
+        cap = min(0.48 * eff_end, 0.48 * full_dur)
+        if eff_end >= 60.0:
+            cap = min(cap, eff_end - 25.0)
+        elif eff_end >= 32.0:
+            cap = min(cap, eff_end - 16.0)
+        else:
+            cap = min(cap, eff_end * 0.40)
+        hard_max = max(0.0, round(cap, 2))
+
+    entry = DROP_PREVIEW_OVERRIDES.get(tid) or drop_previews_map.get(tid)
+    if isinstance(entry, dict) and entry.get("has_drop"):
+        cand = 0.0 if is_psy else round(float(entry["preview_start_sec"]), 2)
+        if cand <= hard_max + 1e-6:
+            t["has_drop"] = True
+            t["drop_sec"] = round(float(entry["drop_sec"]), 2)
+            t["preview_start_sec"] = cand
+            t["preview_dur_sec"] = round(float(entry["preview_dur_sec"]), 2)
+        else:
+            t.pop("has_drop", None)
+            t.pop("drop_sec", None)
+            t["preview_start_sec"] = 0.0 if (is_psy or is_ai) else hard_max
+    else:
+        t.pop("has_drop", None)
+        t.pop("drop_sec", None)
+        if isinstance(entry, dict) and entry.get("reanchored_first_half"):
+            t["preview_start_sec"] = 0.0 if (is_psy or is_ai) else round(min(hard_max, float(entry["preview_start_sec"])), 2)
+            if entry.get("preview_dur_sec"):
+                t["preview_dur_sec"] = round(float(entry["preview_dur_sec"]), 2)
+        elif is_ai:
+            t["preview_start_sec"] = 0.0
+
+    if is_psy:
+        t["preview_start_sec"] = 0.0
+        t["cue_sec"] = 0.0
+    else:
+        if float(t.get("preview_start_sec") or 0.0) > hard_max + 1e-6:
+            t["preview_start_sec"] = 0.0 if is_ai else hard_max
+        t["cue_sec"] = 0.0
+
+
 LOUDNESS_TARGET_LUFS = -10.0
 
 
@@ -1648,6 +1718,7 @@ def build_from_full_analysis(
 
     excluded_ids = load_excluded_ids(exclusions_path)
     beatgrids_by_id = load_beatgrids_map()
+    drop_previews_by_id = load_drop_previews_map()
     loudness_by_id = load_track_loudness_map()
     archive_dl = (
         json.loads(archive_dl_path.read_text(encoding="utf-8"))
@@ -1744,6 +1815,7 @@ def build_from_full_analysis(
                     t[ov_k] = list(ov_v) if isinstance(ov_v, list) else ov_v
 
         apply_canonical_bpm_override(t, beatgrids_by_id)
+        apply_canonical_preview_first_half(t, drop_previews_by_id, beatgrids_by_id)
         apply_canonical_loudness_override(t, loudness_by_id)
         merged_tracks.append(t)
 
@@ -1913,6 +1985,7 @@ def main() -> None:
     ta_by_id = {t["id"]: t for t in ta.get("tracks", [])}
     excluded_ids = load_excluded_ids(args.exclusions_json)
     beatgrids_by_id = load_beatgrids_map()
+    drop_previews_by_id = load_drop_previews_map()
     loudness_by_id = load_track_loudness_map()
 
     merged_tracks: list[dict] = []
@@ -1945,6 +2018,7 @@ def main() -> None:
                 for ov_k, ov_v in STYLE_OVERRIDES[tid].items():
                     merged[ov_k] = list(ov_v) if isinstance(ov_v, list) else ov_v
             apply_canonical_bpm_override(merged, beatgrids_by_id)
+            apply_canonical_preview_first_half(merged, drop_previews_by_id, beatgrids_by_id)
             apply_canonical_loudness_override(merged, loudness_by_id)
             merged_tracks.append(merged)
             tracks_by_era[eid].append(merged)
