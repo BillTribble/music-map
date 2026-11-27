@@ -2257,15 +2257,15 @@ function buildPulsePresetCorsHeaders(origin, env) {
   return headers;
 }
 
-const PULSE_PRESET_SCHEMA_VERSION = 6;
+const PULSE_PRESET_SCHEMA_VERSION = 7;
 const DEFAULT_PULSE_PRESET_TUNING = Object.freeze({
   mode: "line_dots",
   lineStrength: 1.25,
   dotSpeed: 0.2,
   reverseMix: 0.65,
   dirOscAmount: 0.75,
-  dirOscFreq: 0.1,
-  dirOscPinch: 0.55,
+  dirOscFreq: 0.18,
+  dirOscPinch: 0.4,
   colorCount: 3,
   targetPulseSpeed: 0.25,
   pulseGlow: 0.35,

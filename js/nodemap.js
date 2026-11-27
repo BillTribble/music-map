@@ -106,10 +106,10 @@
     kRev: 0,
     dirOsc: {
       osc: 0.5,
-      pinch: 0.55,
-      pinchGamma: Math.pow(12, 0.55),
-      pinchedOsc: Math.pow(0.5, Math.pow(12, 0.55)),
-      shapedOsc: Math.pow(0.5, Math.pow(12, 0.55)),
+      pinch: 0.4,
+      pinchGamma: Math.pow(12, 0.4),
+      pinchedOsc: Math.pow(0.5, Math.pow(12, 0.4)),
+      shapedOsc: Math.pow(0.5, Math.pow(12, 0.4)),
       effFwdAmt: 0.5,
       effRevMix: 0.65,
       effSheenFwd: 1,
@@ -125,8 +125,8 @@
 
   const PULSE_PRESET_KEY_PRIMARY = "btmm.pulsePreset.v1";
   const PULSE_PRESET_KEY_ALT = "btmm.pulseTuning.v1";
-  const PULSE_PRESET_SCHEMA_VERSION = 6;
-  const PULSE_PRESET_PROMOTED_AT_MS = Date.parse("2026-11-27T15:13:10Z");
+  const PULSE_PRESET_SCHEMA_VERSION = 7;
+  const PULSE_PRESET_PROMOTED_AT_MS = Date.parse("2026-11-27T17:00:02Z");
   const DEFAULT_PULSE_PRESET_API = "https://music-map-events.billtribble.workers.dev/api/pulse-preset";
   const VALID_PULSE_MODES = new Set(["line_dots", "line_sheen"]);
   const DEFAULT_PULSE_TUNING = Object.freeze({
@@ -135,8 +135,8 @@
     dotSpeed: 0.2,
     reverseMix: 0.65,
     dirOscAmount: 0.75,
-    dirOscFreq: 0.1,
-    dirOscPinch: 0.55,
+    dirOscFreq: 0.18,
+    dirOscPinch: 0.4,
     colorCount: 3,
     targetPulseSpeed: 0.25,
     pulseGlow: 0.35,
@@ -276,8 +276,8 @@
         return { applied: false, reason: "local_newer" };
       }
     }
-    // Always merge onto DEFAULT_PULSE_TUNING so missing <v6 keys (dirOscAmount, dirOscFreq, dirOscPinch)
-    // in a legacy D1 row inherit v6 defaults (0.75 / 0.10 / 0.55) instead of clobbering to 0.
+    // Always merge onto DEFAULT_PULSE_TUNING so missing <v7 keys (dirOscAmount, dirOscFreq, dirOscPinch)
+    // in a legacy D1 row inherit v7 defaults (0.75 / 0.18 / 0.40) instead of clobbering to 0.
     pulseTuning = sanitizePulseTuning(presetSrc, DEFAULT_PULSE_TUNING);
     if (Number.isFinite(remoteMs)) pulseLocalSavedAtMs = remoteMs;
     try {
