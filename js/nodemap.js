@@ -104,7 +104,17 @@
     mode: "line_dots",
     kFwd: 0,
     kRev: 0,
-    dirOsc: { osc: 0.5, shapedOsc: 0.5, effFwdAmt: 0.5, effRevMix: 0.65, effSheenFwd: 1, effSheenRev: 0.65 },
+    dirOsc: {
+      osc: 0.5,
+      pinch: 0.55,
+      pinchGamma: Math.pow(12, 0.55),
+      pinchedOsc: Math.pow(0.5, Math.pow(12, 0.55)),
+      shapedOsc: Math.pow(0.5, Math.pow(12, 0.55)),
+      effFwdAmt: 0.5,
+      effRevMix: 0.65,
+      effSheenFwd: 1,
+      effSheenRev: 0.65,
+    },
     forwardDots: [],
     reverseDots: [],
   };
@@ -115,7 +125,7 @@
 
   const PULSE_PRESET_KEY_PRIMARY = "btmm.pulsePreset.v1";
   const PULSE_PRESET_KEY_ALT = "btmm.pulseTuning.v1";
-  const PULSE_PRESET_SCHEMA_VERSION = 5;
+  const PULSE_PRESET_SCHEMA_VERSION = 6;
   const PULSE_PRESET_PROMOTED_AT_MS = Date.parse("2026-11-27T15:13:10Z");
   const DEFAULT_PULSE_PRESET_API = "https://music-map-events.billtribble.workers.dev/api/pulse-preset";
   const VALID_PULSE_MODES = new Set(["line_dots", "line_sheen"]);
@@ -126,6 +136,7 @@
     reverseMix: 0.65,
     dirOscAmount: 0.75,
     dirOscFreq: 0.1,
+    dirOscPinch: 0.55,
     colorCount: 3,
     targetPulseSpeed: 0.25,
     pulseGlow: 0.35,
@@ -171,6 +182,7 @@
       reverseMix: clampRound(src.reverseMix, 0, 1, baseNum("reverseMix")),
       dirOscAmount: clampRound(src.dirOscAmount, 0, 1, baseNum("dirOscAmount")),
       dirOscFreq: clampRound(src.dirOscFreq, 0.02, 0.6, baseNum("dirOscFreq")),
+      dirOscPinch: clampRound(src.dirOscPinch, 0, 1, baseNum("dirOscPinch")),
       colorCount: clampRound(src.colorCount, 1, 5, baseNum("colorCount")),
       targetPulseSpeed: clampRound(src.targetPulseSpeed, 0, 3, baseNum("targetPulseSpeed")),
       pulseGlow: clampRound(src.pulseGlow, 0, 2.5, baseNum("pulseGlow")),
@@ -238,6 +250,7 @@
       presetSrc.reverseMix !== undefined ||
       presetSrc.dirOscAmount !== undefined ||
       presetSrc.dirOscFreq !== undefined ||
+      presetSrc.dirOscPinch !== undefined ||
       presetSrc.colorCount !== undefined ||
       presetSrc.targetPulseSpeed !== undefined ||
       presetSrc.pulseGlow !== undefined ||
@@ -263,8 +276,8 @@
         return { applied: false, reason: "local_newer" };
       }
     }
-    // Always merge onto DEFAULT_PULSE_TUNING so missing v5 keys (dirOscAmount, dirOscFreq)
-    // in a legacy <v5 D1 row inherit v5 defaults (0.75 / 0.10) instead of clobbering to 0.
+    // Always merge onto DEFAULT_PULSE_TUNING so missing <v6 keys (dirOscAmount, dirOscFreq, dirOscPinch)
+    // in a legacy D1 row inherit v6 defaults (0.75 / 0.10 / 0.55) instead of clobbering to 0.
     pulseTuning = sanitizePulseTuning(presetSrc, DEFAULT_PULSE_TUNING);
     if (Number.isFinite(remoteMs)) pulseLocalSavedAtMs = remoteMs;
     try {
@@ -1242,13 +1255,24 @@
 
   function computeDirectionCrossfade(reduced) {
     const oscAmt = pulseTuning.dirOscAmount;
+    const pinch = Number.isFinite(pulseTuning.dirOscPinch)
+      ? Math.max(0, Math.min(1, pulseTuning.dirOscPinch))
+      : DEFAULT_PULSE_TUNING.dirOscPinch;
     const revMix = pulseTuning.reverseMix;
     const sizePulseAmt = pulseTuning.dotSizePulseAmt;
-    const rawOsc = reduced ? 0.5 : 0.5 + 0.5 * Math.sin(pulseDirOscPhase);
+    const rawWave = reduced ? 0.5 : 0.5 + 0.5 * Math.sin(pulseDirOscPhase);
+    // Smooth C^1-continuous sine-to-notch wave-shaping:
+    // pinch = 0 -> gamma = 1.0 (exact pure sine); pinch = 0.55 -> gamma ≈ 3.92 (musical reverse notch);
+    // pinch = 1.0 -> gamma = 12.0 (tight brief reverse notch, still reaching full 1.0 peak cleanly at crest).
+    const pinchGamma = Math.pow(12, pinch);
+    const pinchedOsc = rawWave <= 0 ? 0 : rawWave >= 1 ? 1 : Math.pow(rawWave, pinchGamma);
     if (oscAmt <= 0.001) {
       return {
-        osc: rawOsc,
-        shapedOsc: rawOsc,
+        osc: rawWave,
+        pinch,
+        pinchGamma,
+        pinchedOsc,
+        shapedOsc: pinchedOsc,
         effFwdAmt: sizePulseAmt,
         effRevMix: revMix,
         effSheenFwd: 1,
@@ -1256,8 +1280,8 @@
       };
     }
     // Center bias around reverseMix while preserving full 0 -> 1 crossfade endpoints
-    const gamma = Math.pow(2, (0.5 - revMix) * 0.75);
-    const shapedOsc = rawOsc <= 0 ? 0 : rawOsc >= 1 ? 1 : Math.pow(rawOsc, gamma);
+    const biasGamma = Math.pow(2, (0.5 - revMix) * 0.75);
+    const shapedOsc = pinchedOsc <= 0 ? 0 : pinchedOsc >= 1 ? 1 : Math.pow(pinchedOsc, biasGamma);
     // Equal-power quarter-circle envelope (cos^2 + sin^2 === 1 so total visual energy never drops dead mid-crossfade)
     const theta = shapedOsc * (Math.PI * 0.5);
     const tideFwd = Math.cos(theta);
@@ -1275,7 +1299,10 @@
     const effSheenRev = revMix + oscAmt * (sheenRevPeak * tideRev - revMix);
 
     return {
-      osc: rawOsc,
+      osc: rawWave,
+      pinch,
+      pinchGamma,
+      pinchedOsc,
       shapedOsc,
       effFwdAmt,
       effRevMix,
@@ -2679,6 +2706,12 @@
       const cyc = sec >= 10 ? `${Math.round(sec)}s` : `${sec.toFixed(1).replace(/\.0$/, "")}s`;
       return `${val.toFixed(2)} Hz · ${cyc}`;
     }
+    if (key === "dirOscPinch") {
+      const pct = Math.round(val * 100);
+      if (pct <= 0) return "0% · Sine";
+      if (pct >= 80) return `${pct}% · Tight`;
+      return `${pct}% · Notch`;
+    }
     if (key === "dotSizePulseAmt") {
       return val <= 0.005 ? "0%" : `${Math.round(val * 100)}%`;
     }
@@ -2788,6 +2821,7 @@
       reverseMix: pulseTuning.reverseMix,
       dirOscAmount: pulseTuning.dirOscAmount,
       dirOscFreq: pulseTuning.dirOscFreq,
+      dirOscPinch: pulseTuning.dirOscPinch,
       colorCount: pulseTuning.colorCount,
       targetPulseSpeed: pulseTuning.targetPulseSpeed,
       pulseGlow: pulseTuning.pulseGlow,
@@ -2978,6 +3012,7 @@
       { id: "pt-reverse-mix", key: "reverseMix", label: "Reverse wave", min: 0, max: 1, step: 0.05, primary: true },
       { id: "pt-dir-osc-amt", key: "dirOscAmount", label: "Direction crossfade", min: 0, max: 1, step: 0.05, primary: true },
       { id: "pt-dir-osc-freq", key: "dirOscFreq", label: "Crossfade speed", min: 0.02, max: 0.6, step: 0.01, primary: true },
+      { id: "pt-dir-osc-pinch", key: "dirOscPinch", label: "Reverse pinch", min: 0, max: 1, step: 0.05, primary: true },
       { id: "pt-color-count", key: "colorCount", label: "Amount of colors", min: 1, max: 5, step: 1, primary: true, swatches: true },
       { id: "pt-target-speed", key: "targetPulseSpeed", label: "Receiving track pulse", min: 0, max: 3, step: 0.05, primary: true },
       { id: "pt-pulse-glow", key: "pulseGlow", label: "Pulse glow", min: 0, max: 2.5, step: 0.05, primary: true },

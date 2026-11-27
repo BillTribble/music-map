@@ -2257,7 +2257,7 @@ function buildPulsePresetCorsHeaders(origin, env) {
   return headers;
 }
 
-const PULSE_PRESET_SCHEMA_VERSION = 5;
+const PULSE_PRESET_SCHEMA_VERSION = 6;
 const DEFAULT_PULSE_PRESET_TUNING = Object.freeze({
   mode: "line_dots",
   lineStrength: 1.25,
@@ -2265,6 +2265,7 @@ const DEFAULT_PULSE_PRESET_TUNING = Object.freeze({
   reverseMix: 0.65,
   dirOscAmount: 0.75,
   dirOscFreq: 0.1,
+  dirOscPinch: 0.55,
   colorCount: 3,
   targetPulseSpeed: 0.25,
   pulseGlow: 0.35,
@@ -2290,6 +2291,7 @@ function sanitizePulsePresetPayload(raw, opts = {}) {
     src.reverseMix !== undefined ||
     src.dirOscAmount !== undefined ||
     src.dirOscFreq !== undefined ||
+    src.dirOscPinch !== undefined ||
     src.colorCount !== undefined ||
     src.targetPulseSpeed !== undefined ||
     src.pulseGlow !== undefined ||
@@ -2312,6 +2314,7 @@ function sanitizePulsePresetPayload(raw, opts = {}) {
     reverseMix: clampRound(src.reverseMix, 0, 1, DEFAULT_PULSE_PRESET_TUNING.reverseMix),
     dirOscAmount: clampRound(src.dirOscAmount, 0, 1, DEFAULT_PULSE_PRESET_TUNING.dirOscAmount),
     dirOscFreq: clampRound(src.dirOscFreq, 0.02, 0.6, DEFAULT_PULSE_PRESET_TUNING.dirOscFreq),
+    dirOscPinch: clampRound(src.dirOscPinch, 0, 1, DEFAULT_PULSE_PRESET_TUNING.dirOscPinch),
     colorCount: clampRound(src.colorCount, 1, 6, DEFAULT_PULSE_PRESET_TUNING.colorCount),
     targetPulseSpeed: clampRound(src.targetPulseSpeed, 0, 4, DEFAULT_PULSE_PRESET_TUNING.targetPulseSpeed),
     pulseGlow: clampRound(src.pulseGlow, 0, 4, DEFAULT_PULSE_PRESET_TUNING.pulseGlow),
