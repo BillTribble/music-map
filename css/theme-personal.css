@@ -197,3 +197,153 @@
 .star-btn.is-starred .ms {
   font-variation-settings: 'FILL' 1, 'wght' 500, 'GRAD' 0, 'opsz' 20;
 }
+
+/* ---- Rekordbox Automix-Style Transition Zone & Hover Tooltip on Player Waveform ---- */
+.mp-wave-wrap .mp-wave-time {
+  z-index: 2;
+}
+
+.mp-automix-zone {
+  position: absolute;
+  z-index: 1;
+  pointer-events: none;
+  border-radius: 0 6px 6px 0;
+  background: color-mix(in srgb, var(--md-sys-color-on-cyan-tonal) 15%, transparent);
+  box-shadow: inset 0 1px 0 color-mix(in srgb, var(--md-sys-color-on-cyan-tonal) 36%, transparent),
+    inset 0 -1px 0 color-mix(in srgb, var(--md-sys-color-on-cyan-tonal) 28%, transparent);
+  transition: opacity 150ms var(--ease-std), background 160ms var(--ease-std);
+}
+
+.mp-automix-zone[hidden] {
+  display: none;
+}
+
+.mp-automix-zone.is-blending {
+  background: color-mix(in srgb, var(--md-sys-color-on-cyan-tonal) 26%, transparent);
+  box-shadow: inset 0 1px 0 color-mix(in srgb, var(--md-sys-color-on-cyan-tonal) 62%, transparent),
+    inset 0 -1px 0 color-mix(in srgb, var(--md-sys-color-on-cyan-tonal) 48%, transparent);
+}
+
+.mp-automix-zone.mp-automix-in-zone {
+  border-radius: 6px 0 0 6px;
+  background: color-mix(in srgb, var(--md-sys-color-primary) 16%, transparent);
+  box-shadow: inset 0 1px 0 color-mix(in srgb, var(--md-sys-color-primary) 42%, transparent),
+    inset 0 -1px 0 color-mix(in srgb, var(--md-sys-color-primary) 30%, transparent);
+}
+
+.mp-automix-svg {
+  display: block;
+  width: 100%;
+  height: 100%;
+  overflow: visible;
+}
+
+.mp-automix-cue-line {
+  stroke: var(--md-sys-color-on-cyan-tonal);
+  stroke-width: 1.6;
+}
+
+.mp-automix-cue-cap {
+  fill: var(--md-sys-color-on-cyan-tonal);
+}
+
+.mp-automix-wedge-out {
+  fill: var(--md-sys-color-on-cyan-tonal);
+  fill-opacity: 0.11;
+}
+
+.mp-automix-slope-out {
+  fill: none;
+  stroke: var(--md-sys-color-on-cyan-tonal);
+  stroke-width: 1.5;
+  stroke-linecap: round;
+}
+
+.mp-automix-slope-in {
+  fill: none;
+  stroke: var(--md-sys-color-primary);
+  stroke-width: 1.25;
+  stroke-dasharray: 2.5 2;
+  stroke-linecap: round;
+  opacity: 0.82;
+}
+
+.mp-automix-end-line {
+  stroke: var(--md-sys-color-on-cyan-tonal);
+  stroke-width: 1;
+  stroke-dasharray: 2 2;
+  opacity: 0.45;
+}
+
+.mp-automix-in-zone .mp-automix-cue-line,
+.mp-automix-in-zone .mp-automix-slope-in {
+  stroke: var(--md-sys-color-primary);
+  stroke-dasharray: none;
+  opacity: 0.92;
+}
+
+.mp-automix-in-zone .mp-automix-cue-cap {
+  fill: var(--md-sys-color-primary);
+}
+
+.mp-automix-in-zone .mp-automix-slope-out {
+  stroke: var(--md-sys-color-on-cyan-tonal);
+  stroke-dasharray: 2.5 2;
+  opacity: 0.72;
+}
+
+.mp-automix-tooltip {
+  position: absolute;
+  bottom: calc(100% + 6px);
+  right: 0;
+  z-index: 4;
+  pointer-events: none;
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  max-width: 100%;
+  padding: 4px 10px;
+  border-radius: 999px;
+  background: color-mix(in srgb, var(--md-sys-color-surface-container-highest) 96%, transparent);
+  backdrop-filter: blur(12px);
+  -webkit-backdrop-filter: blur(12px);
+  color: var(--md-sys-color-on-surface);
+  box-shadow: 0 4px 14px color-mix(in srgb, var(--md-sys-color-shadow) 26%, transparent);
+  font-family: var(--font-sans);
+  font-variant-numeric: tabular-nums;
+  font-size: 11px;
+  font-weight: 500;
+  line-height: 1.25;
+  white-space: nowrap;
+}
+
+.mp-automix-tooltip[hidden] {
+  display: none;
+}
+
+.mp-automix-tip-dot {
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: var(--md-sys-color-on-cyan-tonal);
+  flex-shrink: 0;
+}
+
+.mp-automix-tip-kind {
+  color: var(--md-sys-color-on-cyan-tonal);
+  font-weight: 600;
+  flex-shrink: 0;
+}
+
+.mp-automix-tip-track {
+  color: var(--md-sys-color-on-surface);
+  font-weight: 600;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.mp-automix-tip-meta {
+  color: var(--md-sys-color-on-surface-variant);
+  flex-shrink: 0;
+}

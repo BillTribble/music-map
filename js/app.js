@@ -590,6 +590,9 @@
       }
       window.ME_NODEMAP.setFilter(hits);
     }
+    if (window.BTMM_PLAYER && typeof window.BTMM_PLAYER.refreshWaveform === "function") {
+      window.BTMM_PLAYER.refreshWaveform();
+    }
     if (!isMapTab()) renderView();
   }
 

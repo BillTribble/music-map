@@ -594,7 +594,7 @@ def analyze_beatgrid_and_groove(
     if (
         is_spoken
         or has_drums_gate is False
-        or cluster_id == "d0_ambient"
+        or cluster_id in {"d0_ambient", "d10_dark_ambient"}
         or rhythm_tag in {"Beatless ambient wash", "Dark ambient drone", "Weightless ambient drift"}
         or (rhythm_tag in AMBIENT_RHYTHM_TAGS and fof_cat < 35.0 and perc_share < 0.14)
         or (groove_style in {"ambient", "dark_ambient", "guitar_demo", "guitar_vocal"} and fof_cat < 30.0 and perc_share < 0.14)
@@ -686,35 +686,54 @@ def analyze_beatgrid_and_groove(
                 last_good -= 1
             audible_end = min(eff_end, ((last_good + 1) / len(pk_arr)) * full_dur)
 
+    bpm_out = round(bpm, 2)
+    fb_out = round(first_beat_sec, 4)
+    beat_sec_out = 60.0 / bpm_out
+    bar_sec_out = 4.0 * beat_sec_out
+    phrase_sec_out = 4.0 * bar_sec_out
+    first_bar_out = fb_out + int(bar_offset) * beat_sec_out
+    first_phrase_out = first_bar_out + int(phrase_bar) * bar_sec_out
+
+    def _calc_phrase_fade_sec() -> float:
+        res_pf = max(1.8, 1.5 * bar_sec_out)
+        hard_pf = eff_end - max(1.2, 1.1 * bar_sec_out)
+        target_pf = min(hard_pf, audible_end - res_pf)
+        max_p_pf = int(math.floor((hard_pf - first_phrase_out) / phrase_sec_out))
+        if max_p_pf >= 1:
+            p_i = int(math.floor((target_pf - first_phrase_out) / phrase_sec_out))
+            p_i = max(1, min(p_i, max_p_pf))
+            while p_i < max_p_pf and (first_phrase_out + p_i * phrase_sec_out) < cue_in_sec + bar_sec_out:
+                p_i += 1
+            return round(first_phrase_out + p_i * phrase_sec_out, 4)
+        return round(max(0.0, audible_end - max(1.8, bar_sec_out)), 3)
+
     if groove == "4x4":
         # Reserve >= 5.2 bars (~10s) of solid audio from the 4-bar phrase boundary for the 5-bar DJ blend
-        reserve_sec = max(8.5, 5.2 * bar_sec)
-        target_mix_max = audible_end - reserve_sec
-        if target_mix_max > first_phrase_sec + 4.0 * bar_sec:
-            p_idx = int(math.floor((target_mix_max - first_phrase_sec) / (4.0 * bar_sec)))
-            mix_out_sec = first_phrase_sec + p_idx * 4.0 * bar_sec
-        elif audible_end > first_bar_sec + 5.0 * bar_sec:
-            b_idx = int(math.floor((audible_end - 5.0 * bar_sec - first_bar_sec) / bar_sec))
-            mix_out_sec = first_bar_sec + max(0, b_idx) * bar_sec
+        reserve_sec = max(8.5, 5.2 * bar_sec_out)
+        hard_max = eff_end - max(1.8, 2.2 * bar_sec_out)
+        target_mix_max = min(hard_max, audible_end - reserve_sec)
+        max_p_hard = int(math.floor((hard_max - first_phrase_out) / phrase_sec_out))
+        if max_p_hard >= 1:
+            p_idx = int(math.floor((target_mix_max - first_phrase_out) / phrase_sec_out))
+            p_idx = max(1, min(p_idx, max_p_hard))
+            while p_idx < max_p_hard and (first_phrase_out + p_idx * phrase_sec_out) < cue_in_sec + bar_sec_out:
+                p_idx += 1
+            mix_out_sec = round(first_phrase_out + p_idx * phrase_sec_out, 4)
         else:
-            mix_out_sec = max(0.0, audible_end - min(8.0, 0.35 * audible_end))
+            mix_out_sec = round(max(0.0, audible_end - min(8.0, 0.35 * audible_end)), 3)
+        phrase_fade_sec = _calc_phrase_fade_sec()
     elif groove == "broken":
-        # Broken-beat tracks use a tight 1-bar beat-synced fade near the end (reserve ~2 bars before audible_end)
-        reserve_sec = max(2.2, 1.75 * bar_sec)
-        target_mix_max = audible_end - reserve_sec
-        if target_mix_max > first_bar_sec + 2.0 * bar_sec:
-            b_idx = int(math.floor((target_mix_max - first_bar_sec) / bar_sec))
-            mix_out_sec = first_bar_sec + b_idx * bar_sec
-        else:
-            mix_out_sec = max(0.0, audible_end - max(1.8, bar_sec))
+        # Broken-beat tracks always trigger strictly at the end of a 4-bar phrase section (`first_phrase_out + p_idx * 4 * bar_sec`),
+        # reserving >= 1.5 bars before audible_end for the smooth 1-bar beat-synced fade!
+        mix_out_sec = _calc_phrase_fade_sec()
+        phrase_fade_sec = mix_out_sec
     else:
-        mix_out_sec = max(0.0, audible_end - 2.2)
-
-    mix_out_sec = round(max(min(cue_in_sec + bar_sec, max(0.0, full_dur - 2.0)), min(mix_out_sec, max(0.0, full_dur - 1.5))), 3)
+        mix_out_sec = round(max(min(cue_in_sec + bar_sec_out, max(0.0, full_dur - 2.0)), min(max(0.0, audible_end - 2.2), max(0.0, full_dur - 1.5))), 3)
+        phrase_fade_sec = mix_out_sec
 
     return {
-        "bpm": round(bpm, 2),
-        "first_beat_sec": round(first_beat_sec, 4),
+        "bpm": bpm_out,
+        "first_beat_sec": fb_out,
         "bar_offset": int(bar_offset),
         "phrase_bar": int(phrase_bar),
         "beat_clarity": round(beat_clarity, 3),
@@ -722,6 +741,7 @@ def analyze_beatgrid_and_groove(
         "groove": groove,
         "cue_in_sec": cue_in_sec,
         "mix_out_sec": mix_out_sec,
+        "phrase_fade_sec": phrase_fade_sec,
     }
 
 

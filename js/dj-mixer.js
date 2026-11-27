@@ -217,7 +217,7 @@
     let groove = g && typeof g.groove === "string" ? g.groove : "";
     if (groove !== "4x4" && groove !== "broken" && groove !== "ambient") {
       if (tr && tr.is_spoken_word) groove = "ambient";
-      else if (tr && (tr.cluster_id === "d0_ambient" || tr.groove_style === "ambient" || tr.groove_style === "dark_ambient")) groove = "ambient";
+      else if (tr && (tr.cluster_id === "d0_ambient" || tr.cluster_id === "d10_dark_ambient" || tr.groove_style === "ambient" || tr.groove_style === "dark_ambient")) groove = "ambient";
       else if (tr && tr.groove_style === "four_on_floor" && tr.cluster_id !== "d7_dnb_breaks" && tr.cluster_id !== "d9_uk_bass") groove = "4x4";
       else groove = "broken";
     }
@@ -226,6 +226,9 @@
       ? Math.max(0, Number(g.cue_in_sec))
       : (groove === "ambient" ? 0 : firstBarSec);
     const mixOutSec = g && Number.isFinite(Number(g.mix_out_sec)) ? Math.max(0, Number(g.mix_out_sec)) : null;
+    const phraseFadeSec = g && Number.isFinite(Number(g.phrase_fade_sec))
+      ? Math.max(0, Number(g.phrase_fade_sec))
+      : (groove === "broken" ? mixOutSec : null);
     const beatClarity = g && Number.isFinite(Number(g.beat_clarity))
       ? clamp(Number(g.beat_clarity), 0, 1)
       : clamp(Number((tr && tr.pulse_clarity) || 0.5), 0, 1);
@@ -245,6 +248,7 @@
       groove,
       cueInSec,
       mixOutSec,
+      phraseFadeSec,
     };
   }
 
@@ -844,64 +848,423 @@
     baseAudio.setTrackIndex(tracks, graphMeta);
   }
 
-  // ---- Auto-Play Mix-Out Trigger Calculation ----
-  function computeAutoMixTriggerSec(voice, nextTrack, realDur) {
-    if (!voice || !voice.track || !(realDur > 4.0)) return null;
-    const gridA = voice.grid || getTrackGrid(voice.track);
+  // ---- 4-Bar Phrase Quantization & Auto-Play Mix-Out Window Calculation ----
+  function quantizePhraseBoundary(grid, targetMaxSec, effEnd, minTailBars = 1.1) {
+    const phraseOriginSec = grid.firstPhraseSec;
+    const phraseSec = grid.phraseSec;
+    const hardMaxSec = effEnd - Math.max(0.8, minTailBars * grid.barSec);
+    const maxPhraseIdx = Math.floor((hardMaxSec - phraseOriginSec + 1e-6) / phraseSec);
+    if (maxPhraseIdx >= 1) {
+      const rawIdx = Math.floor((Math.min(targetMaxSec, hardMaxSec) - phraseOriginSec + 0.05) / phraseSec);
+      const pIdx = clamp(rawIdx, 1, maxPhraseIdx);
+      return {
+        triggerSec: phraseOriginSec + pIdx * phraseSec,
+        phraseOriginSec,
+        phraseSec,
+        phraseIndex: pIdx,
+        phraseAligned: true,
+      };
+    }
+    if (maxPhraseIdx === 0 && phraseOriginSec >= grid.beatSec * 2) {
+      return {
+        triggerSec: phraseOriginSec,
+        phraseOriginSec,
+        phraseSec,
+        phraseIndex: 0,
+        phraseAligned: true,
+      };
+    }
+    const bIdx = Math.max(1, Math.floor(Math.max(0, hardMaxSec - grid.firstBarSec) / grid.barSec));
+    return {
+      triggerSec: Math.min(hardMaxSec, grid.firstBarSec + bIdx * grid.barSec),
+      phraseOriginSec,
+      phraseSec,
+      phraseIndex: null,
+      phraseAligned: false,
+    };
+  }
+
+  function resolveSeekAdjustedTrigger(grid, baseQuant, effEnd, lastManualSeekSec, minTailBars) {
+    if (!Number.isFinite(lastManualSeekSec) || lastManualSeekSec <= baseQuant.triggerSec + 0.15) {
+      return baseQuant;
+    }
+    const phraseOriginSec = grid.firstPhraseSec;
+    const phraseSec = grid.phraseSec;
+    const hardMaxSec = effEnd - Math.max(0.8, minTailBars * grid.barSec);
+    const nextPhraseIdx = Math.ceil((lastManualSeekSec + 0.20 - phraseOriginSec) / phraseSec);
+    const maxPhraseIdx = Math.floor((hardMaxSec - phraseOriginSec + 1e-6) / phraseSec);
+    if (maxPhraseIdx >= Math.max(1, nextPhraseIdx)) {
+      const pIdx = Math.max(1, nextPhraseIdx);
+      return {
+        triggerSec: phraseOriginSec + pIdx * phraseSec,
+        phraseOriginSec,
+        phraseSec,
+        phraseIndex: pIdx,
+        phraseAligned: true,
+      };
+    }
+    const nextBarIdx = Math.ceil((lastManualSeekSec + 0.15 - grid.firstBarSec) / grid.barSec);
+    const nextBarSec = grid.firstBarSec + Math.max(0, nextBarIdx) * grid.barSec;
+    const fallbackTrig = effEnd - nextBarSec >= grid.barSec * 1.05
+      ? nextBarSec
+      : Math.max(lastManualSeekSec + 0.20, effEnd - grid.barSec);
+    return {
+      triggerSec: clamp(fallbackTrig, 0, Math.max(0, effEnd - 0.35)),
+      phraseOriginSec,
+      phraseSec,
+      phraseIndex: null,
+      phraseAligned: false,
+    };
+  }
+
+  function computeAutoMixPlan(params) {
+    const track = params && params.track;
+    const realDur = Number(params && params.realDur) || 0;
+    if (!track || track.is_spoken_word || !(realDur > 4.0)) return null;
+
+    const gridA = (params && params.gridA) || getTrackGrid(track);
+    const nextTrack = params && params.nextTrack !== undefined ? params.nextTrack : peekNextTrack(track.id);
     const gridB = nextTrack ? getTrackGrid(nextTrack) : null;
-    const mushTrig = getEffectiveMushTriggerSec(voice, realDur);
-    const effEnd = mushTrig !== null ? Math.min(realDur, mushTrig + 2.2) : realDur;
+    const playbackRate = Number.isFinite(params && params.playbackRate) && params.playbackRate > 0 ? params.playbackRate : 1.0;
+    const lastManualSeekSec = Number.isFinite(params && params.lastManualSeekSec) ? params.lastManualSeekSec : null;
+    const mushCustomTriggerSec = Number.isFinite(params && params.mushCustomTriggerSec) ? params.mushCustomTriggerSec : null;
 
+    // 1. AI Mush +3.0s Taste & Cosine Fade-Out Gate
+    const rawMush = getRawMushTriggerSec(track, realDur);
+    let mushTrig = rawMush !== null && mushCustomTriggerSec !== null
+      ? Math.max(rawMush, mushCustomTriggerSec)
+      : rawMush;
+    if (mushTrig !== null && mushTrig >= realDur - 1.2) {
+      mushTrig = null;
+    }
+    if (mushTrig !== null) {
+      const fadeSec = MUSH_FADE_MS / 1000;
+      const endSec = Math.min(realDur, mushTrig + fadeSec);
+      return {
+        triggerSec: mushTrig,
+        endSec,
+        durationSec: Math.max(0.2, endSec - mushTrig),
+        bars: null,
+        kind: "mush",
+        blendType: "mush-fade",
+        prewarmLeadSec: MUSH_TASTE_SEC,
+        tempoMatch: { matched: false, rateB: 1.0, mult: 1.0 },
+        effEnd: endSec,
+        phraseOriginSec: gridA.firstPhraseSec,
+        phraseSec: gridA.phraseSec,
+        phraseIndex: null,
+        phraseAligned: false,
+        gridA,
+        gridB,
+        nextTrack,
+      };
+    }
+
+    const effEnd = realDur;
     const both4x4 = gridA.groove === "4x4" && gridB && gridB.groove === "4x4";
-    const tempoMatch = both4x4 ? computeTempoMatch(gridA, gridB, voice.playbackRate, TEMPO_TOL_4X4) : { matched: false };
-    const usePrecomputedMixOut = mushTrig === null && gridA.mixOutSec !== null;
+    const tempoMatch = both4x4
+      ? computeTempoMatch(gridA, gridB, playbackRate, TEMPO_TOL_4X4)
+      : { matched: false, rateB: 1.0, mult: 1.0 };
+    const usePrecomputedMixOut = gridA.mixOutSec !== null;
 
-    if (both4x4 && tempoMatch.matched && effEnd > gridA.barSec * 6.2) {
-      // Count 4-bar phrases from firstPhraseSec and pick the latest 4-bar boundary leaving >= 5.0 bars of audio
+    // 2. 4/4 DJ Phrase Blend (5 bars across 4-bar phrase boundary)
+    if (both4x4 && tempoMatch.matched && effEnd > gridA.firstPhraseSec + gridA.phraseSec + gridA.barSec * 2.2) {
       const minReserve = Math.max(8.0, AUTO_4X4_BLEND_BARS * gridA.barSec + 0.35);
       const maxStart = effEnd - minReserve;
-      let mixSec = usePrecomputedMixOut ? Math.min(gridA.mixOutSec, maxStart) : maxStart;
-      if (mixSec > gridA.firstPhraseSec + gridA.phraseSec) {
-        const pIdx = Math.floor((mixSec - gridA.firstPhraseSec + 0.05) / gridA.phraseSec);
-        mixSec = gridA.firstPhraseSec + Math.max(1, pIdx) * gridA.phraseSec;
-      } else {
-        const bIdx = Math.floor(Math.max(0, maxStart - gridA.firstBarSec) / gridA.barSec);
-        mixSec = gridA.firstBarSec + Math.max(1, bIdx) * gridA.barSec;
-      }
+      const mixTarget = usePrecomputedMixOut ? Math.min(gridA.mixOutSec, maxStart) : maxStart;
+      const baseQ = quantizePhraseBoundary(gridA, mixTarget, effEnd, 2.2);
+      const adjQ = resolveSeekAdjustedTrigger(gridA, baseQ, effEnd, lastManualSeekSec, 2.0);
+      const availBars = Math.max(0.5, (effEnd - adjQ.triggerSec) / gridA.barSec);
+      const totalBars = clamp(Math.min(AUTO_4X4_BLEND_BARS, availBars - 0.15), 1.5, AUTO_4X4_BLEND_BARS);
+      const endSec = Math.min(effEnd, adjQ.triggerSec + totalBars * gridA.barSec);
       return {
-        triggerSec: clamp(mixSec, gridA.barSec, Math.max(gridA.barSec, effEnd - gridA.barSec * 2.2)),
-        prewarmLeadSec: Math.max(5.5, 3.2 * gridA.barSec),
+        triggerSec: adjQ.triggerSec,
+        endSec,
+        durationSec: Math.max(0.2, endSec - adjQ.triggerSec),
+        bars: Number(totalBars.toFixed(2)),
+        kind: "4x4",
         blendType: "4x4-phrase-blend",
+        prewarmLeadSec: Math.max(5.5, 3.2 * gridA.barSec),
         tempoMatch,
         effEnd,
+        phraseOriginSec: adjQ.phraseOriginSec,
+        phraseSec: adjQ.phraseSec,
+        phraseIndex: adjQ.phraseIndex,
+        phraseAligned: adjQ.phraseAligned,
+        gridA,
+        gridB,
+        nextTrack,
       };
     }
 
-    if (gridA.groove !== "ambient" && (!gridB || gridB.groove !== "ambient") && effEnd > gridA.barSec * 2.5) {
-      // Broken-beat / DnB / breakbeat / UK bass -> smooth 1-bar beat-synced fade near end
-      const tmBroken = gridB ? computeTempoMatch(gridA, gridB, voice.playbackRate, TEMPO_TOL_BROKEN) : { matched: false, rateB: 1.0, mult: 1.0 };
-      const reserve = Math.max(1.8, 1.35 * gridA.barSec);
+    // 3. Broken-beat / DnB / breakbeat / UK bass (and non-4x4-matched rhythmic tracks) ->
+    //    Always trigger strictly at the end of a 4-bar phrase section (`firstPhraseSec + k * 4 * barSec`)
+    //    and fade smoothly over 1 bar on beat!
+    if (gridA.groove !== "ambient" && effEnd > gridA.barSec * 2.5) {
+      const tmBroken = gridB && gridB.groove !== "ambient"
+        ? computeTempoMatch(gridA, gridB, playbackRate, TEMPO_TOL_BROKEN)
+        : { matched: false, rateB: 1.0, mult: 1.0 };
+      const reserve = Math.max(1.8, 1.5 * gridA.barSec);
       const maxStart = effEnd - reserve;
-      let mixSec = usePrecomputedMixOut ? Math.min(gridA.mixOutSec, maxStart) : maxStart;
-      const bIdx = Math.floor(Math.max(0, mixSec - gridA.firstBarSec + 0.04) / gridA.barSec);
-      mixSec = gridA.firstBarSec + Math.max(1, bIdx) * gridA.barSec;
+      const precomputedPhraseFade = gridA.phraseFadeSec !== null
+        ? gridA.phraseFadeSec
+        : (gridA.groove === "broken" ? gridA.mixOutSec : null);
+      const mixTarget = precomputedPhraseFade !== null ? Math.min(precomputedPhraseFade, maxStart) : maxStart;
+      const baseQ = quantizePhraseBoundary(gridA, mixTarget, effEnd, 1.1);
+      const adjQ = resolveSeekAdjustedTrigger(gridA, baseQ, effEnd, lastManualSeekSec, 1.1);
+      const availBars = Math.max(0.5, (effEnd - adjQ.triggerSec) / gridA.barSec);
+      const totalBars = Math.min(BROKEN_FADE_BARS, Math.max(0.5, availBars - 0.1));
+      const endSec = Math.min(effEnd, adjQ.triggerSec + totalBars * gridA.barSec);
       return {
-        triggerSec: clamp(mixSec, gridA.beatSec * 2, Math.max(gridA.beatSec * 2, effEnd - gridA.barSec * 1.05)),
-        prewarmLeadSec: Math.max(4.5, 2.5 * gridA.barSec),
+        triggerSec: adjQ.triggerSec,
+        endSec,
+        durationSec: Math.max(0.2, endSec - adjQ.triggerSec),
+        bars: Number(totalBars.toFixed(2)),
+        kind: "broken",
         blendType: "beat-short-1bar",
+        prewarmLeadSec: Math.max(4.5, 2.5 * gridA.barSec),
         tempoMatch: tmBroken,
         effEnd,
+        phraseOriginSec: adjQ.phraseOriginSec,
+        phraseSec: adjQ.phraseSec,
+        phraseIndex: adjQ.phraseIndex,
+        phraseAligned: adjQ.phraseAligned,
+        gridA,
+        gridB,
+        nextTrack,
       };
     }
 
-    // Beatless ambient track -> smooth equal-power crossfade
+    // 4. Beatless ambient track -> smooth equal-power crossfade
     const fadeSec = AMBIENT_FADE_MS / 1000;
+    let trigSec = Math.max(0.5, effEnd - fadeSec - 0.15);
+    if (lastManualSeekSec !== null && lastManualSeekSec > trigSec + 0.1) {
+      const rem = Math.max(0.4, effEnd - lastManualSeekSec);
+      trigSec = clamp(
+        Math.max(lastManualSeekSec + 0.25, effEnd - Math.min(fadeSec, rem * 0.55)),
+        0.5,
+        Math.max(0.5, effEnd - 0.35)
+      );
+    }
+    const endSec = Math.min(effEnd, trigSec + fadeSec);
     return {
-      triggerSec: Math.max(0.5, effEnd - fadeSec - 0.15),
-      prewarmLeadSec: 5.5,
+      triggerSec: trigSec,
+      endSec,
+      durationSec: Math.max(0.2, endSec - trigSec),
+      bars: null,
+      kind: "ambient",
       blendType: "ambient-crossfade",
+      prewarmLeadSec: 5.5,
       tempoMatch: { matched: false, rateB: 1.0, mult: 1.0 },
       effEnd,
+      phraseOriginSec: gridA.firstPhraseSec,
+      phraseSec: gridA.phraseSec,
+      phraseIndex: null,
+      phraseAligned: false,
+      gridA,
+      gridB,
+      nextTrack,
+    };
+  }
+
+  function resolveSettledVoiceRate(voice) {
+    if (!voice || voice.disposed) return 1.0;
+    if ((activeBlend && activeBlend.incoming === voice) || (activeGlide && activeGlide.voice === voice)) {
+      return 1.0;
+    }
+    return Number.isFinite(voice.playbackRate) && voice.playbackRate > 0 ? voice.playbackRate : 1.0;
+  }
+
+  function computeAutoMixTriggerSec(voice, nextTrack, realDur) {
+    if (!voice || !voice.track || !(realDur > 4.0)) return null;
+    return computeAutoMixPlan({
+      track: voice.track,
+      gridA: voice.grid || getTrackGrid(voice.track),
+      playbackRate: resolveSettledVoiceRate(voice),
+      nextTrack,
+      realDur,
+      lastManualSeekSec: voice.lastManualSeekSec,
+      mushCustomTriggerSec: voice.mushCustomTriggerSec,
+    });
+  }
+
+  function getAutoMixWindow(trackOrId) {
+    const fallbackId = resolveHistoryAnchorId();
+    const tr = typeof trackOrId === "object" && trackOrId
+      ? trackOrId
+      : byId.get(String(trackOrId || fallbackId || ""));
+    if (!tr) {
+      return {
+        enabled: false,
+        active: false,
+        blending: false,
+        kind: null,
+        blendType: null,
+        startSec: 0,
+        endSec: 0,
+        durationSec: 0,
+        bars: null,
+        phraseAligned: false,
+        phraseOriginSec: 0,
+        phraseSec: 0,
+        phraseIndex: null,
+        nextTrackId: null,
+        nextTrackTitle: null,
+      };
+    }
+
+    // If this track is currently the outgoing deck in an active live blend, pin its live outgoing blend window
+    if (activeBlend && activeBlend.outgoing && !activeBlend.outgoing.disposed && activeBlend.outgoing.trackId === tr.id) {
+      const outV = activeBlend.outgoing;
+      const inTr = activeBlend.incoming && activeBlend.incoming.track;
+      const gridA = outV.grid || getTrackGrid(tr);
+      const realDurOut = getVoiceDuration(outV) || Number(tr.full_duration_sec) || Number(tr.duration_sec) || 0;
+      const startSec = activeBlend.startMediaSecA;
+      const durMedia = activeBlend.blendType === "ambient-crossfade"
+        ? (activeBlend.durMs / 1000)
+        : (activeBlend.totalBars * activeBlend.barSecA);
+      const endSec = realDurOut > 0 ? Math.min(realDurOut, startSec + durMedia) : (startSec + durMedia);
+      const kind = activeBlend.blendType === "4x4-phrase-blend"
+        ? "4x4"
+        : (activeBlend.blendType === "beat-short-1bar" ? "broken" : "ambient");
+      const qVal = gridA.phraseSec > 0 ? (startSec - gridA.firstPhraseSec) / gridA.phraseSec : NaN;
+      const pAligned = Number.isFinite(qVal) && Math.abs(qVal - Math.round(qVal)) < 1e-3;
+      const isEnabled = Boolean(autoPlay && !tr.is_spoken_word && outV.isFullTrack && outV.stopIdx < 0);
+      return {
+        enabled: isEnabled,
+        active: isEnabled,
+        blending: true,
+        kind,
+        blendType: activeBlend.blendType,
+        startSec: Number(startSec.toFixed(4)),
+        endSec: Number(endSec.toFixed(4)),
+        durationSec: Number(Math.max(0.2, endSec - startSec).toFixed(4)),
+        bars: activeBlend.blendType === "ambient-crossfade" ? null : Number(activeBlend.totalBars.toFixed(2)),
+        phraseAligned: pAligned,
+        phraseOriginSec: Number(gridA.firstPhraseSec.toFixed(4)),
+        phraseSec: Number(gridA.phraseSec.toFixed(4)),
+        phraseIndex: pAligned ? Math.round(qVal) : null,
+        bpmA: gridA.bpm,
+        bpmB: inTr ? getTrackGrid(inTr).bpm : null,
+        tempoMatched: true,
+        nextTrackId: inTr ? inTr.id : null,
+        nextTrackTitle: inTr ? inTr.title : null,
+      };
+    }
+
+    const isAct = Boolean(active && !active.disposed && active.trackId === tr.id);
+    const isPausedMatch = Boolean(!isAct && lastPaused && lastPaused.trackId === tr.id);
+    const hasFullAsset = Boolean(
+      (typeof window !== "undefined" && window.BTMM_LOCAL_AUDIO_MAP && window.BTMM_LOCAL_AUDIO_MAP[tr.id]) ||
+      tr.stream_url ||
+      tr.mp3_320_url ||
+      tr.mp3_url
+    );
+    const isFullTrack = isAct
+      ? Boolean(active.isFullTrack)
+      : (isPausedMatch ? Boolean(lastPaused.isFullTrack) : hasFullAsset);
+    const stopIdx = isAct ? active.stopIdx : -1;
+
+    let knownDur = 0;
+    if (isAct) {
+      knownDur = getVoiceDuration(active);
+    } else if (isPausedMatch && Number.isFinite(lastPaused.duration) && lastPaused.duration > 0) {
+      knownDur = lastPaused.duration;
+    } else {
+      knownDur = isFullTrack
+        ? (Number(tr.full_duration_sec) || Number(tr.duration_sec) || 0)
+        : (Number(tr.duration_sec) || 0);
+    }
+
+    const nextTrack = peekNextTrack(tr.id);
+    const plan = computeAutoMixPlan({
+      track: tr,
+      gridA: isAct && active.grid ? active.grid : getTrackGrid(tr),
+      playbackRate: isAct ? resolveSettledVoiceRate(active) : 1.0,
+      nextTrack,
+      realDur: knownDur,
+      lastManualSeekSec: isAct ? active.lastManualSeekSec : (isPausedMatch ? lastPaused.lastManualSeekSec : null),
+      mushCustomTriggerSec: isAct ? active.mushCustomTriggerSec : (isPausedMatch ? lastPaused.mushCustomTriggerSec : null),
+    });
+
+    const isEnabled = Boolean(
+      autoPlay &&
+      isFullTrack &&
+      stopIdx < 0 &&
+      !tr.is_spoken_word &&
+      plan &&
+      nextTrack &&
+      nextTrack.id !== tr.id
+    );
+
+    if (!plan) {
+      return {
+        enabled: false,
+        active: false,
+        blending: false,
+        kind: null,
+        blendType: null,
+        startSec: 0,
+        endSec: 0,
+        durationSec: 0,
+        bars: null,
+        phraseAligned: false,
+        phraseOriginSec: 0,
+        phraseSec: 0,
+        phraseIndex: null,
+        nextTrackId: nextTrack ? nextTrack.id : null,
+        nextTrackTitle: nextTrack ? nextTrack.title : null,
+      };
+    }
+
+    return {
+      enabled: isEnabled,
+      active: isEnabled,
+      blending: Boolean(isAct && active.mushFadeActive),
+      kind: plan.kind,
+      blendType: plan.blendType,
+      startSec: Number(plan.triggerSec.toFixed(4)),
+      endSec: Number(plan.endSec.toFixed(4)),
+      durationSec: Number(plan.durationSec.toFixed(4)),
+      bars: plan.bars,
+      phraseAligned: Boolean(plan.phraseAligned),
+      phraseOriginSec: Number(plan.phraseOriginSec.toFixed(4)),
+      phraseSec: Number(plan.phraseSec.toFixed(4)),
+      phraseIndex: plan.phraseIndex,
+      bpmA: plan.gridA.bpm,
+      bpmB: plan.gridB ? plan.gridB.bpm : null,
+      tempoMatched: Boolean(plan.tempoMatch && plan.tempoMatch.matched),
+      nextTrackId: nextTrack ? nextTrack.id : null,
+      nextTrackTitle: nextTrack ? nextTrack.title : null,
+    };
+  }
+
+  function getActiveMixInWindow() {
+    if (!activeBlend || !active || active.disposed || activeBlend.incoming !== active) return null;
+    if (!activeBlend.outgoing || activeBlend.outgoing.disposed) return null;
+    const b = getVoiceBounds(active);
+    const gridB = active.grid || getTrackGrid(active.track);
+    const startSec = Number.isFinite(activeBlend.startMediaSecB) ? activeBlend.startMediaSecB : 0;
+    const durMediaB = activeBlend.blendType === "ambient-crossfade"
+      ? (activeBlend.durMs / 1000)
+      : (activeBlend.totalBars * activeBlend.barSecA * (active.playbackRate || 1.0));
+    const endSec = b.duration > 0 ? Math.min(b.duration, startSec + durMediaB) : (startSec + durMediaB);
+    const kind = activeBlend.blendType === "4x4-phrase-blend"
+      ? "4x4"
+      : (activeBlend.blendType === "beat-short-1bar" ? "broken" : "ambient");
+    const outTr = activeBlend.outgoing.track;
+    return {
+      enabled: true,
+      active: true,
+      blending: true,
+      kind,
+      blendType: activeBlend.blendType,
+      startSec: Number(startSec.toFixed(4)),
+      endSec: Number(endSec.toFixed(4)),
+      durationSec: Number(Math.max(0.2, endSec - startSec).toFixed(4)),
+      bars: activeBlend.blendType === "ambient-crossfade" ? null : Number(activeBlend.totalBars.toFixed(2)),
+      fromTrackId: outTr ? outTr.id : null,
+      fromTrackTitle: outTr ? outTr.title : null,
     };
   }
 
@@ -925,7 +1288,7 @@
     const hasDropCue = Boolean(nextTrack.has_drop) && Number(nextTrack.preview_start_sec) > 0.02;
     const targetCue = plan && plan.blendType === "4x4-phrase-blend"
       ? gridB.cueInSec
-      : (plan && plan.blendType === "beat-short-1bar"
+      : (plan && plan.blendType === "beat-short-1bar" && gridB.groove !== "ambient"
         ? gridB.cueInSec
         : (hasDropCue ? Number(nextTrack.preview_start_sec) : 0));
 
@@ -1266,6 +1629,11 @@
         preservesPitch: readPreservesPitch(active.htmlAudio),
         djBlendActive: Boolean(activeBlend),
         djBlendType: activeBlend ? activeBlend.blendType : null,
+        autoMixWindow: getAutoMixWindow(active.trackId),
+        mixInWindow: getActiveMixInWindow(),
+        outgoingTrackId: outgoing && !outgoing.disposed ? outgoing.trackId : null,
+        outgoingCurrentTime: outgoing && !outgoing.disposed ? getVoiceCurrentTime(outgoing) : 0,
+        outgoingDuration: outgoing && !outgoing.disposed ? getVoiceDuration(outgoing) : 0,
       };
     }
     if (pending) {
@@ -1281,6 +1649,8 @@
         isFullTrack: Boolean(pending.isFullTrack),
         looping: !autoPlay,
         autoPlay: Boolean(autoPlay),
+        autoMixWindow: getAutoMixWindow(pending.trackId),
+        mixInWindow: null,
       };
     }
     if (lastPaused && byId.has(lastPaused.trackId)) {
@@ -1295,8 +1665,11 @@
         isFullTrack: Boolean(lastPaused.isFullTrack),
         looping: !autoPlay,
         autoPlay: Boolean(autoPlay),
+        autoMixWindow: getAutoMixWindow(lastPaused.trackId),
+        mixInWindow: null,
       };
     }
+    const anchorId = resolveHistoryAnchorId();
     return {
       trackId: null,
       playing: false,
@@ -1308,6 +1681,8 @@
       isFullTrack: false,
       looping: !autoPlay,
       autoPlay: Boolean(autoPlay),
+      autoMixWindow: anchorId ? getAutoMixWindow(anchorId) : getAutoMixWindow(null),
+      mixInWindow: null,
     };
   }
 
@@ -1396,25 +1771,22 @@
       return;
     }
 
-    // Auto-Play ON: AI Mush +3.0s Taste & Cosine Fade-Out Gate (d34d1af / post-023316)
+    // Auto-Play ON: Unified Beat-Grid, 4-Bar Phrase & AI Mush Scheduling (`computeAutoMixTriggerSec`)
     el.loop = false;
     if (active.track && active.track.is_spoken_word) return;
     const realDur = Number.isFinite(el.duration) && el.duration > 0 ? el.duration : 0;
     if (realDur <= 0 || active.autoTransitionFired) return;
 
-    const mushTrig = getEffectiveMushTriggerSec(active, realDur);
-    if (mushTrig !== null) {
-      active.autoPlan = {
-        triggerSec: mushTrig,
-        prewarmLeadSec: MUSH_TASTE_SEC,
-        blendType: "mush-fade",
-        tempoMatch: { matched: false, rateB: 1.0, mult: 1.0 },
-        effEnd: Math.min(realDur, mushTrig + MUSH_FADE_MS / 1000),
-      };
-      if (!outgoing && curSec >= mushTrig - MUSH_TASTE_SEC) {
-        maybePrewarmNext(active, active.autoPlan);
+    const nextCandidate = peekNextTrack(active.trackId);
+    const plan = computeAutoMixTriggerSec(active, nextCandidate, realDur);
+    active.autoPlan = plan;
+    if (!plan) return;
+
+    if (plan.blendType === "mush-fade") {
+      if (!outgoing && curSec >= plan.triggerSec - MUSH_TASTE_SEC) {
+        maybePrewarmNext(active, plan);
       }
-      if (!active.mushFadeActive && curSec >= mushTrig) {
+      if (!active.mushFadeActive && curSec >= plan.triggerSec) {
         active.mushFadeActive = true;
         active.mushFadeStartMs = nowMs();
         active.mushFadeFactor = 1.0;
@@ -1426,32 +1798,13 @@
       }
     }
 
-    // Auto-Play ON: Beat-grid & 4-bar phrase DJ scheduling
-    const nextCandidate = peekNextTrack(active.trackId);
-    const plan = computeAutoMixTriggerSec(active, nextCandidate, realDur);
-    active.autoPlan = plan;
-    if (!plan) return;
-
     if (!outgoing && curSec >= plan.triggerSec - plan.prewarmLeadSec && curSec < plan.effEnd - 0.2) {
       maybePrewarmNext(active, plan);
     }
 
-    // If user manually scrubbed past the planned 4-bar boundary while >= 1.5 bars remain,
-    // wait for the very next 1-bar downbeat so the transition still enters cleanly on the bar!
-    let effectiveTriggerSec = plan.triggerSec;
-    if (active.lastManualSeekSec !== null && active.lastManualSeekSec > plan.triggerSec + 0.25) {
-      const nextBarIdx = Math.ceil((active.lastManualSeekSec - grid.firstBarSec) / grid.barSec);
-      const nextBarSec = grid.firstBarSec + Math.max(0, nextBarIdx) * grid.barSec;
-      if (plan.effEnd - nextBarSec >= grid.barSec * 1.2) {
-        effectiveTriggerSec = nextBarSec;
-      } else {
-        effectiveTriggerSec = Math.max(active.lastManualSeekSec, plan.effEnd - grid.barSec);
-      }
-    }
-
-    if (curSec >= effectiveTriggerSec) {
+    if (curSec >= plan.triggerSec) {
       active.autoTransitionFired = true;
-      advanceToNextAuto({ djPlan: { ...plan, triggerSec: effectiveTriggerSec } });
+      advanceToNextAuto({ djPlan: plan });
     }
   }
 
@@ -1587,21 +1940,29 @@
       };
     }
 
-    // 3. Auto-Play Broken-Beat / DnB / UK Bass / Far-BPM -> Smooth 1-bar beat-synced short fade
-    if (gridA.groove !== "ambient" && gridB.groove !== "ambient") {
-      const tm = (opts.djPlan && opts.djPlan.tempoMatch) || computeTempoMatch(gridA, gridB, outVoice.playbackRate, TEMPO_TOL_BROKEN);
+    // 3. Auto-Play Broken-Beat / DnB / UK Bass / Far-BPM -> Smooth 1-bar beat-synced short fade from 4-bar phrase end
+    if (gridA.groove !== "ambient") {
+      const incomingRhythmic = gridB.groove !== "ambient";
+      const tm = incomingRhythmic
+        ? ((opts.djPlan && opts.djPlan.tempoMatch) || computeTempoMatch(gridA, gridB, outVoice.playbackRate, TEMPO_TOL_BROKEN))
+        : { matched: false, rateB: 1.0, mult: 1.0 };
+      const triggerRef = opts.djPlan && Number.isFinite(opts.djPlan.triggerSec) ? opts.djPlan.triggerSec : curSecA;
+      const lateSecA = clamp(curSecA - triggerRef, 0, gridA.beatSec * 0.5);
+      const phaseCompB = (incomingRhythmic && tm.matched)
+        ? lateSecA * (gridB.bpm * (tm.mult || 1.0) / Math.max(45, gridA.bpm))
+        : 0;
       const totalBars = Math.min(BROKEN_FADE_BARS, Math.max(0.5, availBarsA - 0.1));
       return {
         shouldBlend: true,
         blendType: "beat-short-1bar",
-        rateB: tm.matched ? tm.rateB : 1.0,
+        rateB: (incomingRhythmic && tm.matched) ? tm.rateB : 1.0,
         mult: tm.mult || 1.0,
         totalBars,
         durMs: Math.round((totalBars * gridA.barSec / (outVoice.playbackRate || 1.0)) * 1000),
         initialBassDbB: 0.0,
         initialGainB: 0.0,
-        startSecOffsetB: 0,
-        useCueInB: true,
+        startSecOffsetB: phaseCompB,
+        useCueInB: incomingRhythmic,
         glideBars: 1.0,
       };
     }
@@ -1655,6 +2016,7 @@
       if (typeof opts.startSec === "number" && Number.isFinite(opts.startSec)) {
         const dest = Math.max(0, opts.startSec);
         const mushOnsetWarm = tr.has_mush === true ? Number(tr.mush_onset_sec) : NaN;
+        active.lastManualSeekSec = opts.isManual ? dest : active.lastManualSeekSec;
         active.mushCustomTriggerSec =
           Number.isFinite(mushOnsetWarm) && mushOnsetWarm > 0 && dest >= mushOnsetWarm
             ? dest + MUSH_TASTE_SEC
@@ -1666,6 +2028,7 @@
           active.seekPending = dest;
         }
       } else if (opts.fromStart) {
+        active.lastManualSeekSec = 0;
         active.mushCustomTriggerSec = null;
         active.autoTransitionFired = false;
         if (elWarm.readyState >= 1) {
@@ -1819,7 +2182,10 @@
       stopIdx: opts.stopIdx ?? -1,
       eraId: opts.eraId ?? tr.era,
       seekPending: (!alreadySought && initialStartSec > 0.02) ? initialStartSec : null,
-      lastManualSeekSec: null,
+      lastManualSeekSec:
+        opts.isManual && typeof opts.startSec === "number" && Number.isFinite(opts.startSec)
+          ? initialStartSec
+          : null,
       loopWindowActive: initialStartSec <= initBounds.previewEnd + 0.05,
       autoTransitionFired: false,
       autoPlan: null,
@@ -1849,6 +2215,7 @@
         incoming: voice,
         blendType: transCfg.blendType,
         startMediaSecA: startMediaA,
+        startMediaSecB: initialStartSec,
         startWallMs: now,
         barSecA: gridA.barSec,
         totalBars: transCfg.totalBars,
@@ -1908,6 +2275,7 @@
           // Re-anchor outgoing blend start when incoming seek completes so bars count from audible entry!
           if (activeBlend && activeBlend.incoming === voice && activeBlend.outgoing && !activeBlend.outgoing.disposed) {
             activeBlend.startMediaSecA = getVoiceCurrentTime(activeBlend.outgoing);
+            activeBlend.startMediaSecB = dest;
             activeBlend.startWallMs = nowMs();
           }
           syncVoiceGainAndVolume(voice);
@@ -2028,6 +2396,8 @@
           previewStart: b.previewStart,
           previewEnd: b.previewEnd,
           isFullTrack: voice.isFullTrack,
+          lastManualSeekSec: voice.lastManualSeekSec,
+          mushCustomTriggerSec: voice.mushCustomTriggerSec,
         };
         stopTickLoop();
         notifyStateChange();
@@ -2091,6 +2461,8 @@
       previewStart: b.previewStart,
       previewEnd: b.previewEnd,
       isFullTrack: active.isFullTrack,
+      lastManualSeekSec: active.lastManualSeekSec,
+      mushCustomTriggerSec: active.mushCustomTriggerSec,
     };
     if (el) {
       try { el.pause(); } catch (_) {}
@@ -2153,9 +2525,16 @@
       return clamped;
     }
     if (lastPaused) {
-      lastPaused.currentTime = lastPaused.duration > 0
+      const clampedPaused = lastPaused.duration > 0
         ? clamp(dest, 0, Math.max(0, lastPaused.duration - 0.08))
         : dest;
+      lastPaused.currentTime = clampedPaused;
+      lastPaused.lastManualSeekSec = clampedPaused;
+      const trPaused = byId.get(lastPaused.trackId);
+      const mushOnsetP = trPaused && trPaused.has_mush === true ? Number(trPaused.mush_onset_sec) : NaN;
+      if (Number.isFinite(mushOnsetP) && mushOnsetP > 0) {
+        lastPaused.mushCustomTriggerSec = clampedPaused >= mushOnsetP ? clampedPaused + MUSH_TASTE_SEC : null;
+      }
       notifyStateChange();
       return lastPaused.currentTime;
     }
@@ -2336,6 +2715,8 @@
 
   const djMixerApi = {
     getBeatGrid: getTrackGrid,
+    quantizePhraseBoundary,
+    getAutoMixWindow,
     computeTempoMatch,
     getOutputRms,
     getDecks: () => { ensureDecks(); return decks.slice(); },
@@ -2354,6 +2735,7 @@
         tempoGlideActive: Boolean(activeGlide),
         queuedNextTrackId: nextCand ? nextCand.id : null,
         queuedTriggerSec: active && active.autoPlan ? Number(active.autoPlan.triggerSec.toFixed(3)) : null,
+        autoMixWindow: active && !active.disposed ? getAutoMixWindow(active.trackId) : null,
         activeDeck: serializeVoiceDiag(active),
         outgoingDeck: serializeVoiceDiag(outgoing),
         outputRms: Number(getOutputRms().toFixed(5)),
@@ -2374,6 +2756,7 @@
       restart,
       getPlaybackState: buildPlaybackState,
       getProgress: buildPlaybackState,
+      getAutoMixWindow,
       getAutoPlay: () => autoPlay,
       setAutoPlay,
       onStateChange,

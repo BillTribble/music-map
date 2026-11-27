@@ -493,13 +493,16 @@
     const ma = typeof window !== "undefined" ? window.ME_AUDIO : null;
     const st = ma && typeof ma.getPlaybackState === "function" ? ma.getPlaybackState() : null;
     const activeMatch = Boolean(st && st.trackId === t.id);
+    const outgoingMatch = Boolean(!activeMatch && st && st.outgoingTrackId === t.id);
 
     const isPlaying = activeMatch
       ? Boolean(st.playing)
-      : Boolean(
-          (hooks && typeof hooks.playing === "function" && hooks.playing() === t.id) ||
-          (ma && typeof ma.isPlaying === "function" && ma.isPlaying(t.id))
-        );
+      : (outgoingMatch
+        ? true
+        : Boolean(
+            (hooks && typeof hooks.playing === "function" && hooks.playing() === t.id) ||
+            (ma && typeof ma.isPlaying === "function" && ma.isPlaying(t.id))
+          ));
     const isPend = activeMatch && typeof st.pending === "boolean"
       ? st.pending
       : Boolean(hooks && typeof hooks.pending === "function" && hooks.pending() === t.id);
@@ -534,6 +537,14 @@
       }
       if (Number.isFinite(st.currentTime) && st.currentTime >= 0) {
         currentTime = st.currentTime;
+      }
+    } else if (outgoingMatch) {
+      const outDur = Number(st.outgoingDuration) || catalogFullDur || catalogClipDur;
+      isFullTrack = outDur > catalogClipDur + 5 || hasFullAsset;
+      seekableDur = Math.max(1, outDur);
+      displayTotalDur = seekableDur;
+      if (Number.isFinite(st.outgoingCurrentTime) && st.outgoingCurrentTime >= 0) {
+        currentTime = st.outgoingCurrentTime;
       }
     } else if (isPlaying && ma && typeof ma.activeVoice === "function") {
       const av = ma.activeVoice();
@@ -622,6 +633,13 @@
     const mushFrac = hasMush ? clamp(rawMushOnset / timelineDur, 0, 1) : null;
     const mushFadeFrac = hasMush ? clamp(mushFadeStartSec / timelineDur, 0, 1) : null;
 
+    const autoMixWindow = ma && typeof ma.getAutoMixWindow === "function"
+      ? ma.getAutoMixWindow(t.id)
+      : (activeMatch && st && st.autoMixWindow ? st.autoMixWindow : null);
+    const mixInWindow = activeMatch && st && st.mixInWindow && st.mixInWindow.enabled
+      ? st.mixInWindow
+      : null;
+
     return {
       isPlaying,
       isPend,
@@ -642,6 +660,8 @@
       mushFadeStartSec,
       mushFrac,
       mushFadeFrac,
+      autoMixWindow,
+      mixInWindow,
     };
   }
 
@@ -651,6 +671,7 @@
         primary: "rgb(94, 61, 198)",
         secondary: "rgb(106, 76, 156)",
         secondaryContainer: "rgb(232, 222, 248)",
+        onCyanTonal: "rgb(21, 94, 117)",
         onSurface: "rgb(31, 31, 31)",
         onSurfaceVariant: "rgb(68, 71, 70)",
         outline: "rgb(116, 119, 117)",
@@ -667,6 +688,7 @@
       primary: pick("--md-sys-color-primary", "rgb(94, 61, 198)"),
       secondary: pick("--md-sys-color-secondary", "rgb(106, 76, 156)"),
       secondaryContainer: pick("--md-sys-color-secondary-container", "rgb(232, 222, 248)"),
+      onCyanTonal: pick("--md-sys-color-on-cyan-tonal", "rgb(21, 94, 117)"),
       onSurface: pick("--md-sys-color-on-surface", "rgb(31, 31, 31)"),
       onSurfaceVariant: pick("--md-sys-color-on-surface-variant", "rgb(68, 71, 70)"),
       outline: pick("--md-sys-color-outline", "rgb(116, 119, 117)"),
@@ -706,13 +728,18 @@
     ctx.closePath();
   }
 
-  function drawWaveformSurface(ctx, W, H, t, snap, pal, compact) {
+  function computeWaveTrackSpan(W) {
     const barStep = 3;
     const barW = 2;
     const sidePad = 8;
     const barCount = Math.max(24, Math.floor((W - sidePad * 2 + 1) / barStep));
     const totalBarsW = barCount * barStep - (barStep - barW);
     const startX = Math.floor((W - totalBarsW) * 0.5);
+    return { barStep, barW, barCount, totalBarsW, startX };
+  }
+
+  function drawWaveformSurface(ctx, W, H, t, snap, pal, compact) {
+    const { barStep, barW, barCount, totalBarsW, startX } = computeWaveTrackSpan(W);
 
     const splitY = Math.round(H * (compact ? 0.69 : 0.67));
     const gapY = compact ? 1.2 : 1.5;
@@ -739,21 +766,10 @@
       }
     }
 
-    // 1b. Subtle AI mush fade-out tail zone (when Auto-play is ON; 100% normal when Auto-play is OFF)
-    const showMushCue = Boolean(snap.autoPlay && snap.hasMush && snap.mushFrac !== null && snap.mushFadeFrac !== null);
-    if (showMushCue) {
-      const mFadeX = startX + snap.mushFadeFrac * totalBarsW;
-      const endX = startX + totalBarsW;
-      if (endX > mFadeX + 3) {
-        const mushPad = compact ? 2.5 : 4;
-        ctx.save();
-        ctx.fillStyle = pal.surfaceVariant;
-        ctx.globalAlpha = 0.22;
-        drawRoundedRect(ctx, mFadeX, mushPad, endX - mFadeX, H - mushPad * 2, compact ? 3 : 4);
-        ctx.fill();
-        ctx.restore();
-      }
-    }
+    const mixWin = snap.autoPlay && snap.autoMixWindow && snap.autoMixWindow.enabled ? snap.autoMixWindow : null;
+    const mixStartFrac = mixWin ? clamp(mixWin.startSec / snap.timelineDur, 0, 1) : null;
+    const mixEndFrac = mixWin ? clamp(mixWin.endSec / snap.timelineDur, mixStartFrac, 1) : null;
+    const showMushCue = Boolean(snap.autoPlay && snap.hasMush && snap.mushFrac !== null);
 
     // 2. SoundCloud split upper + mirrored lower amplitude bars
     const bars = getResampledBars(t, barCount);
@@ -774,8 +790,9 @@
         !isWaveScrubbing &&
         ((waveHoverFrac > dispFrac && barFrac > dispFrac && barFrac <= waveHoverFrac) ||
           (waveHoverFrac < dispFrac && barFrac >= waveHoverFrac && barFrac <= dispFrac));
-      const inMushTaste = showMushCue && barFrac >= snap.mushFrac && barFrac < snap.mushFadeFrac;
-      const inMushFadeTail = showMushCue && barFrac >= snap.mushFadeFrac;
+      const inAutoMixZone = mixStartFrac !== null && mixEndFrac !== null && barFrac >= mixStartFrac && barFrac <= mixEndFrac;
+      const pastAutoMixTail = mixEndFrac !== null && barFrac > mixEndFrac + 0.002;
+      const inMushTaste = showMushCue && mixStartFrac !== null && barFrac >= snap.mushFrac && barFrac < mixStartFrac;
 
       let col = pal.onSurfaceVariant;
       let uAlpha = compact ? 0.32 : 0.30;
@@ -783,13 +800,17 @@
 
       if (played) {
         col = pal.primary;
-        uAlpha = inMushFadeTail ? 0.62 : 0.96;
-        lAlpha = inMushFadeTail ? 0.24 : 0.38;
+        uAlpha = pastAutoMixTail ? 0.62 : 0.96;
+        lAlpha = pastAutoMixTail ? 0.24 : 0.38;
       } else if (inHover) {
         col = pal.primary;
         uAlpha = 0.56;
         lAlpha = 0.22;
-      } else if (inMushFadeTail) {
+      } else if (inAutoMixZone) {
+        col = pal.onCyanTonal;
+        uAlpha = 0.44;
+        lAlpha = 0.20;
+      } else if (pastAutoMixTail) {
         col = pal.outline;
         uAlpha = 0.13;
         lAlpha = 0.06;
@@ -810,22 +831,6 @@
       ctx.fillRect(x, splitY + gapY * 0.5, barW, lH);
     }
     ctx.globalAlpha = 1;
-
-    // 2b. Subtle dashed Auto-play fade-start marker at mush_onset_sec + 3.0s
-    if (showMushCue && snap.mushFadeFrac > 0.05 && snap.mushFadeFrac < 0.98) {
-      const mx = Math.round(startX + snap.mushFadeFrac * totalBarsW) + 0.5;
-      const mPad = compact ? 3 : 5;
-      ctx.save();
-      ctx.strokeStyle = pal.outline;
-      ctx.globalAlpha = 0.52;
-      ctx.lineWidth = 1;
-      if (typeof ctx.setLineDash === "function") ctx.setLineDash([2, 2]);
-      ctx.beginPath();
-      ctx.moveTo(mx, mPad);
-      ctx.lineTo(mx, H - mPad);
-      ctx.stroke();
-      ctx.restore();
-    }
 
     // 3. Loop brackets (when looping / preview-only) or subtle snippet cue tick (when Auto-Play ON)
     if (snap.hasPreviewWindow && winX1 > winX0 + 2) {
@@ -926,6 +931,196 @@
     return { ctx, W: rect.width, H: rect.height };
   }
 
+  function formatAutoMixKindLabel(kind) {
+    if (kind === "4x4") return "DJ blend";
+    if (kind === "broken") return "Phrase fade";
+    if (kind === "mush") return "Auto-fade";
+    return "Crossfade";
+  }
+
+  function formatAutoMixMetaLabel(win) {
+    if (!win) return "";
+    const clock = formatClock(win.startSec);
+    if (win.kind === "4x4" || win.kind === "broken") {
+      const nBars = Math.max(1, Math.round(Number(win.bars) || (win.kind === "4x4" ? 5 : 1)));
+      const barLbl = nBars === 1 ? "1 bar" : `${nBars} bars`;
+      return `${barLbl} · ${clock}`;
+    }
+    if (win.kind === "ambient") {
+      return `${Number(win.durationSec || 1.5).toFixed(1)}s · ${clock}`;
+    }
+    return clock;
+  }
+
+  function buildAutoMixZoneSvg(W, H, kind, compact, isMixIn) {
+    const w = Math.max(6, W);
+    const h = Math.max(10, H);
+    const yTop = compact ? 2.2 : 3.2;
+    const yBot = h - (compact ? 2.2 : 3.2);
+    const capW = compact ? 5.0 : 6.5;
+    const capH = compact ? 5.2 : 7.0;
+    const xStart = 0.8;
+    const xEnd = Math.max(xStart + 2, w - 0.8);
+    const inStartX = (!isMixIn && kind === "mush") ? Math.max(xStart, xEnd - Math.max(4, (xEnd - xStart) * 0.38)) : xStart;
+
+    if (isMixIn) {
+      return `<svg class="mp-automix-svg" viewBox="0 0 ${w.toFixed(1)} ${h.toFixed(1)}" aria-hidden="true">
+        <line class="mp-automix-cue-line" x1="${xStart}" y1="0" x2="${xStart}" y2="${h.toFixed(1)}" />
+        <polygon class="mp-automix-cue-cap" points="0,0 ${capW.toFixed(1)},${(capH * 0.5).toFixed(1)} 0,${capH.toFixed(1)}" />
+        <path class="mp-automix-slope-out" d="M ${xStart} ${yTop.toFixed(1)} L ${xEnd.toFixed(1)} ${yBot.toFixed(1)}" />
+        <path class="mp-automix-slope-in" d="M ${xStart} ${yBot.toFixed(1)} L ${xEnd.toFixed(1)} ${yTop.toFixed(1)}" />
+      </svg>`;
+    }
+
+    return `<svg class="mp-automix-svg" viewBox="0 0 ${w.toFixed(1)} ${h.toFixed(1)}" aria-hidden="true">
+      <polygon class="mp-automix-wedge-out" points="${xStart},${yTop.toFixed(1)} ${xEnd.toFixed(1)},${yBot.toFixed(1)} ${xStart},${yBot.toFixed(1)}" />
+      <line class="mp-automix-cue-line" x1="${xStart}" y1="0" x2="${xStart}" y2="${h.toFixed(1)}" />
+      <polygon class="mp-automix-cue-cap" points="0,0 ${capW.toFixed(1)},${(capH * 0.5).toFixed(1)} 0,${capH.toFixed(1)}" />
+      <path class="mp-automix-slope-out" d="M ${xStart} ${yTop.toFixed(1)} L ${xEnd.toFixed(1)} ${yBot.toFixed(1)}" />
+      <path class="mp-automix-slope-in" d="M ${inStartX.toFixed(1)} ${yBot.toFixed(1)} L ${xEnd.toFixed(1)} ${yTop.toFixed(1)}" />
+      <line class="mp-automix-end-line" x1="${xEnd.toFixed(1)}" y1="1.5" x2="${xEnd.toFixed(1)}" y2="${(h - 1.5).toFixed(1)}" />
+    </svg>`;
+  }
+
+  function syncAutoMixOverlay(wrapEl, zoneEl, inZoneEl, tipEl, snap, compact) {
+    if (!wrapEl) return;
+    const rect = wrapEl.getBoundingClientRect();
+    if (rect.width < 24 || rect.height < 10) {
+      if (zoneEl) zoneEl.hidden = true;
+      if (inZoneEl) inZoneEl.hidden = true;
+      if (tipEl) tipEl.hidden = true;
+      return;
+    }
+
+    const span = computeWaveTrackSpan(rect.width);
+    const vInset = compact ? 2.5 : 3.5;
+    const zoneH = Math.max(10, rect.height - vInset * 2);
+    const minRampPx = compact ? 9 : 13;
+
+    // 1. Outgoing Rekordbox Mix-Out section (`[startSec .. endSec]`)
+    const win = snap.autoPlay && snap.autoMixWindow && snap.autoMixWindow.enabled ? snap.autoMixWindow : null;
+    let outStartFrac = null;
+    let outZoneLeft = 0;
+    let outZoneW = 0;
+
+    if (zoneEl) {
+      if (!win) {
+        zoneEl.hidden = true;
+        zoneEl.classList.remove("is-blending");
+      } else {
+        outStartFrac = clamp(win.startSec / snap.timelineDur, 0, 0.992);
+        const outEndFrac = clamp(win.endSec / snap.timelineDur, outStartFrac, 1);
+        const x0 = span.startX + outStartFrac * span.totalBarsW;
+        const x1True = span.startX + outEndFrac * span.totalBarsW;
+        const x1Vis = Math.min(span.startX + span.totalBarsW, Math.max(x1True, x0 + minRampPx));
+        outZoneLeft = x0;
+        outZoneW = Math.max(compact ? 6 : 8, x1Vis - x0);
+
+        zoneEl.hidden = false;
+        zoneEl.classList.toggle("is-blending", Boolean(win.blending));
+        zoneEl.setAttribute("data-automix-kind", win.kind || "");
+        zoneEl.setAttribute("data-automix-start", String(win.startSec));
+        zoneEl.setAttribute("data-automix-end", String(win.endSec));
+        zoneEl.style.left = `${outZoneLeft.toFixed(2)}px`;
+        zoneEl.style.width = `${outZoneW.toFixed(2)}px`;
+        zoneEl.style.top = `${vInset}px`;
+        zoneEl.style.height = `${zoneH.toFixed(2)}px`;
+
+        const sig = `${Math.round(outZoneW * 2)}|${Math.round(zoneH * 2)}|${win.kind || ""}|${compact ? 1 : 0}`;
+        if (zoneEl._renderSig !== sig) {
+          zoneEl._renderSig = sig;
+          zoneEl.innerHTML = buildAutoMixZoneSvg(outZoneW, zoneH, win.kind, compact, false);
+        }
+      }
+    }
+
+    // 2. Live Incoming Mix-In section (`[inStartSec .. inEndSec]`) while actively blending into this track
+    const inWin = !compact && snap.autoPlay && snap.mixInWindow && snap.mixInWindow.enabled ? snap.mixInWindow : null;
+    let inStartFrac = null;
+    let inEndFrac = null;
+
+    if (inZoneEl) {
+      if (!inWin) {
+        inZoneEl.hidden = true;
+        inZoneEl.classList.remove("is-blending");
+      } else {
+        inStartFrac = clamp(inWin.startSec / snap.timelineDur, 0, 0.98);
+        inEndFrac = clamp(inWin.endSec / snap.timelineDur, inStartFrac, 1);
+        const ix0 = span.startX + inStartFrac * span.totalBarsW;
+        const ix1True = span.startX + inEndFrac * span.totalBarsW;
+        const ix1Vis = Math.min(span.startX + span.totalBarsW, Math.max(ix1True, ix0 + minRampPx));
+        const inW = Math.max(8, ix1Vis - ix0);
+
+        inZoneEl.hidden = false;
+        inZoneEl.classList.add("is-blending");
+        inZoneEl.setAttribute("data-mixin-kind", inWin.kind || "");
+        inZoneEl.style.left = `${ix0.toFixed(2)}px`;
+        inZoneEl.style.width = `${inW.toFixed(2)}px`;
+        inZoneEl.style.top = `${vInset}px`;
+        inZoneEl.style.height = `${zoneH.toFixed(2)}px`;
+
+        const inSig = `${Math.round(inW * 2)}|${Math.round(zoneH * 2)}|in:${inWin.kind || ""}`;
+        if (inZoneEl._renderSig !== inSig) {
+          inZoneEl._renderSig = inSig;
+          inZoneEl.innerHTML = buildAutoMixZoneSvg(inW, zoneH, inWin.kind, false, true);
+        }
+      }
+    }
+
+    // 3. Hover Tooltip above the Rekordbox transition zone (never blocks click-to-seek)
+    if (tipEl && !compact) {
+      const leadFrac = Math.max(0.06, 22 / Math.max(80, span.totalBarsW));
+      const hoveringOutZone = Boolean(
+        win &&
+        outStartFrac !== null &&
+        waveHoverFrac !== null &&
+        !isWaveScrubbing &&
+        waveHoverFrac > 0.01 &&
+        waveHoverFrac >= Math.max(EARLY_WAVE_HOVER_MAX_FRAC + 0.01, outStartFrac - leadFrac)
+      );
+      const hoveringInZone = Boolean(
+        !hoveringOutZone &&
+        inWin &&
+        inStartFrac !== null &&
+        inEndFrac !== null &&
+        waveHoverFrac !== null &&
+        !isWaveScrubbing &&
+        waveHoverFrac > EARLY_WAVE_HOVER_MAX_FRAC &&
+        waveHoverFrac >= inStartFrac - 0.02 &&
+        waveHoverFrac <= inEndFrac + 0.04
+      );
+
+      if (!hoveringOutZone && !hoveringInZone) {
+        tipEl.hidden = true;
+      } else if (hoveringOutZone && win) {
+        const kindLbl = formatAutoMixKindLabel(win.kind);
+        const nextTitle = win.nextTrackTitle || "Next track";
+        const metaLbl = formatAutoMixMetaLabel(win);
+        const tipSig = `out|${kindLbl}|${nextTitle}|${metaLbl}`;
+        if (tipEl._tipSig !== tipSig) {
+          tipEl._tipSig = tipSig;
+          tipEl.innerHTML = `<span class="mp-automix-tip-dot" aria-hidden="true"></span> <span class="mp-automix-tip-kind">${esc(kindLbl)} →</span> <strong class="mp-automix-tip-track">${esc(nextTitle)}</strong> <span class="mp-automix-tip-meta">· ${esc(metaLbl)}</span>`;
+        }
+        const rightOffset = clamp(rect.width - (outZoneLeft + outZoneW), 0, Math.max(0, rect.width - 180));
+        tipEl.style.right = `${Math.round(rightOffset)}px`;
+        tipEl.style.left = "auto";
+        tipEl.style.maxWidth = `${Math.max(140, Math.round(rect.width - rightOffset))}px`;
+        tipEl.hidden = false;
+      } else if (hoveringInZone && inWin) {
+        const fromTitle = inWin.fromTrackTitle || "Previous track";
+        const tipSig = `in|${fromTitle}`;
+        if (tipEl._tipSig !== tipSig) {
+          tipEl._tipSig = tipSig;
+          tipEl.innerHTML = `<span class="mp-automix-tip-dot" aria-hidden="true"></span> <span class="mp-automix-tip-kind">Blending in ←</span> <strong class="mp-automix-tip-track">${esc(fromTitle)}</strong>`;
+        }
+        tipEl.style.left = "0px";
+        tipEl.style.right = "auto";
+        tipEl.style.maxWidth = "";
+        tipEl.hidden = false;
+      }
+    }
+  }
+
   function syncWaveVisuals() {
     if (!cardEl || cardEl.hidden || !selectedId || !byId.has(selectedId)) return;
     const t = byId.get(selectedId);
@@ -933,10 +1128,20 @@
     const miniCanvas = cardEl.querySelector("#mp-mini-waveform");
     const wrapEl = cardEl.querySelector("#mp-wave-wrap");
     const miniWrapEl = cardEl.querySelector("#mp-mini-wave-wrap");
+    const zoneEl = cardEl.querySelector("#mp-automix-zone");
+    const inZoneEl = cardEl.querySelector("#mp-automix-in-zone");
+    const tipEl = cardEl.querySelector("#mp-automix-tooltip");
+    const miniZoneEl = cardEl.querySelector("#mp-mini-automix-zone");
     const timeEl = cardEl.querySelector("#mp-wave-time");
     const miniTimeEl = cardEl.querySelector("#mp-mini-wave-time");
 
     const snap = readPlaybackSnapshot(t);
+    const autoBtn = cardEl.querySelector("#mp-autoplay-toggle");
+    if (autoBtn) {
+      const nextAutoTitle = buildAutoPlayTooltip(t, snap);
+      if (autoBtn.title !== nextAutoTitle) autoBtn.title = nextAutoTitle;
+    }
+
     const nextTxt = formatWaveTimeText(snap);
     [timeEl, miniTimeEl].forEach((el) => {
       if (el && el.textContent !== nextTxt) el.textContent = nextTxt;
@@ -958,12 +1163,14 @@
       if (miniSurface) {
         drawWaveformSurface(miniSurface.ctx, miniSurface.W, miniSurface.H, t, snap, pal, true);
       }
+      syncAutoMixOverlay(miniWrapEl, miniZoneEl, null, null, snap, true);
       if (collapsed && !isMorphing) return;
     }
 
     const expSurface = prepareCanvas2d(canvas, 8);
     if (!expSurface) return;
     drawWaveformSurface(expSurface.ctx, expSurface.W, expSurface.H, t, snap, pal, false);
+    syncAutoMixOverlay(wrapEl, zoneEl, inZoneEl, tipEl, snap, false);
   }
 
   function stopWaveRaf() {
@@ -1117,13 +1324,19 @@
         ? `Auto-play on: plays 3s past ${formatClock(snap.mushOnsetSec)} tail mush, then fades to nearest similar track (turn off to hear full mush)`
         : "Auto-play off: playing 100% of track through all tail mush (click to enable Auto-play)";
     }
+    const win = snap.autoMixWindow;
+    if (snap.autoPlay && win && win.enabled && win.nextTrackTitle) {
+      const kindLbl = formatAutoMixKindLabel(win.kind);
+      const metaLbl = formatAutoMixMetaLabel(win);
+      return `Auto-play on: ${kindLbl} → ${win.nextTrackTitle} (${metaLbl})`;
+    }
     if (t && t.is_ai) {
       return snap.autoPlay
         ? "Auto-play on: plays full track & crossfades to nearest similar AI track (click to loop full track)"
         : "Auto-play off: playing & looping full track (click to enable Auto-play)";
     }
     return snap.autoPlay
-      ? "Auto-play on: plays full track & 1s crossfades to nearest similar track (click to loop snippet)"
+      ? "Auto-play on: plays full track & beat-blends to nearest similar track (click to loop snippet)"
       : "Auto-play off: looping snippet window (click to enable Auto-play)";
   }
 
@@ -1314,6 +1527,7 @@
               <div class="mp-mini-wave-row">
                 <div class="mp-wave-wrap mp-mini-wave-wrap" id="mp-mini-wave-wrap" data-wave-wrap="mini" role="slider" tabindex="0" aria-label="Seek ${esc(t.title)}" aria-valuemin="0" aria-valuemax="${Math.round(snap.timelineDur)}" aria-valuenow="${Math.round(snap.currentTime)}" title="${esc(t.title)} — click or drag to seek">
                   <canvas id="mp-mini-waveform" class="mp-wave-canvas mp-mini-wave-canvas" aria-hidden="true"></canvas>
+                  <div id="mp-mini-automix-zone" class="mp-automix-zone mp-mini-automix-zone" hidden aria-hidden="true"></div>
                   <button type="button" class="mp-wave-restart-btn mp-mini-wave-restart-btn" id="mp-mini-wave-restart" data-player-restart="${esc(t.id)}" aria-label="Restart track from 0:00" title="Restart track from 0:00">
                     <span class="ms filled" aria-hidden="true">skip_previous</span>
                     <span>0:00</span>
@@ -1375,6 +1589,9 @@
       <div class="mp-wave-section">
         <div class="mp-wave-wrap" id="mp-wave-wrap" data-wave-wrap="expanded" role="slider" tabindex="0" aria-label="Track waveform seek" aria-valuemin="0" aria-valuemax="${Math.round(snap.timelineDur)}" aria-valuenow="${Math.round(snap.currentTime)}">
           <canvas id="mp-waveform" class="mp-wave-canvas" aria-hidden="true"></canvas>
+          <div id="mp-automix-in-zone" class="mp-automix-zone mp-automix-in-zone" hidden aria-hidden="true"></div>
+          <div id="mp-automix-zone" class="mp-automix-zone" hidden aria-hidden="true"></div>
+          <div id="mp-automix-tooltip" class="mp-automix-tooltip" role="tooltip" hidden aria-hidden="true"></div>
           <button type="button" class="mp-wave-restart-btn" id="mp-wave-restart" data-player-restart="${esc(t.id)}" aria-label="Restart track from 0:00" title="Restart track from 0:00">
             <span class="ms filled" aria-hidden="true">skip_previous</span>
             <span>0:00</span>
@@ -1451,9 +1668,9 @@
 
   function fracFromPointerEvent(wrapEl, ev) {
     const rect = wrapEl.getBoundingClientRect();
-    const sidePad = 8;
-    const usable = Math.max(12, rect.width - sidePad * 2);
-    return clamp((ev.clientX - rect.left - sidePad) / usable, 0, 1);
+    const span = computeWaveTrackSpan(rect.width);
+    const usable = Math.max(12, span.totalBarsW);
+    return clamp((ev.clientX - rect.left - span.startX) / usable, 0, 1);
   }
 
   function seekToFraction(frac, opts = {}) {
@@ -2045,6 +2262,20 @@
           ensureWaveRaf();
         }
       });
+      let filterSyncQueued = false;
+      const scheduleFilterWaveRefresh = (ev) => {
+        if (!selectedId || !cardEl || cardEl.hidden || filterSyncQueued) return;
+        if (ev && ev.target && cardEl.contains(ev.target)) return;
+        filterSyncQueued = true;
+        const run = () => {
+          filterSyncQueued = false;
+          syncWaveVisuals();
+        };
+        if (typeof requestAnimationFrame === "function") requestAnimationFrame(run);
+        else setTimeout(run, 16);
+      };
+      document.addEventListener("click", scheduleFilterWaveRefresh, true);
+      document.addEventListener("input", scheduleFilterWaveRefresh, true);
     }
     bindCardEvents();
     render();
