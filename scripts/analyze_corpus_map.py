@@ -702,10 +702,11 @@ DEFAULT_EXCLUDED_IDS = {
     # MusicFX AI test — excluded by owner (post-023266)
     "archive_2018_23_45",
     "archive_2018_23_46",
-    # Owner track removals (post-023520, post-023524, post-023576, post-023651, post-023691, post-023696, post-023750, post-023978, post-024072, post-024081)
+    # Owner track removals (post-023520, post-023524, post-023576, post-023651, post-023691, post-023696, post-023750, post-023978, post-024072, post-024081, post-024281)
     "present_electro_7",
     "hd_2005_42",
     "archive_2013_18_146",
+    "archive_2013_18_9",
     "archive_2013_18_18",
     "archive_2013_18_34",
     "archive_2018_23_66",
@@ -1437,34 +1438,73 @@ def enrich_track_tiers(t: dict, rel_repo: str = "BillTribble/music-map") -> None
     full_dur = t.get("full_duration_sec")
     is_forced_sketch = (
         tid in {
+            "archive_2013_18_12",
             "archive_2013_18_15",
+            "archive_2013_18_33",
             "archive_2013_18_35",
+            "archive_2013_18_71",
             "archive_2013_18_87",
             "archive_2013_18_97",
+            "archive_2013_18_114",
             "archive_2013_18_122",
+            "archive_2013_18_123",
+            "archive_2013_18_127",
+            "archive_2013_18_132",
             "archive_2013_18_137",
+            "archive_2013_18_139",
+            "archive_2013_18_142",
             "archive_2013_18_148",
+            "archive_2013_18_149",
             "archive_2013_18_152",
             "archive_2013_18_154",
+            "archive_2018_23_48",
+            "bands_archive_8",
+            "bands_archive_15",
+            "ep_concepts_37",
+            "hd_2005_16",
+            "hd_2005_31",
+            "hd_2005_49",
+            "present_electro_25",
             "sketches_2024_25_24",
             "sketches_2026_3",
+            "sketches_2026_19",
         }
         or str(t.get("title") or "").strip().lower() in {
+            "afrique",
             "anjuna",
+            "chord-ideas",
             "clean 29 test track",
+            "dancehorl ruff",
+            "deep ruff",
+            "gnarly peak beat",
+            "huge-riff demo",
             "lazer-sketch",
             "lazer sketch",
+            "lets watch tv ruff",
             "massive dune patch",
+            "newx sketch",
+            "paradise kit test",
+            "piano quant sketch in f",
             "granular perc fun",
             "granular perc fun gamelanish",
             "granular perc (gamelanish)",
             "mya moody banger",
+            "random acid hard",
             "reese rumble",
+            "rez tweak",
+            "rock sketch",
+            "scrapeyard sketch",
             "spiral structure",
+            "step 411 regal sketch",
+            "synth test imposcar- devastor",
             "tryell modsynth",
             "tyrell modsynth",
+            "tryell modsynth2",
+            "tyrell modsynth2",
+            "ultra fx",
             "weather-reportish",
             "who-knows 01 blues7th",
+            "will u wont u ruff",
         }
     )
     is_psychedailies = str(era or "").strip().lower() == "psychedailies" or str(tid).startswith("psychedailies_")
@@ -1547,6 +1587,8 @@ def is_excluded_by_folder_rule(path_str: str) -> bool:
         or "minor chord rave riff" in low_p
         or "not 2 l8" in low_p
         or "war machine/war machine 04" in low_p
+        or "demo a 00008 lyric" in low_p
+        or "demo a 00007" in low_p
     ):
         return True
     parts = [p.strip() for p in low_p.split("/") if p.strip()]

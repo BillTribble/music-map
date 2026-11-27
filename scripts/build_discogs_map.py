@@ -32,11 +32,12 @@ DEFAULT_RENDERED_DATES = os.path.join(_ROOT, "scripts", "rendered_dates.json")
 DEFAULT_AI_MUSH_TAGS = os.path.join(_ROOT, "scripts", "ai_mush_tags.json")
 DEFAULT_DROP_PREVIEWS = os.path.join(_ROOT, "scripts", "drop_previews.json")
 DEFAULT_CATALOG = os.path.expanduser("~/tmp/music_map_staging/catalog_587_enriched.json")
+_REPO_EXCLUSIONS = os.path.join(_ROOT, "scripts", "exclusions.json")
 _STAGING_EXCLUSIONS = os.path.expanduser("~/tmp/music_map_staging/exclusions.json")
 DEFAULT_EXCLUSIONS = (
-    _STAGING_EXCLUSIONS
-    if os.path.exists(_STAGING_EXCLUSIONS)
-    else os.path.join(_ROOT, "scripts", "exclusions.json")
+    _REPO_EXCLUSIONS
+    if os.path.exists(_REPO_EXCLUSIONS)
+    else _STAGING_EXCLUSIONS
 )
 DEFAULT_OUT_JS = os.path.join(_ROOT, "js", "data.js")
 
@@ -216,10 +217,11 @@ DEFAULT_EXCLUDED_IDS = {
     # MusicFX AI test — excluded by owner (post-023266)
     "archive_2018_23_45",
     "archive_2018_23_46",
-    # Owner track removals (post-023520, post-023524, post-023576, post-023651, post-023691, post-023696, post-023750, post-023978, post-024072, post-024081)
+    # Owner track removals (post-023520, post-023524, post-023576, post-023651, post-023691, post-023696, post-023750, post-023978, post-024072, post-024081, post-024281)
     "present_electro_7",
     "hd_2005_42",
     "archive_2013_18_146",
+    "archive_2013_18_9",
     "archive_2013_18_18",
     "archive_2013_18_34",
     "archive_2018_23_66",
@@ -305,37 +307,100 @@ FORCE_NON_SKETCH_IDS = INDIE_GUITAR_KEEPER_IDS | SPOKEN_WORD_IDS | {
     "hd_2005_10",         # pr3s3nt - As we Enter (mix2)
     "hd_2005_34",         # Peng pr3s3nt mix2
     "hd_2005_39",         # Soc All 164bpm
+    # Owner Keep verdicts from 44/44 sketch audition (post-024281)
+    "archive_2013_18_10",   # A Aeolian Piano Sketch
+    "archive_2013_18_11",   # Demo A raw (latest Demo A)
+    "archive_2013_18_19",   # Audiorealism test
+    "archive_2013_18_20",   # demo B
+    "archive_2013_18_21",   # Baddass Arp (sketch)
+    "archive_2013_18_43",   # Deepspace Guitar
+    "archive_2013_18_59",   # G sharp piano sketch
+    "archive_2013_18_61",   # Gamelan Test
+    "archive_2013_18_89",   # Logic house loops
+    "archive_2013_18_116",  # Polyplex Test
+    "archive_2013_18_117",  # Polyplex Test 02 No Reaktor
+    "archive_2013_18_155",  # Winter Mood
+    "archive_2018_23_58",   # RC505 1st test
+    "ecstatic_wave_14",     # Lyrical
+    "ep_concepts_8",        # 7rez
+    "ep_concepts_14",       # Brick lane
+    "ep_concepts_15",       # Dubdrop
+    "ep_concepts_35",       # Quantore
+    "hd_2005_46",           # Swing Demo
+    "present_electro_28",   # 1st Idea
+    "present_electro_46",   # Nameless
+    "sketches_2024_25_4",   # Techno Idea
+    "sketches_2026_10",     # Domi loops
 }
 
 FORCE_SKETCH_IDS = {
+    "archive_2013_18_12",   # Afrique (post-024281: sketch despite >= 75s)
     "archive_2013_18_15",   # Anjuna (post-023995: sketch despite >= 75s)
+    "archive_2013_18_33",   # Chord-ideas (post-024281: sketch despite >= 75s)
     "archive_2013_18_35",   # Clean 29 Test Track (post-024108: sketch despite >= 75s)
+    "archive_2013_18_71",   # Huge-riff Demo (post-024281: sketch despite >= 75s)
     "archive_2013_18_87",   # Lazer-sketch (post-024096: sketch despite >= 75s)
     "archive_2013_18_97",   # Massive Dune Patch (post-023356: sketch despite >= 75s)
+    "archive_2013_18_114",  # Paradise Kit Test (post-024281: sketch despite >= 75s)
     "archive_2013_18_122",  # Reese Rumble (post-024088: sketch despite >= 75s)
+    "archive_2013_18_123",  # Rez Tweak (post-024281: sketch despite >= 75s)
+    "archive_2013_18_127",  # Rock Sketch (post-024281: sketch despite >= 75s)
+    "archive_2013_18_132",  # Scrapeyard Sketch (post-024281: sketch despite >= 75s)
     "archive_2013_18_137",  # Spiral Structure (post-024111: sketch despite >= 75s; became Kita Narashino)
+    "archive_2013_18_139",  # Step 411 Regal Sketch (post-024281: sketch despite >= 75s)
+    "archive_2013_18_142",  # Synth Test Imposcar- Devastor (post-024281: sketch despite >= 75s)
     "archive_2013_18_148",  # Tryell modsynth (post-024126: sketch despite >= 75s)
+    "archive_2013_18_149",  # Tryell modsynth2 (post-024281: sketch despite >= 75s)
     "archive_2013_18_152",  # Weather-reportish (post-024109: sketch despite >= 75s)
     "archive_2013_18_154",  # Who-knows 01 Blues7th (post-024110: sketch despite >= 75s)
+    "archive_2018_23_48",   # Gnarly Peak Beat (post-024281: sketch despite >= 75s)
+    "bands_archive_8",      # Dancehorl ruff (post-024281: sketch despite >= 75s)
+    "bands_archive_15",     # Lets Watch TV Ruff (post-024281: sketch despite >= 75s)
+    "ep_concepts_37",       # Random Acid Hard (post-024281: sketch despite >= 75s)
+    "hd_2005_16",           # Deep ruff (post-024281: sketch despite >= 75s)
+    "hd_2005_31",           # NewX sketch (post-024281: sketch despite >= 75s)
+    "hd_2005_49",           # Will U Wont U Ruff (post-024281: sketch despite >= 75s)
+    "present_electro_25",   # Ultra Fx (post-024281: sketch despite >= 75s)
     "sketches_2024_25_24",  # Granular Perc Fun Gamelanish (post-023452: sketch despite >= 75s)
     "sketches_2026_3",      # Mya Moody Banger (post-023995: sketch despite >= 75s)
+    "sketches_2026_19",     # piano quant sketch in F (post-024281: sketch despite >= 75s)
 }
 FORCE_SKETCH_TITLES = {
+    "afrique",
     "anjuna",
+    "chord-ideas",
     "clean 29 test track",
+    "dancehorl ruff",
+    "deep ruff",
+    "gnarly peak beat",
+    "huge-riff demo",
     "lazer-sketch",
     "lazer sketch",
+    "lets watch tv ruff",
     "massive dune patch",
+    "newx sketch",
+    "paradise kit test",
+    "piano quant sketch in f",
     "granular perc fun",
     "granular perc fun gamelanish",
     "granular perc (gamelanish)",
     "mya moody banger",
+    "random acid hard",
     "reese rumble",
+    "rez tweak",
+    "rock sketch",
+    "scrapeyard sketch",
     "spiral structure",
+    "step 411 regal sketch",
+    "synth test imposcar- devastor",
     "tryell modsynth",
     "tyrell modsynth",
+    "tryell modsynth2",
+    "tyrell modsynth2",
+    "ultra fx",
     "weather-reportish",
     "who-knows 01 blues7th",
+    "will u wont u ruff",
 }
 TRACK_NOTES = {
     "archive_2013_18_137": "Early sketch that became Kita Narashino.",
@@ -373,6 +438,8 @@ def is_excluded_by_folder_rule(path_str: str) -> bool:
       or "minor chord rave riff" in low_p
       or "not 2 l8" in low_p
       or "war machine/war machine 04" in low_p
+      or "demo a 00008 lyric" in low_p
+      or "demo a 00007" in low_p
   ):
     return True
   parts = [p.strip() for p in low_p.split("/") if p.strip()]
@@ -1765,6 +1832,7 @@ def build_dataset(
         or "jamstick" in tl
         or "minor chord rave riff" in tl
         or tl in ("not 2 l8", "not 2 l8 comp")
+        or tl in ("demo a 00008 lyric", "demo a 00007")
     )
 
   feats = np.load(features_path)

@@ -124,6 +124,8 @@ EXCLUDED_PATH_SUBSTRS = (
     "minor chord rave riff",
     "not 2 l8",
     "war machine/war machine 04",
+    "demo a 00008 lyric",
+    "demo a 00007",
 )
 EXCLUDED_EXACT_REL_PATHS = {
     "02 - psychedailies/season 1 - psychedaily/^ shortlist psychedailies/01 getaway/getaway vdj edit.flac",
@@ -209,6 +211,8 @@ EXCLUDED_EXACT_REL_PATHS = {
     "music sketches archive. 2012-2020/stepper sketches 2012-2018/0 minor chord rave riff.mp3",
     "archive me music 2018-23/2019 sketches/^ ancient/war machine/war machine 04.aif",
     "me music - 2005 hard drive/not 2 l8 comp.m4a",
+    "music sketches archive. 2012-2020/stepper sketches 2012-2018/demo a - raw/demo a 00008 lyric.aif",
+    "music sketches archive. 2012-2020/stepper sketches 2012-2018/demo a - raw/demo a - in c/demo a 00007.aif",
 }
 TITLE_OVERRIDES_BY_REL_PATH = {
     "me music - 2005 hard drive/as we enter mix2.m4a": "As we Enter",
@@ -566,37 +570,76 @@ def build_manifest(raw_items: list[dict], ffprobe_bin: str | None = None, check_
             or "/ai afrohouse" in w_low
             or "ai_test_kitchen" in w_low
         )
-        # User rules (post-022787, post-023035, post-023356, post-023452, post-023995, post-024088, post-024096, post-024108..024111, post-024126): 100% of GenAI tracks and full-length (>= 75s) tracks have is_sketch = False unless explicitly overridden
+        # User rules (post-022787, post-023035, post-023356, post-023452, post-023995, post-024088, post-024096, post-024108..024111, post-024126, post-024281): 100% of GenAI tracks and full-length (>= 75s) tracks have is_sketch = False unless explicitly overridden
         is_forced_sketch = (
             tid in {
+                "archive_2013_18_12",
                 "archive_2013_18_15",
+                "archive_2013_18_33",
                 "archive_2013_18_35",
+                "archive_2013_18_71",
                 "archive_2013_18_87",
                 "archive_2013_18_97",
+                "archive_2013_18_114",
                 "archive_2013_18_122",
+                "archive_2013_18_123",
+                "archive_2013_18_127",
+                "archive_2013_18_132",
                 "archive_2013_18_137",
+                "archive_2013_18_139",
+                "archive_2013_18_142",
                 "archive_2013_18_148",
+                "archive_2013_18_149",
                 "archive_2013_18_152",
                 "archive_2013_18_154",
+                "archive_2018_23_48",
+                "bands_archive_8",
+                "bands_archive_15",
+                "ep_concepts_37",
+                "hd_2005_16",
+                "hd_2005_31",
+                "hd_2005_49",
+                "present_electro_25",
                 "sketches_2024_25_24",
                 "sketches_2026_3",
+                "sketches_2026_19",
             }
             or title.strip().lower() in {
+                "afrique",
                 "anjuna",
+                "chord-ideas",
                 "clean 29 test track",
+                "dancehorl ruff",
+                "deep ruff",
+                "gnarly peak beat",
+                "huge-riff demo",
                 "lazer-sketch",
                 "lazer sketch",
+                "lets watch tv ruff",
                 "massive dune patch",
+                "newx sketch",
+                "paradise kit test",
+                "piano quant sketch in f",
                 "granular perc fun",
                 "granular perc fun gamelanish",
                 "granular perc (gamelanish)",
                 "mya moody banger",
+                "random acid hard",
                 "reese rumble",
+                "rez tweak",
+                "rock sketch",
+                "scrapeyard sketch",
                 "spiral structure",
+                "step 411 regal sketch",
+                "synth test imposcar- devastor",
                 "tryell modsynth",
                 "tyrell modsynth",
+                "tryell modsynth2",
+                "tyrell modsynth2",
+                "ultra fx",
                 "weather-reportish",
                 "who-knows 01 blues7th",
+                "will u wont u ruff",
             }
         )
         is_psychedailies = str(era or "").strip().lower() == "psychedailies"
