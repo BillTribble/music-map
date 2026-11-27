@@ -307,9 +307,20 @@
   }
   window.formatSimpleKey = formatSimpleKey;
 
+  function resolveDisplayBpm(t) {
+    if (!t) return 0;
+    const bg = typeof window !== "undefined" && (window.BEAT_GRIDS || window.MUSIC_MAP_BEATGRIDS);
+    const g = bg && t.id ? bg[t.id] : null;
+    if (g && (g.groove === "4x4" || g.groove === "broken") && Number(g.bpm) > 0) {
+      return Number(g.bpm);
+    }
+    return Number(t.bpm) || (g && Number(g.bpm)) || 0;
+  }
+  window.resolveDisplayBpm = resolveDisplayBpm;
+
   function buildPlayerMetaPillsHtml(t, { released, sketch, wip, er }) {
     const pills = [];
-    const bpmRounded = Math.round(Number(t.bpm) || 0);
+    const bpmRounded = Math.round(resolveDisplayBpm(t));
     if (bpmRounded > 0) {
       pills.push(`<span class="badge badge-blue">${bpmRounded} BPM</span>`);
     }

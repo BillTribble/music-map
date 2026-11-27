@@ -310,9 +310,10 @@
     if (tr) {
       const er = erasById.get(tr.era);
       const simpleKey = window.formatSimpleKey ? window.formatSimpleKey(tr) : (tr.key_label || "");
+      const dispBpm = Math.round((window.resolveDisplayBpm && window.resolveDisplayBpm(tr)) || Number(tr.bpm) || 0);
       infoEl.innerHTML = `
         <div class="audio-now-title">${esc(tr.title)}</div>
-        <div class="audio-now-meta">${esc(er ? er.label : tr.era)} · E${tr.energy}/10${simpleKey ? ` · ${esc(simpleKey)}` : ""} · ${Math.round(tr.bpm)} BPM${pend ? " · Queued on bar" : ""}</div>`;
+        <div class="audio-now-meta">${esc(er ? er.label : tr.era)} · E${tr.energy}/10${simpleKey ? ` · ${esc(simpleKey)}` : ""}${dispBpm > 0 ? ` · ${dispBpm} BPM` : ""}${pend ? " · Queued on bar" : ""}</div>`;
     }
     if (!ledsEl.children.length) {
       ledsEl.innerHTML = [0, 1, 2, 3].map((b) => `<span class="beat-led${b === 0 ? " down" : ""}"></span>`).join("");

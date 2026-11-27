@@ -100,6 +100,29 @@ AMBIENT_RHYTHM_TAGS = {
     "Acoustic / electric guitar demo",
 }
 
+# Ground-truth DAW / acoustically verified BPM overrides so rebuilds never regress subharmonic or ceiling-lag outliers.
+BPM_OVERRIDES: dict[str, float] = {
+    "psychedailies_26": 125.0,     # '24' — Ableton 24.als <Tempo Manual="125">, 4/4, 96 beats = 46.08s
+    "ai_music_123_fc0278": 100.0,  # 'Scary moombah muertos' — 100 BPM moombahton (was 198.77 fallback)
+    "ai_music_190_26d13e": 112.35, # 'Spiro Vapourer disguised (Cover)' — 112.35 BPM (was halved to 56.17)
+    "archive_2018_23_42": 98.66,   # 'FF33b 02 bass cut' — 98.66 BPM (was doubled via stale 198.77 rhythm_tag)
+    "present_ambient_7": 95.05,    # 'Edgeware Rd' — 95.05 BPM (was doubled via stale 198.77 rhythm_tag)
+}
+
+# Exact verified downbeat & 4-bar phrase anchor overrides where arrangement intros start off-beat (e.g. Beat 1 silent).
+BEATGRID_OVERRIDES: dict[str, dict] = {
+    "psychedailies_26": {
+        "bpm": 125.0,
+        "first_beat_sec": 0.004,
+        "bar_offset": 0,
+        "phrase_bar": 0,
+        "groove": "4x4",
+        "cue_in_sec": 0.004,
+        "mix_out_sec": 30.724,
+        "phrase_fade_sec": 38.404,
+    },
+}
+
 _PARAMS_CACHE: dict | None = None
 _GRID_BPM: np.ndarray | None = None
 _GRID_LAGS: np.ndarray | None = None
@@ -515,7 +538,8 @@ def analyze_beatgrid_and_groove(
             np.diff(all_beats_sub, prepend=all_beats_sub[0])
         )
 
-        drop_sec = float(drop_rec.get("t_drop") or 0.0) if drop_rec.get("has_drop") else 0.0
+        has_drop_flag = bool(drop_rec.get("has_drop") or track.get("has_drop"))
+        drop_sec = float(drop_rec.get("drop_sec") or drop_rec.get("t_drop") or track.get("drop_sec") or 0.0) if has_drop_flag else 0.0
         best_b_score = -1e9
         for b in range(4):
             nb_bars = (len(all_beats_k) - b) // 4
@@ -767,38 +791,51 @@ def process_one_track(args_tuple: tuple[dict, dict, str, str]) -> tuple[str, dic
         seg_scores = segment_scores_djvibes(env["win"], p)
         xs, bpm_raw, half_ratio = prepare_and_coarse_bpm(env, theta)
 
-        genre_bits = [
-            str(track.get("cluster_id") or ""),
-            str(track.get("cluster_label") or ""),
-            str(track.get("rhythm_tag") or ""),
-            " ".join(str(x) for x in (track.get("discogs_styles") or [])),
-        ]
-        genre_text = " | ".join(genre_bits)
-
-        bpm_dnb, was_dnb = adjust_dnb_tempo(bpm_raw, genre_text)
-        if was_dnb or _DNB_RE.search(genre_text):
-            bpm0 = bpm_dnb if bpm_dnb >= 135.0 else (bpm_dnb * 2.0 if bpm_dnb < 100.0 else bpm_dnb)
-        else:
-            cluster_id = str(track.get("cluster_id") or "")
-            cluster_label = str(track.get("cluster_label") or "")
-            rhythm_tag = str(track.get("rhythm_tag") or "")
-            is_dance_4x4_prior = (
-                cluster_id in FOUR_FLOOR_CLUSTERS
-                or "Afro, house" in cluster_label
-                or rhythm_tag in {"Driven 4/4 house pulse", "Steady 4/4 pulse"}
+        if tid in BPM_OVERRIDES:
+            bpm_fit, first_beat_sec, peakiness = fine_fit_djvibes(
+                xs, theta, float(BPM_OVERRIDES[tid]), search=False
             )
-            if is_dance_4x4_prior and 108.0 <= bpm_raw <= 150.0:
-                bpm0 = bpm_raw
-            elif is_dance_4x4_prior and 54.0 <= bpm_raw <= 75.0:
-                bpm0 = bpm_raw * 2.0
-            else:
-                halved = bpm_raw / 2 >= 50.0 and (energy_dj < 4 or half_ratio > theta[9])
-                bpm0 = bpm_raw / 2.0 if halved else bpm_raw
-                # Keep rhythmic electronic tracks in standard 84..176 DJ tempo octave when catalog agrees
-                if bpm0 < 82.0 and 108.0 <= cat_bpm <= 176.0 and abs(bpm0 * 2.0 - cat_bpm) / cat_bpm <= 0.08:
-                    bpm0 *= 2.0
+        else:
+            rhythm_tag_raw = str(track.get("rhythm_tag") or "")
+            # Ignore stale "Fast D&B" rhythm_tag when cat_bpm hit the 198.77 ceiling lag in non-DnB clusters
+            effective_rhythm_tag = (
+                ""
+                if (cat_bpm >= 195.0 and str(track.get("cluster_id") or "") != "d7_dnb_breaks")
+                else rhythm_tag_raw
+            )
+            genre_bits = [
+                str(track.get("cluster_id") or ""),
+                str(track.get("cluster_label") or ""),
+                effective_rhythm_tag,
+                " ".join(str(x) for x in (track.get("discogs_styles") or [])),
+            ]
+            genre_text = " | ".join(genre_bits)
 
-        bpm_fit, first_beat_sec, peakiness = fine_fit_djvibes(xs, theta, bpm0, search=True)
+            bpm_dnb, was_dnb = adjust_dnb_tempo(bpm_raw, genre_text)
+            if was_dnb or _DNB_RE.search(genre_text):
+                bpm0 = bpm_dnb if bpm_dnb >= 135.0 else (bpm_dnb * 2.0 if bpm_dnb < 100.0 else bpm_dnb)
+            else:
+                cluster_id = str(track.get("cluster_id") or "")
+                cluster_label = str(track.get("cluster_label") or "")
+                rhythm_tag = effective_rhythm_tag
+                is_dance_4x4_prior = (
+                    cluster_id in FOUR_FLOOR_CLUSTERS
+                    or "Afro, house" in cluster_label
+                    or rhythm_tag in {"Driven 4/4 house pulse", "Steady 4/4 pulse"}
+                )
+                if is_dance_4x4_prior and 108.0 <= bpm_raw <= 150.0:
+                    bpm0 = bpm_raw
+                elif is_dance_4x4_prior and 54.0 <= bpm_raw <= 75.0:
+                    bpm0 = bpm_raw * 2.0
+                else:
+                    halved = bpm_raw / 2 >= 50.0 and (energy_dj < 4 or half_ratio > theta[9])
+                    bpm0 = bpm_raw / 2.0 if halved else bpm_raw
+                    # Keep rhythmic electronic tracks in standard 84..176 DJ tempo octave when catalog agrees
+                    if bpm0 < 82.0 and 108.0 <= cat_bpm <= 176.0 and abs(bpm0 * 2.0 - cat_bpm) / cat_bpm <= 0.08:
+                        bpm0 *= 2.0
+
+            bpm_fit, first_beat_sec, peakiness = fine_fit_djvibes(xs, theta, bpm0, search=True)
+
         entry = analyze_beatgrid_and_groove(
             track=track,
             drop_rec=drop_rec,
@@ -811,16 +848,18 @@ def process_one_track(args_tuple: tuple[dict, dict, str, str]) -> tuple[str, dic
             energy_dj=energy_dj,
             full_dur=full_dur,
         )
+        if tid in BEATGRID_OVERRIDES:
+            entry.update(BEATGRID_OVERRIDES[tid])
         return tid, entry
     except Exception:
         # Clean fallback from catalog fields if decode fails or clip is extremely short
-        bpm_fb = cat_bpm if cat_bpm > 0 else 120.0
+        bpm_fb = float(BPM_OVERRIDES.get(tid) or cat_bpm or 120.0)
         beat_s = 60.0 / bpm_fb
         bar_s = 4.0 * beat_s
         groove_fb = "ambient" if track.get("is_spoken_word") else (
             "4x4" if str(track.get("groove_style")) == "four_on_floor" else "broken"
         )
-        return tid, {
+        fb_entry = {
             "bpm": round(bpm_fb, 2),
             "first_beat_sec": round(float(track.get("beat_phase_sec") or 0.0) % beat_s, 4),
             "bar_offset": 0,
@@ -830,7 +869,11 @@ def process_one_track(args_tuple: tuple[dict, dict, str, str]) -> tuple[str, dic
             "groove": groove_fb,
             "cue_in_sec": 0.0,
             "mix_out_sec": round(max(0.0, full_dur - 5.0 * bar_s), 3),
+            "phrase_fade_sec": round(max(0.0, full_dur - 2.0 * bar_s), 3),
         }
+        if tid in BEATGRID_OVERRIDES:
+            fb_entry.update(BEATGRID_OVERRIDES[tid])
+        return tid, fb_entry
 
 
 def write_beatgrids_js(out_js_path: Path, grids: dict[str, dict]) -> None:

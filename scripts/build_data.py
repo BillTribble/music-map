@@ -278,7 +278,64 @@ DROP_PREVIEW_OVERRIDES = {
         "duration_sec": 24.48,
         "bytes": 343913,
     },
+    "psychedailies_26": {  # '24' (post-024497: exact 125.00 BPM 4/4 -> Bar 6 Beat 1 9.60s lead-in to Bar 9 Beat 1 15.36s drop)
+        "has_drop": True,
+        "drop_sec": 15.36,
+        "preview_start_sec": 9.6,
+        "preview_dur_sec": 17.28,
+    },
 }
+
+# Ground-truth DAW / acoustically verified BPM overrides (post-024497, task-1061).
+BPM_OVERRIDES: dict[str, float] = {
+    "psychedailies_26": 125.0,     # '24' — Ableton 24.als <Tempo Manual="125">, 4/4, 96 beats = 46.08s
+    "ai_music_123_fc0278": 100.0,  # 'Scary moombah muertos' — 100 BPM moombahton (was 198.77 ceiling lag)
+    "ai_music_190_26d13e": 112.35, # 'Spiro Vapourer disguised (Cover)' — 112.35 BPM (was halved to 56.17)
+    "archive_2018_23_42": 98.66,   # 'FF33b 02 bass cut' — 98.66 BPM (was 198.77 ceiling lag)
+    "present_ambient_7": 95.05,    # 'Edgeware Rd' — 95.05 BPM (was 198.77 ceiling lag)
+}
+
+
+def load_beatgrids_map(beatgrids_js: Path | None = None) -> dict[str, dict]:
+    bg_path = beatgrids_js or (ROOT / "js" / "beatgrids.js")
+    if not bg_path.exists():
+        return {}
+    try:
+        raw = bg_path.read_text(encoding="utf-8")
+        idx = raw.index("{")
+        return json.loads(raw[idx:].rstrip(";\n "))
+    except Exception:
+        return {}
+
+
+def apply_canonical_bpm_override(t: dict, beatgrids_map: dict[str, dict]) -> None:
+    tid = str(t.get("id") or "")
+    if t.get("is_spoken_word"):
+        return
+    target_bpm: float | None = None
+    if tid in BPM_OVERRIDES:
+        target_bpm = float(BPM_OVERRIDES[tid])
+    else:
+        g = beatgrids_map.get(tid)
+        if isinstance(g, dict):
+            gb = float(g.get("bpm") or 0.0)
+            grv = str(g.get("groove") or "")
+            bc = float(g.get("beat_clarity") or 0.0)
+            cur_bpm = float(t.get("bpm") or 0.0)
+            if grv in ("4x4", "broken") and 65.0 <= gb <= 185.0:
+                target_bpm = gb
+            elif grv == "ambient" and bc >= 0.75 and 75.0 <= gb <= 165.0 and (cur_bpm <= 65.0 or cur_bpm >= 185.0):
+                target_bpm = gb
+    if target_bpm is not None and target_bpm > 0:
+        bpm_r = round(target_bpm, 2)
+        t["bpm"] = bpm_r
+        t["musical_bpm"] = bpm_r
+        t["effective_bpm"] = bpm_r
+        t["beat_sec"] = round(60.0 / bpm_r, 4)
+        t["bar_sec"] = round(240.0 / bpm_r, 4)
+    if tid == "psychedailies_26":
+        t["groove_style"] = "four_on_floor"
+        t["rhythm_tag"] = "Driven 4/4 house pulse"
 
 FINE_HARMONY_KEYS = [
     "dyad_5th",
@@ -1558,6 +1615,7 @@ def build_from_full_analysis(
             base_payload = json.loads(raw_js.split("window.CORPUS_DATA = ", 1)[1].rstrip().rstrip(";"))
 
     excluded_ids = load_excluded_ids(exclusions_path)
+    beatgrids_by_id = load_beatgrids_map()
     archive_dl = (
         json.loads(archive_dl_path.read_text(encoding="utf-8"))
         if archive_dl_path and archive_dl_path.exists()
@@ -1647,6 +1705,7 @@ def build_from_full_analysis(
                 for ov_k, ov_v in STYLE_OVERRIDES[tid].items():
                     t[ov_k] = list(ov_v) if isinstance(ov_v, list) else ov_v
 
+        apply_canonical_bpm_override(t, beatgrids_by_id)
         merged_tracks.append(t)
 
     merged_tracks.sort(key=lambda t: (era_order_map.get(t["era"], 99), int(t.get("slot", 0)), t["id"]))
@@ -1704,6 +1763,12 @@ def build_from_full_analysis(
             er_copy["tracks"] = e_tracks
             er_copy["audio_files"] = max(int(er_copy.get("projects") or 0), len(e_tracks))
             er_copy["macro_harmony"] = compute_macro_harmony(e_tracks)
+            bpms_e = sorted(float(x["bpm"]) for x in e_tracks if x.get("bpm"))
+            if bpms_e:
+                ne = len(bpms_e)
+                er_copy["bpm_p25"] = round(bpms_e[max(0, int((ne - 1) * 0.25))], 1)
+                er_copy["bpm_p50"] = round(statistics.median(bpms_e), 1)
+                er_copy["bpm_p75"] = round(bpms_e[min(ne - 1, int((ne - 1) * 0.75))], 1)
             eras_out.append(er_copy)
 
     base_phases_by_id = {
@@ -1808,6 +1873,7 @@ def main() -> None:
     ta = json.loads(analysis_path.read_text(encoding="utf-8")) if analysis_path.exists() else {}
     ta_by_id = {t["id"]: t for t in ta.get("tracks", [])}
     excluded_ids = load_excluded_ids(args.exclusions_json)
+    beatgrids_by_id = load_beatgrids_map()
 
     merged_tracks: list[dict] = []
     tracks_by_era: dict[str, list[dict]] = defaultdict(list)
@@ -1835,6 +1901,7 @@ def main() -> None:
             if tid in STYLE_OVERRIDES:
                 for ov_k, ov_v in STYLE_OVERRIDES[tid].items():
                     merged[ov_k] = list(ov_v) if isinstance(ov_v, list) else ov_v
+            apply_canonical_bpm_override(merged, beatgrids_by_id)
             merged_tracks.append(merged)
             tracks_by_era[eid].append(merged)
 

@@ -379,7 +379,7 @@
             </button>
             <div style="flex:1;min-width:0">
               <div class="track-mini-title">${esc(t.title)}</div>
-              <div class="track-mini-sub">${esc((window.formatSimpleKey && window.formatSimpleKey(t)) || t.key_label || "—")} · ${Math.round(t.bpm)} BPM</div>
+              <div class="track-mini-sub">${esc((window.formatSimpleKey && window.formatSimpleKey(t)) || t.key_label || "—")} · ${Math.round((window.resolveDisplayBpm && window.resolveDisplayBpm(t)) || t.bpm)} BPM</div>
             </div>
             <button type="button" class="badge badge-amber" data-focus-map="${esc(t.id)}" title="Inspect on ${(window.BTMM_MODE_LABELS && window.BTMM_MODE_LABELS.vibe) || "Vibe"} Map">E${t.energy}/10</button>
           </div>
