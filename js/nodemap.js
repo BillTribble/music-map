@@ -104,12 +104,15 @@
   const PULSE_PRESET_KEY_PRIMARY = "btmm.pulsePreset.v1";
   const PULSE_PRESET_KEY_ALT = "btmm.pulseTuning.v1";
   const DEFAULT_PULSE_PRESET_API = "https://music-map-events.billtribble.workers.dev/api/pulse-preset";
+  const VALID_PULSE_MODES = new Set(["line_dots", "line_sheen"]);
   const DEFAULT_PULSE_TUNING = Object.freeze({
-    dotSpeed: 1.0,
-    colorCount: 4,
-    targetPulseSpeed: 1.0,
-    pulseGlow: 1.0,
-    dotSize: 1.0,
+    mode: "line_dots",
+    lineStrength: 1.0,
+    dotSpeed: 0.15,
+    colorCount: 2,
+    targetPulseSpeed: 0.2,
+    pulseGlow: 0.85,
+    dotSize: 0.85,
     dotSpacing: 1.0,
   });
   let pulseTuning = { ...DEFAULT_PULSE_TUNING };
@@ -136,7 +139,11 @@
       if (!Number.isFinite(n)) return fb;
       return Math.round(Math.max(min, Math.min(max, n)) * 1000) / 1000;
     };
+    const rawMode = typeof src.mode === "string" ? src.mode.trim() : "";
+    const fbMode = VALID_PULSE_MODES.has(base.mode) ? base.mode : DEFAULT_PULSE_TUNING.mode;
     return {
+      mode: VALID_PULSE_MODES.has(rawMode) ? rawMode : fbMode,
+      lineStrength: clampRound(src.lineStrength, 0.2, 2.0, base.lineStrength),
       dotSpeed: clampRound(src.dotSpeed, 0, 3, base.dotSpeed),
       colorCount: clampRound(src.colorCount, 1, 5, base.colorCount),
       targetPulseSpeed: clampRound(src.targetPulseSpeed, 0, 3, base.targetPulseSpeed),
@@ -879,6 +886,42 @@
     return `rgba(${rgb[0]}, ${rgb[1]}, ${rgb[2]}, ${Math.max(0, Math.min(1, alpha)).toFixed(3)})`;
   }
 
+  function parseCssRgb(str, fallback) {
+    const s = String(str || "").trim();
+    if (s.charCodeAt(0) === 35) {
+      const body = s.slice(1);
+      if (body.length === 3) {
+        const r = parseInt(body[0] + body[0], 16);
+        const g = parseInt(body[1] + body[1], 16);
+        const b = parseInt(body[2] + body[2], 16);
+        if (Number.isFinite(r) && Number.isFinite(g) && Number.isFinite(b)) return [r, g, b];
+      } else if (body.length >= 6) {
+        const r = parseInt(body.slice(0, 2), 16);
+        const g = parseInt(body.slice(2, 4), 16);
+        const b = parseInt(body.slice(4, 6), 16);
+        if (Number.isFinite(r) && Number.isFinite(g) && Number.isFinite(b)) return [r, g, b];
+      }
+    }
+    const m = s.match(/rgba?\(\s*([\d.]+)\s*[, ]\s*([\d.]+)\s*[, ]\s*([\d.]+)/i);
+    if (m) {
+      return [
+        Math.max(0, Math.min(255, Math.round(Number(m[1])))),
+        Math.max(0, Math.min(255, Math.round(Number(m[2])))),
+        Math.max(0, Math.min(255, Math.round(Number(m[3])))),
+      ];
+    }
+    return fallback;
+  }
+
+  function mixRgb(a, b, t) {
+    const k = Math.max(0, Math.min(1, t));
+    return [
+      Math.round(a[0] + (b[0] - a[0]) * k),
+      Math.round(a[1] + (b[1] - a[1]) * k),
+      Math.round(a[2] + (b[2] - a[2]) * k),
+    ];
+  }
+
   function resolvePreviewPulsePair() {
     const tryFrom = (fid) => {
       if (!fid) return null;
@@ -926,10 +969,11 @@
       const by = Number.isFinite(tn.py) ? tn.py : tn.y * zoom.k + zoom.y;
       if (bx < Math.min(330, vw * 0.32) && by > vh * 0.45) continue;
       const chord = Math.hypot(bx - ax, by - ay);
-      if (chord < 38 || chord > 290) continue;
+      if (chord < 68 || chord > 260) continue;
       const distCenter = Math.hypot((ax + bx) * 0.5 - targetX, (ay + by) * 0.5 - targetY);
-      const chordPenalty = Math.abs(chord - 115) * 0.55;
-      const score = distCenter + chordPenalty;
+      const chordPenalty = Math.abs(chord - 118) * 0.65;
+      const horizLabelPenalty = Math.abs(by - ay) < 34 ? 95 : 0;
+      const score = distCenter + chordPenalty + horizLabelPenalty;
       if (score < bestScore) {
         bestScore = score;
         bestPair = pair;
@@ -1075,12 +1119,14 @@
     const my = (ay + by) * 0.5;
     let cx = mx;
     let cy = my;
+    let isCurved = false;
     if (layout === "era") {
+      isCurved = true;
       if (Math.abs(dx) < 14 && chord > 24) {
         cx = mx + Math.min(18, chord * 0.14);
-      } else if (Math.abs(dx) >= 14) {
-        const lift = Math.min(32, Math.max(8, Math.abs(dx) * 0.17 + chord * 0.04));
-        cy = my + (Math.min(ay, by) < 88 ? lift : -lift);
+      } else {
+        const arcMag = Math.min(34, Math.abs(dx) * 0.25 + 14);
+        cy = my + (Math.min(ay, by) < 68 ? arcMag * 0.75 : -arcMag);
       }
     }
 
@@ -1117,6 +1163,8 @@
     const nextR = nodeScreenRadius(toNode.t);
     const numWaves = totalLen >= 340 ? 2 : 1;
     const wavePeriodSec = Math.max(0.95, Math.min(1.65, totalLen / 165));
+    const sheenWaves = totalLen >= 260 ? 2 : 1;
+    const sheenPeriodSec = Math.max(0.54, Math.min(1.05, totalLen / 165));
     const elapsedFlow = Math.max(0, pulseFlowSec - pulseWaveOriginFlowSec);
     const reduced = isReducedMotionPreferred() && !pulsePanelOpen;
     const stationaryDots = pulseTuning.dotSpeed <= 0.001;
@@ -1138,7 +1186,25 @@
       return best;
     }
 
-    const arrivalBoost = stationaryDots ? 0.25 : waveBoostAt(0.96);
+    function sheenWaveAt(u) {
+      if (reduced || stationaryDots) {
+        const dStatic = u - 0.62;
+        return 0.36 + 0.56 * Math.exp(-(dStatic * dStatic) / (2 * 0.24 * 0.24));
+      }
+      let sum = 0;
+      for (let w = 0; w < sheenWaves; w++) {
+        const front = fract(elapsedFlow / sheenPeriodSec + w / sheenWaves);
+        for (let k = -1; k <= 1; k++) {
+          const du = u - front + k;
+          const sigma = du > 0 ? 0.072 : 0.225;
+          sum += Math.exp(-(du * du) / (2 * sigma * sigma));
+        }
+      }
+      return Math.min(1, sum);
+    }
+
+    const activeWaveArrival = pulseTuning.mode === "line_sheen" ? sheenWaveAt(0.96) : waveBoostAt(0.96);
+    const arrivalBoost = stationaryDots ? 0.25 : activeWaveArrival;
     const tRate = pulseTuning.targetPulseSpeed;
     const targetBreath = reduced || tRate <= 0.001
       ? 0.35
@@ -1156,6 +1222,7 @@
       by,
       cx,
       cy,
+      isCurved,
       totalLen,
       curR,
       nextR,
@@ -1164,86 +1231,163 @@
       targetCombinedPulse,
       uAtArcLen,
       waveBoostAt,
+      sheenWaveAt,
     };
+  }
+
+  function tracePulseSpanPath(geom, u0, u1) {
+    const { ax, ay, bx, by, cx, cy, isCurved } = geom;
+    ctx.beginPath();
+    if (!isCurved) {
+      if (u0 <= 0.001 && u1 >= 0.999) {
+        ctx.moveTo(ax, ay);
+        ctx.lineTo(bx, by);
+      } else {
+        const [p0x, p0y] = evalQuad(ax, ay, cx, cy, bx, by, u0);
+        const [p1x, p1y] = evalQuad(ax, ay, cx, cy, bx, by, u1);
+        ctx.moveTo(p0x, p0y);
+        ctx.lineTo(p1x, p1y);
+      }
+      return;
+    }
+    if (u0 <= 0.001 && u1 >= 0.999) {
+      ctx.moveTo(ax, ay);
+      ctx.quadraticCurveTo(cx, cy, bx, by);
+      return;
+    }
+    const STEPS = 20;
+    for (let i = 0; i <= STEPS; i++) {
+      const u = u0 + (u1 - u0) * (i / STEPS);
+      const [px, py] = evalQuad(ax, ay, cx, cy, bx, by, u);
+      if (i === 0) ctx.moveTo(px, py);
+      else ctx.lineTo(px, py);
+    }
   }
 
   function drawNextPulseUnderlay(geom, isLight) {
     if (!geom || !ctx) return;
     const glow = pulseTuning.pulseGlow;
-    if (glow <= 0.005) return;
+    const lineStrength = pulseTuning.lineStrength;
+    const isSheenMode = pulseTuning.mode === "line_sheen";
+    if (glow <= 0.005 && lineStrength <= 0.005) return;
 
-    const { ax, ay, bx, by, cx, cy, totalLen, curR, nextR, targetCombinedPulse, uAtArcLen } = geom;
+    const { fromNode, toNode, ax, ay, bx, by, totalLen, curR, nextR, targetCombinedPulse, uAtArcLen, sheenWaveAt } = geom;
     const master = pulseAlpha;
-    const phaseShift = -pulseFlowSec * 0.18;
+    const phaseShift = -pulseFlowSec * (isSheenMode ? 0.34 : 0.18);
     const glowRadiusScale = 0.68 + 0.32 * glow;
     const glowAlphaScale = Math.min(2.35, glow);
 
     ctx.save();
     ctx.setLineDash([]);
 
-    // 1. Subtle Gemini emitter aura underneath the currently playing (or preview source) node
-    if (ax >= -48 && ax <= vw + 48 && ay >= -48 && ay <= vh + 48) {
-      const emitR = curR + 10.5 * glowRadiusScale;
-      const emitInner = sampleGeminiCyclic(0.05 + phaseShift, isLight);
-      const emitOuter = sampleGeminiCyclic(0.28 + phaseShift, isLight);
-      const emitGrad = ctx.createRadialGradient(ax, ay, curR * 0.4, ax, ay, emitR);
-      emitGrad.addColorStop(0, rgbaStr(emitInner, Math.min(0.85, (isLight ? 0.20 : 0.28) * glowAlphaScale) * master));
-      emitGrad.addColorStop(0.58, rgbaStr(emitOuter, Math.min(0.55, (isLight ? 0.10 : 0.14) * glowAlphaScale) * master));
-      emitGrad.addColorStop(1, rgbaStr(emitOuter, 0));
-      ctx.beginPath();
-      ctx.arc(ax, ay, emitR, 0, Math.PI * 2);
-      ctx.fillStyle = emitGrad;
-      ctx.globalAlpha = 1;
-      ctx.fill();
-    }
-
-    // 2. Soft breathing Gemini destination aura underneath the upcoming Next node
-    if (bx >= -56 && bx <= vw + 56 && by >= -56 && by <= vh + 56) {
-      const destAuraR = nextR + (10.8 + 5.4 * targetCombinedPulse) * glowRadiusScale;
-      const destInner = sampleGeminiCyclic(0.62 + phaseShift, isLight);
-      const destOuter = sampleGeminiCyclic(0.86 + phaseShift, isLight);
-      const destGrad = ctx.createRadialGradient(bx, by, nextR * 0.4, bx, by, destAuraR);
-      destGrad.addColorStop(
-        0,
-        rgbaStr(destInner, Math.min(0.9, ((isLight ? 0.20 : 0.26) + 0.16 * targetCombinedPulse) * glowAlphaScale) * master)
-      );
-      destGrad.addColorStop(
-        0.55,
-        rgbaStr(destOuter, Math.min(0.62, ((isLight ? 0.10 : 0.14) + 0.11 * targetCombinedPulse) * glowAlphaScale) * master)
-      );
-      destGrad.addColorStop(1, rgbaStr(destOuter, 0));
-      ctx.beginPath();
-      ctx.arc(bx, by, destAuraR, 0, Math.PI * 2);
-      ctx.fillStyle = destGrad;
-      ctx.globalAlpha = 1;
-      ctx.fill();
-    }
-
-    // 3. Soft Gemini aurora ambient mist along currentNode -> nextNode (no solid wire, pure luminous glow)
-    const sStart = Math.min(totalLen * 0.45, curR + 5.0);
-    const sEnd = Math.max(totalLen * 0.55, totalLen - (nextR + 5.4));
-    if (sEnd > sStart + 2) {
-      const u0 = uAtArcLen(sStart);
-      const u1 = uAtArcLen(sEnd);
-      const lineGrad = ctx.createLinearGradient(ax, ay, bx, by);
-      lineGrad.addColorStop(0, rgbaStr(sampleGeminiCyclic(0.0 + phaseShift, isLight), 1));
-      lineGrad.addColorStop(0.34, rgbaStr(sampleGeminiCyclic(0.28 + phaseShift, isLight), 1));
-      lineGrad.addColorStop(0.68, rgbaStr(sampleGeminiCyclic(0.56 + phaseShift, isLight), 1));
-      lineGrad.addColorStop(1, rgbaStr(sampleGeminiCyclic(0.84 + phaseShift, isLight), 1));
-
-      ctx.beginPath();
-      const STEPS = 14;
-      for (let i = 0; i <= STEPS; i++) {
-        const u = u0 + (u1 - u0) * (i / STEPS);
-        const [px, py] = evalQuad(ax, ay, cx, cy, bx, by, u);
-        if (i === 0) ctx.moveTo(px, py);
-        else ctx.lineTo(px, py);
+    if (glow > 0.005) {
+      // 1. Subtle Gemini emitter aura underneath the currently playing (or preview source) node
+      if (ax >= -48 && ax <= vw + 48 && ay >= -48 && ay <= vh + 48) {
+        const emitR = curR + 10.5 * glowRadiusScale;
+        const emitInner = sampleGeminiCyclic(0.05 + phaseShift, isLight);
+        const emitOuter = sampleGeminiCyclic(0.28 + phaseShift, isLight);
+        const emitGrad = ctx.createRadialGradient(ax, ay, curR * 0.4, ax, ay, emitR);
+        emitGrad.addColorStop(0, rgbaStr(emitInner, Math.min(0.85, (isLight ? 0.20 : 0.28) * glowAlphaScale) * master));
+        emitGrad.addColorStop(0.58, rgbaStr(emitOuter, Math.min(0.55, (isLight ? 0.10 : 0.14) * glowAlphaScale) * master));
+        emitGrad.addColorStop(1, rgbaStr(emitOuter, 0));
+        ctx.beginPath();
+        ctx.arc(ax, ay, emitR, 0, Math.PI * 2);
+        ctx.fillStyle = emitGrad;
+        ctx.globalAlpha = 1;
+        ctx.fill();
       }
-      ctx.lineCap = "round";
-      ctx.strokeStyle = lineGrad;
-      ctx.lineWidth = 4.6 + 2.2 * glow;
-      ctx.globalAlpha = Math.min(0.42, (isLight ? 0.07 : 0.11) * glowAlphaScale) * master;
-      ctx.stroke();
+
+      // 2. Soft breathing Gemini destination aura underneath the upcoming Next node
+      if (bx >= -56 && bx <= vw + 56 && by >= -56 && by <= vh + 56) {
+        const destAuraR = nextR + (10.8 + 5.4 * targetCombinedPulse) * glowRadiusScale;
+        const destInner = sampleGeminiCyclic(0.62 + phaseShift, isLight);
+        const destOuter = sampleGeminiCyclic(0.86 + phaseShift, isLight);
+        const destGrad = ctx.createRadialGradient(bx, by, nextR * 0.4, bx, by, destAuraR);
+        destGrad.addColorStop(
+          0,
+          rgbaStr(destInner, Math.min(0.9, ((isLight ? 0.20 : 0.26) + 0.16 * targetCombinedPulse) * glowAlphaScale) * master)
+        );
+        destGrad.addColorStop(
+          0.55,
+          rgbaStr(destOuter, Math.min(0.62, ((isLight ? 0.10 : 0.14) + 0.11 * targetCombinedPulse) * glowAlphaScale) * master)
+        );
+        destGrad.addColorStop(1, rgbaStr(destOuter, 0));
+        ctx.beginPath();
+        ctx.arc(bx, by, destAuraR, 0, Math.PI * 2);
+        ctx.fillStyle = destGrad;
+        ctx.globalAlpha = 1;
+        ctx.fill();
+      }
+
+      // 3. Soft Gemini aurora path mist (travels with directional sheen in Flowing line mode)
+      const sMistStart = Math.min(totalLen * 0.45, curR + 3.2);
+      const sMistEnd = Math.max(totalLen * 0.55, totalLen - (nextR + 3.4));
+      if (sMistEnd > sMistStart + 2) {
+        const u0 = uAtArcLen(sMistStart);
+        const u1 = uAtArcLen(sMistEnd);
+        const [gx0, gy0] = evalQuad(ax, ay, geom.cx, geom.cy, bx, by, u0);
+        const [gx1, gy1] = evalQuad(ax, ay, geom.cx, geom.cy, bx, by, u1);
+        const mistGrad = ctx.createLinearGradient(gx0, gy0, gx1, gy1);
+        if (isSheenMode) {
+          const STOPS = 16;
+          const peakMistAlpha = Math.min(0.50, (isLight ? 0.14 : 0.22) * glowAlphaScale) * master;
+          for (let i = 0; i <= STOPS; i++) {
+            const tStop = i / STOPS;
+            const u = u0 + (u1 - u0) * tStop;
+            const w = sheenWaveAt(u);
+            const rgb = sampleGeminiCyclic(u * 0.82 + phaseShift, isLight);
+            mistGrad.addColorStop(tStop, rgbaStr(rgb, peakMistAlpha * (0.14 + 0.86 * w * w)));
+          }
+          tracePulseSpanPath(geom, u0, u1);
+          ctx.lineCap = "round";
+          ctx.strokeStyle = mistGrad;
+          ctx.lineWidth = 3.4 + 2.5 * glow;
+          ctx.globalAlpha = 1;
+          ctx.stroke();
+        } else {
+          mistGrad.addColorStop(0, rgbaStr(sampleGeminiCyclic(0.0 + phaseShift, isLight), 1));
+          mistGrad.addColorStop(0.34, rgbaStr(sampleGeminiCyclic(0.28 + phaseShift, isLight), 1));
+          mistGrad.addColorStop(0.68, rgbaStr(sampleGeminiCyclic(0.56 + phaseShift, isLight), 1));
+          mistGrad.addColorStop(1, rgbaStr(sampleGeminiCyclic(0.84 + phaseShift, isLight), 1));
+          tracePulseSpanPath(geom, u0, u1);
+          ctx.lineCap = "round";
+          ctx.strokeStyle = mistGrad;
+          ctx.lineWidth = 4.0 + 2.0 * glow;
+          ctx.globalAlpha = Math.min(0.34, (isLight ? 0.055 : 0.085) * glowAlphaScale) * master;
+          ctx.stroke();
+        }
+      }
+    }
+
+    // 4. Crisp continuous normal-weight constellation carrier wire (matches neighbor graph lines)
+    if (lineStrength > 0.005) {
+      const bothMatched = isMatch(fromNode.t) && isMatch(toNode.t);
+      const uWire0 = bothMatched ? 0 : uAtArcLen(Math.min(totalLen * 0.46, curR + 0.8));
+      const uWire1 = bothMatched ? 1 : uAtArcLen(Math.max(totalLen * 0.54, totalLen - (nextR + 0.8)));
+      if (uWire1 > uWire0 + 0.01) {
+        const edgeCss = isLight ? (palette.edgeLine || palette.outline) : (palette.edgeLineDark || palette.edgeLine);
+        const baseEdgeRgb = parseCssRgb(edgeCss, isLight ? [116, 119, 117] : [194, 197, 208]);
+        const tintMix = isSheenMode
+          ? Math.min(0.58, 0.22 + 0.14 * lineStrength)
+          : Math.min(0.74, 0.36 + 0.18 * lineStrength);
+        const wireGrad = ctx.createLinearGradient(ax, ay, bx, by);
+        const WIRE_STOPS = 4;
+        for (let i = 0; i <= WIRE_STOPS; i++) {
+          const tStop = i / WIRE_STOPS;
+          const gemRgb = sampleGeminiCyclic(tStop * 0.85 + phaseShift, isLight);
+          const blended = mixRgb(baseEdgeRgb, gemRgb, tintMix);
+          wireGrad.addColorStop(tStop, rgbaStr(blended, 1));
+        }
+        tracePulseSpanPath(geom, uWire0, uWire1);
+        ctx.lineCap = "round";
+        ctx.strokeStyle = wireGrad;
+        ctx.lineWidth = (isSheenMode ? 0.98 : 1.02) + 0.20 * Math.min(2.0, lineStrength);
+        const baseWireAlpha = isSheenMode
+          ? (isLight ? 0.40 : 0.46)
+          : (isLight ? 0.52 : 0.58);
+        ctx.globalAlpha = Math.min(0.95, baseWireAlpha * lineStrength) * master;
+        ctx.stroke();
+      }
     }
 
     ctx.restore();
@@ -1251,10 +1395,12 @@
 
   function drawNextPulseOverlay(geom, isLight) {
     if (!geom || !ctx) return;
-    const { ax, ay, bx, by, cx, cy, totalLen, curR, nextR, targetCombinedPulse, uAtArcLen, waveBoostAt } = geom;
+    const { ax, ay, bx, by, cx, cy, totalLen, curR, nextR, targetCombinedPulse, uAtArcLen, waveBoostAt, sheenWaveAt } = geom;
     const master = pulseAlpha;
-    const phaseShift = -pulseFlowSec * 0.18;
+    const isSheenMode = pulseTuning.mode === "line_sheen";
+    const phaseShift = -pulseFlowSec * (isSheenMode ? 0.34 : 0.18);
     const glow = pulseTuning.pulseGlow;
+    const lineStrength = pulseTuning.lineStrength;
     const tRate = pulseTuning.targetPulseSpeed;
     const reduced = isReducedMotionPreferred() && !pulsePanelOpen;
 
@@ -1299,9 +1445,46 @@
       ctx.stroke();
     }
 
-    // 2. Continuously marching & pulsing Gemini gradient dots flowing from currentNode -> nextNode
-    const sStart = curR + 5.2;
-    const sEnd = totalLen - (nextR + 5.6);
+    if (isSheenMode) {
+      // 2a. Flowing line mode ("line_sheen"): zero discrete dots — pure continuous normal-weight
+      // constellation line with a smooth directional Gemini highlight wave gliding toward nextNode.
+      const sSheenStart = Math.min(totalLen * 0.46, curR + 1.0);
+      const sSheenEnd = Math.max(totalLen * 0.54, totalLen - (nextR + 1.0));
+      if (sSheenEnd > sSheenStart + 1.5) {
+        const u0 = uAtArcLen(sSheenStart);
+        const u1 = uAtArcLen(sSheenEnd);
+        const [p0x, p0y] = evalQuad(ax, ay, cx, cy, bx, by, u0);
+        const [p1x, p1y] = evalQuad(ax, ay, cx, cy, bx, by, u1);
+        const sheenGrad = ctx.createLinearGradient(p0x, p0y, p1x, p1y);
+        const STOPS = 16;
+        const strengthGain = Math.min(1.35, 0.45 + 0.55 * lineStrength);
+        const floorAlpha = 0.16 * Math.min(1.5, lineStrength);
+        for (let i = 0; i <= STOPS; i++) {
+          const tStop = i / STOPS;
+          const u = u0 + (u1 - u0) * tStop;
+          const w = sheenWaveAt(u);
+          let rgb = sampleGeminiCyclic(u * 0.82 + phaseShift, isLight);
+          if (!isLight && glow > 0.05 && w > 0.68) {
+            const crestHighlight = ((w - 0.68) / 0.32) * Math.min(0.42, 0.24 * glow);
+            rgb = mixRgb(rgb, [246, 248, 255], crestHighlight);
+          }
+          const stopAlpha = Math.min(1, floorAlpha + (isLight ? 0.84 : 0.88) * strengthGain * Math.pow(w, 0.9)) * master;
+          sheenGrad.addColorStop(tStop, rgbaStr(rgb, stopAlpha));
+        }
+        tracePulseSpanPath(geom, u0, u1);
+        ctx.lineCap = "round";
+        ctx.strokeStyle = sheenGrad;
+        ctx.lineWidth = 1.08 + 0.24 * Math.min(2.0, lineStrength);
+        ctx.globalAlpha = 1;
+        ctx.stroke();
+      }
+      ctx.restore();
+      return;
+    }
+
+    // 2b. Line + dots mode ("line_dots"): slow luminous beads riding directly along the continuous hairline wire
+    const sStart = curR + 3.2;
+    const sEnd = totalLen - (nextR + 3.6);
     const usableLen = sEnd - sStart;
     const baseDotStep = Math.max(8.8, Math.min(12.4, 9.6 * Math.pow(Math.max(1, zoom.k), 0.14)));
     const dotStep = Math.max(5.2, Math.min(24.0, baseDotStep * pulseTuning.dotSpacing));
@@ -1312,7 +1495,7 @@
         reduced || pulseTuning.dotSpeed <= 0.001
           ? dotStep * 0.5
           : (pulseFlowSec * marchBaseSpeed) % dotStep;
-      const fadeSpan = Math.min(13, usableLen * 0.25);
+      const fadeSpan = Math.min(10, usableLen * 0.22);
 
       for (let s = sStart + phaseOffset; s <= sEnd; s += dotStep) {
         const u = uAtArcLen(s);
@@ -2121,11 +2304,27 @@
     if (!pulseTuneUi) return;
     const isLight = typeof document !== "undefined" && document.documentElement.getAttribute("data-theme") === "light";
     const stops = isLight ? GEMINI_STOPS_LIGHT : GEMINI_STOPS_DARK;
-    pulseTuneUi.controls.forEach(({ key, input, valEl }) => {
+    const isSheen = pulseTuning.mode === "line_sheen";
+    if (pulseTuneUi.modeBtns) {
+      pulseTuneUi.modeBtns.forEach(({ mode, btn }) => {
+        const active = pulseTuning.mode === mode;
+        btn.classList.toggle("is-active", active);
+        btn.setAttribute("aria-pressed", String(active));
+      });
+    }
+    if (pulseTuneUi.bonusGroup) {
+      pulseTuneUi.bonusGroup.hidden = isSheen;
+    }
+    pulseTuneUi.controls.forEach(({ key, input, valEl, lblEl, defaultLabel, sheenLabel }) => {
       const cur = pulseTuning[key];
       input.value = String(cur);
       syncRangeTrackPct(input);
       valEl.textContent = formatPulseSliderValue(key, cur);
+      if (lblEl && sheenLabel) {
+        const nextLbl = isSheen ? sheenLabel : defaultLabel;
+        lblEl.textContent = nextLbl;
+        input.setAttribute("aria-label", nextLbl);
+      }
     });
     if (pulseTuneUi.swatchWrap) {
       const activeCount = Math.max(1, Math.min(stops.length, Math.round(pulseTuning.colorCount)));
@@ -2174,7 +2373,9 @@
     if (pulseSaveInFlight) return { ok: false, inFlight: true };
     pulseSaveInFlight = true;
     const payload = {
-      version: 1,
+      version: 2,
+      mode: pulseTuning.mode,
+      lineStrength: pulseTuning.lineStrength,
       dotSpeed: pulseTuning.dotSpeed,
       colorCount: pulseTuning.colorCount,
       targetPulseSpeed: pulseTuning.targetPulseSpeed,
@@ -2318,6 +2519,38 @@
     headActions.append(resetBtn, closeBtn);
     head.append(titleWrap, headActions);
 
+    const modeRow = document.createElement("div");
+    modeRow.className = "pulse-tune-mode-row";
+    const modeLbl = document.createElement("div");
+    modeLbl.className = "pulse-tune-lbl";
+    modeLbl.textContent = "Style";
+
+    const modeSwitch = document.createElement("div");
+    modeSwitch.id = "pt-mode-switch";
+    modeSwitch.className = "m3-pill-tabs gm3-connected-dsp pulse-tune-mode-tabs";
+    modeSwitch.setAttribute("role", "group");
+    modeSwitch.setAttribute("aria-label", "Style");
+
+    const modeDefs = [
+      { id: "pt-mode-line-dots", mode: "line_dots", label: "Line + dots" },
+      { id: "pt-mode-line-sheen", mode: "line_sheen", label: "Flowing line" },
+    ];
+    const modeBtns = modeDefs.map((mDef) => {
+      const btn = document.createElement("button");
+      btn.id = mDef.id;
+      btn.type = "button";
+      btn.className = "m3-pill-tab";
+      btn.dataset.pulseMode = mDef.mode;
+      btn.textContent = mDef.label;
+      btn.setAttribute("aria-pressed", String(pulseTuning.mode === mDef.mode));
+      btn.addEventListener("click", () => {
+        setPulseTuning({ mode: mDef.mode });
+      });
+      modeSwitch.appendChild(btn);
+      return { mode: mDef.mode, btn };
+    });
+    modeRow.append(modeLbl, modeSwitch);
+
     const primaryGroup = document.createElement("div");
     primaryGroup.className = "pulse-tune-group";
 
@@ -2325,7 +2558,8 @@
     bonusGroup.className = "pulse-tune-group pulse-tune-group-sub";
 
     const sliderDefs = [
-      { id: "pt-dot-speed", key: "dotSpeed", label: "Dot speed", min: 0, max: 3, step: 0.05, primary: true },
+      { id: "pt-line-strength", key: "lineStrength", label: "Line strength", min: 0.2, max: 2.0, step: 0.05, primary: true },
+      { id: "pt-dot-speed", key: "dotSpeed", label: "Dot speed", sheenLabel: "Flow speed", min: 0, max: 3, step: 0.05, primary: true },
       { id: "pt-color-count", key: "colorCount", label: "Amount of colors", min: 1, max: 5, step: 1, primary: true, swatches: true },
       { id: "pt-target-speed", key: "targetPulseSpeed", label: "Receiving track pulse", min: 0, max: 3, step: 0.05, primary: true },
       { id: "pt-pulse-glow", key: "pulseGlow", label: "Pulse glow", min: 0, max: 2.5, step: 0.05, primary: true },
@@ -2378,7 +2612,14 @@
 
       row.append(lblRow, input);
       (def.primary ? primaryGroup : bonusGroup).appendChild(row);
-      controls.push({ key: def.key, input, valEl });
+      controls.push({
+        key: def.key,
+        input,
+        valEl,
+        lblEl: lbl,
+        defaultLabel: def.label,
+        sheenLabel: def.sheenLabel || "",
+      });
     });
 
     const foot = document.createElement("div");
@@ -2404,7 +2645,7 @@
     statusEl.hidden = true;
 
     foot.append(saveBtn, statusEl);
-    panel.append(head, primaryGroup, bonusGroup, foot);
+    panel.append(head, modeRow, primaryGroup, bonusGroup, foot);
 
     const zone = document.createElement("div");
     zone.id = "pulse-tune-zone";
@@ -2495,6 +2736,8 @@
       panel,
       zone,
       trigger,
+      modeBtns,
+      bonusGroup,
       saveBtn,
       saveIcon,
       saveLbl,

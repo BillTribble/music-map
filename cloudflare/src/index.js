@@ -2266,6 +2266,8 @@ function sanitizePulsePresetPayload(raw) {
     return Math.round(Math.max(min, Math.min(max, n)) * 1000) / 1000;
   };
   const hasAny =
+    src.mode !== undefined ||
+    src.lineStrength !== undefined ||
     src.dotSpeed !== undefined ||
     src.colorCount !== undefined ||
     src.targetPulseSpeed !== undefined ||
@@ -2273,13 +2275,17 @@ function sanitizePulsePresetPayload(raw) {
     src.dotSize !== undefined ||
     src.dotSpacing !== undefined;
   if (!hasAny) return null;
+  const rawMode = typeof src.mode === "string" ? src.mode.trim() : "";
+  const mode = rawMode === "line_sheen" ? "line_sheen" : "line_dots";
   return {
-    version: 1,
-    dotSpeed: clampRound(src.dotSpeed, 0, 4, 1),
-    colorCount: clampRound(src.colorCount, 1, 6, 4),
-    targetPulseSpeed: clampRound(src.targetPulseSpeed, 0, 4, 1),
-    pulseGlow: clampRound(src.pulseGlow, 0, 4, 1),
-    dotSize: clampRound(src.dotSize, 0.35, 3, 1),
+    version: 2,
+    mode,
+    lineStrength: clampRound(src.lineStrength, 0, 3, 1),
+    dotSpeed: clampRound(src.dotSpeed, 0, 4, 0.15),
+    colorCount: clampRound(src.colorCount, 1, 6, 2),
+    targetPulseSpeed: clampRound(src.targetPulseSpeed, 0, 4, 0.2),
+    pulseGlow: clampRound(src.pulseGlow, 0, 4, 0.85),
+    dotSize: clampRound(src.dotSize, 0.35, 3, 0.85),
     dotSpacing: clampRound(src.dotSpacing, 0.4, 3, 1),
   };
 }
