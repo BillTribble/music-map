@@ -969,6 +969,7 @@
               "prototcol-x-jam-2017": "archive_2013_18_120",
               "protocol": "archive_2013_18_120",
               "ripple-effect": "remixes_commissions_17",
+              "monks-amber": "ep_concepts_5",
             };
             const legacyId = targetSlug && LEGACY_TRACK_SLUGS[targetSlug];
             deepLinkTrack =

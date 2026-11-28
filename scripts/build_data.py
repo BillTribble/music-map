@@ -1319,6 +1319,7 @@ TITLE_OVERRIDES = {
     "archive_2013_18_120": "Protocol X Jam 2017",
     "ecstatic_wave_1": "Flowing Wave (Preview)",
     "remixes_commissions_17": "Voidcomplet - Ripple effect (Bill Tribble vox)",
+    "ep_concepts_5": "Monks of Amber",
 }
 SHORT_TITLE_OVERRIDES: dict[str, str] = {}
 

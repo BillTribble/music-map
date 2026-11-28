@@ -235,6 +235,8 @@ TITLE_OVERRIDES_BY_REL_PATH = {
     "06 - ecstatic wave album/^ export/flowing wave 27.flac": "Flowing Wave (Preview)",
     "06 - ecstatic wave album/flowing wave project/matchering - &me afro version/flowing wave 17 75bpm pt1_(matched).flac": "Flowing Wave (Preview)",
     "^ remixes and commissions/ripple effect with voidcomplet/ripple effect (120.00 bpm) - main out.m4a": "Voidcomplet - Ripple effect (Bill Tribble vox)",
+    "05 - ep concepts/dark ambient ep/13 monks of amber master 01 2023-09-19 2255.wav": "Monks of Amber",
+    "05 - ep concepts/dark ambient ep/13 monks amber master 01 2023-09-19 2255.wav": "Monks of Amber",
 }
 SHORT_TITLE_OVERRIDES_BY_TITLE: dict[str, str] = {}
 EXCLUDED_FILE_TOKENS = ("stem", "backing", "drumloop")
